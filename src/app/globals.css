@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* ─── Brand Tokens — colors use @theme (not inline) so Tailwind
+     generates var(--color-*) references, enabling per-tenant override ── */
+@theme {
+  --color-brand-pink:   #FF6B9D;
+  --color-brand-orange: #FF8C42;
+  --color-brand-yellow: #FFD166;
+  --color-brand-dark:   #1A1A2E;
+  --color-brand-muted:  #F8F0F5;
+}
+
+/* Fonts and animations stay inline (no per-tenant override needed) */
+@theme inline {
+  --font-brand: var(--font-playfair), Georgia, serif;
+  --font-sans:  var(--font-inter), system-ui, sans-serif;
+
+  --animate-fade-up:       fade-up 0.6s ease-out forwards;
+  --animate-fade-up-delay: fade-up 0.6s ease-out 0.2s forwards;
+  --animate-pulse-slow:    pulse-slow 3s ease-in-out infinite;
+}
+
+/* ─── Keyframes ─────────────────────────────────────────── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes pulse-slow {
+  0%, 100% { transform: scale(1);   opacity: 0.4; }
+  50%       { transform: scale(1.1); opacity: 0.6; }
+}
+
+/* ─── CSS Custom Properties ─────────────────────────────── */
+:root {
+  /* Gradient references the color vars so it also updates per tenant */
+  --gradient-brand: linear-gradient(135deg, var(--color-brand-pink) 0%, var(--color-brand-orange) 50%, var(--color-brand-yellow) 100%);
+}
+
+/* ─── Base ──────────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #ffffff;
+  color: #1A1A2E;
+}
+
+/* ─── Utilities ─────────────────────────────────────────── */
+@utility gradient-text {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@utility gradient-bg {
+  background: var(--gradient-brand);
+}
+
+@utility card-shadow {
+  box-shadow: 0 8px 32px rgba(255, 107, 157, 0.12);
+}
+
+@utility card-shadow-hover {
+  box-shadow: 0 16px 48px rgba(255, 107, 157, 0.24);
+}
+
+/* ─── SaaS / VendeFácil Design Tokens ──────────────────── */
+@utility saas-accent-text {
+  background: linear-gradient(135deg, #60a5fa 0%, #c084fc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@utility saas-accent-bg {
+  background: linear-gradient(135deg, #3b82f6 0%, #9333ea 100%);
+}
+
+@utility saas-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@utility saas-card-hover {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+@utility saas-glow {
+  box-shadow: 0 0 80px rgba(59, 130, 246, 0.18), 0 0 160px rgba(147, 51, 234, 0.10);
+}
+
+@utility saas-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.85);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.saas-input:focus {
+  border-color: rgba(96, 165, 250, 0.5);
+}

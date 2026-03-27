@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-git --yes)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(gh auth:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(where gh:*)",
+      "Bash(winget list:*)",
+      "Bash(ls c:/Code/dulcepecado/src/app/favicon* c:/Code/dulcepecado/src/app/icon*)",
+      "Bash(ls c:/Code/dulcepecado/app/favicon*)",
+      "Bash(find c:/Code/dulcepecado/src/app -maxdepth 1 -name *.ico -o -name *.png -o -name *.svg)",
+      "Bash(node -e \"const sharp = require\\(''sharp''\\); console.log\\(''sharp ok''\\)\")",
+      "Bash(node -e \":*)",
+      "Bash(git checkout:*)",
+      "Bash(find /c/Code/dulcepecado -maxdepth 2 -name tailwind.config.* -o -name postcss.config.*)",
+      "Bash(git -C c:/Code/dulcepecado show HEAD~4:src/app/page.tsx)",
+      "Bash(for dir:*)",
+      "Bash(do)",
+      "Bash(echo \"=== $dir ===\")",
+      "Read(//c/Code/dulcepecado/src/app/admin/$dir/**)",
+      "Bash(done)",
+      "Bash(ls /c/Code/dulcepecado/src/app/[tenant]/)",
+      "Bash(ls /c/Code/dulcepecado/src/app/[tenant]/admin/)",
+      "Bash(ls /c/Code/dulcepecado/src/app/[tenant]/admin/pedidos/)",
+      "Bash(cat /c/Code/dulcepecado/src/app/[tenant]/admin/pedidos/page.tsx)",
+      "Bash(ls /c/Code/dulcepecado/src/app/[tenant]/admin/finanzas/)",
+      "Bash(head -50 /c/Code/dulcepecado/src/app/[tenant]/admin/finanzas/page.tsx)",
+      "Bash(grep -v \"^$\")",
+      "Bash(cat /c/Code/dulcepecado/src/app/api/admin/orders/[id]/route.ts)",
+      "Bash(ls c:/Code/dulcepecado/src/app/superadmin/tenants/[id]/)"
+    ]
+  }
+}
