@@ -16,7 +16,7 @@ const fadeUp = (delay = 0) => ({
   },
 });
 
-export default function HeroSection() {
+export default function HeroSection({ whatsappNumber }: { whatsappNumber?: string }) {
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-white">
       {/* ── Background product images (blurred, decorative) ── */}
@@ -152,7 +152,7 @@ export default function HeroSection() {
           {...fadeUp(0.6)}
         >
           <a
-            href={buildWhatsAppMessage()}
+            href={buildWhatsAppMessage(undefined, undefined, undefined, undefined, undefined, whatsappNumber)}
             target="_blank"
             rel="noopener noreferrer"
           >

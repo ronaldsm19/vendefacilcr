@@ -17,6 +17,7 @@ interface ProductModalProps {
   product: SeedProduct & { _id?: string };
   isOpen: boolean;
   onClose: () => void;
+  whatsappNumber?: string;
 }
 
 const FREE_TOPPINGS = 2;
@@ -37,7 +38,7 @@ const categoryLabels: Record<string, { label: string; color: string }> = {
   },
 };
 
-export default function ProductModal({ product, isOpen, onClose }: ProductModalProps) {
+export default function ProductModal({ product, isOpen, onClose, whatsappNumber }: ProductModalProps) {
   const cat = categoryLabels[product.category] ?? categoryLabels.especial;
 
   const [quantity, setQuantity]         = useState(1);
@@ -385,6 +386,7 @@ export default function ProductModal({ product, isOpen, onClose }: ProductModalP
               finalPrice={finalPrice}
               quantity={quantity}
               itemToppings={itemToppings}
+              whatsappNumber={whatsappNumber}
             />
             <p className="text-center text-xs text-brand-dark/40 mt-2">
               Te redirigiremos a WhatsApp con tu pedido listo 💬

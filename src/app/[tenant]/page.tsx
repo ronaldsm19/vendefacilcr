@@ -98,11 +98,11 @@ export default async function TenantStorefront({
         } as React.CSSProperties
       }
     >
-      <HeroSection />
-      <BestSellersSection products={featuredProducts} />
-      <ProductsSection products={products} />
+      <HeroSection whatsappNumber={tenant.whatsappNumber} />
+      <BestSellersSection products={featuredProducts} whatsappNumber={tenant.whatsappNumber} />
+      <ProductsSection products={products} whatsappNumber={tenant.whatsappNumber} />
       <TrustSection />
-      <AboutSection aboutData={settings?.about} />
+      <AboutSection aboutData={settings?.about} whatsappNumber={tenant.whatsappNumber} />
       <Footer tenantName={tenant.name} logoUrl={tenant.logoUrl || undefined} social={social} />
       <WhatsAppButton floating whatsappNumber={tenant.whatsappNumber} />
     </div>

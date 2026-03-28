@@ -34,7 +34,12 @@
       "Bash(head -50 /c/Code/dulcepecado/src/app/[tenant]/admin/finanzas/page.tsx)",
       "Bash(grep -v \"^$\")",
       "Bash(cat /c/Code/dulcepecado/src/app/api/admin/orders/[id]/route.ts)",
-      "Bash(ls c:/Code/dulcepecado/src/app/superadmin/tenants/[id]/)"
+      "Bash(ls c:/Code/dulcepecado/src/app/superadmin/tenants/[id]/)",
+      "Bash(ls -la /c/Code/vendefacilcr/src/app/[tenant]/admin/inventario/)",
+      "Bash(ls -la /c/Code/vendefacilcr/src/app/api/admin/orders/[id]/)",
+      "Bash(del \"c:\\\\Code\\\\vendefacilcr\\\\public\\\\favicon.ico\")",
+      "Bash(grep -n \"{ product, isOpen, onClose }\" c:/Code/vendefacilcr/src/components/ProductModal.tsx)",
+      "Bash(grep -n \"{ product, index\" c:/Code/vendefacilcr/src/components/ProductCard.tsx)"
     ]
   }
 }

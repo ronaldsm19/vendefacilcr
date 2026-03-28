@@ -7,6 +7,7 @@ import { SeedProduct } from "@/data/seed";
 
 interface ProductsSectionProps {
   products: (SeedProduct & { _id?: string })[];
+  whatsappNumber?: string;
 }
 
 // Backward-compat display labels for old slug-based categories
@@ -16,7 +17,7 @@ const legacyLabels: Record<string, string> = {
   especial: "Edición Especial",
 };
 
-function ProductsGrid({ products }: ProductsSectionProps) {
+function ProductsGrid({ products, whatsappNumber }: ProductsSectionProps) {
   const [activeCategory, setActiveCategory] = useState("all");
 
   // Derive tabs from actual product categories (handles both old slugs and new labels)
@@ -80,7 +81,7 @@ function ProductsGrid({ products }: ProductsSectionProps) {
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
       >
         {filtered.map((product, i) => (
-          <ProductCard key={product._id ?? product.name} product={product} index={i} />
+          <ProductCard key={product._id ?? product.name} product={product} index={i} whatsappNumber={whatsappNumber} />
         ))}
       </motion.div>
 
@@ -94,7 +95,7 @@ function ProductsGrid({ products }: ProductsSectionProps) {
   );
 }
 
-export default function ProductsSection({ products }: ProductsSectionProps) {
+export default function ProductsSection({ products, whatsappNumber }: ProductsSectionProps) {
   return (
     <section id="productos" className="py-24 px-6 bg-brand-muted/30">
       <div className="max-w-6xl mx-auto">
@@ -147,7 +148,7 @@ export default function ProductsSection({ products }: ProductsSectionProps) {
           </motion.p>
         </div>
 
-        <ProductsGrid products={products} />
+        <ProductsGrid products={products} whatsappNumber={whatsappNumber} />
       </div>
     </section>
   );

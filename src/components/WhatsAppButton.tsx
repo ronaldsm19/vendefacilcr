@@ -17,8 +17,9 @@ export function buildWhatsAppMessage(
   finalPrice?: number,
   quantity?: number,
   itemToppings?: string[][],
+  whatsappNumber?: string,
 ): string {
-  const number = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
+  const number = whatsappNumber ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
   let msg: string;
 
   if (product) {
@@ -89,6 +90,7 @@ export function WhatsAppInlineButton({
   finalPrice,
   quantity,
   itemToppings,
+  whatsappNumber,
   className,
 }: {
   product: WhatsAppButtonProps["product"];
@@ -96,9 +98,10 @@ export function WhatsAppInlineButton({
   finalPrice?: number;
   quantity?: number;
   itemToppings?: string[][];
+  whatsappNumber?: string;
   className?: string;
 }) {
-  const url = buildWhatsAppMessage(product, selectedToppings, finalPrice, quantity, itemToppings);
+  const url = buildWhatsAppMessage(product, selectedToppings, finalPrice, quantity, itemToppings, whatsappNumber);
 
   return (
     <Button

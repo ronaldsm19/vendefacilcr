@@ -72,6 +72,7 @@ interface AboutSectionProps {
     paragraph2: string;
     images: string[];
   };
+  whatsappNumber?: string;
 }
 
 const DEFAULT_IMAGES = [
@@ -81,7 +82,7 @@ const DEFAULT_IMAGES = [
   "https://images.unsplash.com/photo-1560008581-09826d1de69e?w=400&q=80&fit=crop",
 ];
 
-export default function AboutSection({ aboutData }: AboutSectionProps) {
+export default function AboutSection({ aboutData, whatsappNumber }: AboutSectionProps) {
   const [locationOpen, setLocationOpen] = useState(false);
 
   const title = aboutData?.title ?? "Hechos con amor en Turrialba";
@@ -91,11 +92,11 @@ export default function AboutSection({ aboutData }: AboutSectionProps) {
     (url, i) => ({ img: url || DEFAULT_IMAGES[i], rotate: ["-2deg", "2deg", "1.5deg", "-1.5deg"][i] })
   );
 
-  const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
+  const waNumber = whatsappNumber ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
   const specialOrderMsg = encodeURIComponent(
     `Hola! Me interesa hacer un pedido especial para un evento de *Dulce Pecado* 🍮🎉\n\n¿Podrías darme más información sobre opciones y disponibilidad? Gracias! 😊`
   );
-  const specialOrderUrl = `https://wa.me/${whatsappNumber}?text=${specialOrderMsg}`;
+  const specialOrderUrl = `https://wa.me/${waNumber}?text=${specialOrderMsg}`;
 
   return (
     <section id="nosotros" className="py-24 px-6 bg-white overflow-hidden">

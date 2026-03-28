@@ -11,6 +11,7 @@ import { Eye } from "lucide-react";
 interface ProductCardProps {
   product: SeedProduct & { _id?: string };
   index?: number;
+  whatsappNumber?: string;
 }
 
 // Backward-compat map for old slug-based categories
@@ -26,7 +27,7 @@ function trackClick(productId?: string) {
   fetch(`/api/products/${productId}/click`, { method: "POST" }).catch(() => {});
 }
 
-export default function ProductCard({ product, index = 0 }: ProductCardProps) {
+export default function ProductCard({ product, index = 0, whatsappNumber }: ProductCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const cat = legacyCategoryLabels[product.category] ?? {
     label: product.category,
@@ -137,6 +138,7 @@ export default function ProductCard({ product, index = 0 }: ProductCardProps) {
         product={product}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
+        whatsappNumber={whatsappNumber}
       />
     </>
   );
