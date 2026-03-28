@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { Upload, X, Loader2, Check, Plus, Trash2 } from "lucide-react";
+import {
+  Upload, X, Loader2, Check, Plus, Trash2, Phone,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Category {
@@ -17,26 +19,85 @@ interface AboutData {
   images: string[];
 }
 
-const DEFAULTS: AboutData = {
-  title: "Hechos con amor en Turrialba",
-  paragraph1: "Dulce Pecado nació de un momento espontáneo, con muchas ganas de crear algo especial.",
-  paragraph2: "Hoy, cada postre y cada apretado gourmet está hecho con amor, buscando convertir lo simple en algo delicioso 🤍✨",
+interface SocialData {
+  whatsapp: string;
+  instagram: string;
+  facebook: string;
+  tiktok: string;
+  youtube: string;
+}
+
+const ABOUT_DEFAULTS: AboutData = {
+  title: "",
+  paragraph1: "",
+  paragraph2: "",
   images: ["", "", "", ""],
 };
 
+const SOCIAL_DEFAULTS: SocialData = {
+  whatsapp: "",
+  instagram: "",
+  facebook: "",
+  tiktok: "",
+  youtube: "",
+};
+
+function IconInstagram({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" width="16" height="16" className={className}>
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  );
+}
+
+function IconFacebook({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" className={className}>
+      <path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z" />
+    </svg>
+  );
+}
+
+function IconTikTok({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" className={className}>
+      <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.34 6.34 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.22 8.22 0 004.8 1.54V6.76a4.85 4.85 0 01-1.03-.07z" />
+    </svg>
+  );
+}
+
+function IconYouTube({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" className={className}>
+      <path d="M23.495 6.205a3.007 3.007 0 00-2.088-2.088c-1.87-.501-9.396-.501-9.396-.501s-7.507-.01-9.396.501A3.007 3.007 0 00.527 6.205a31.247 31.247 0 00-.522 5.805 31.247 31.247 0 00.522 5.783 3.007 3.007 0 002.088 2.088c1.868.502 9.396.502 9.396.502s7.506 0 9.396-.502a3.007 3.007 0 002.088-2.088 31.247 31.247 0 00.5-5.783 31.247 31.247 0 00-.5-5.805zM9.609 15.601V8.408l6.264 3.602z" />
+    </svg>
+  );
+}
+
 export default function ConfiguracionPage() {
-  const [about, setAbout] = useState<AboutData>(DEFAULTS);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  // ── About state ──────────────────────────────────────────────────
+  const [about, setAbout] = useState<AboutData>(ABOUT_DEFAULTS);
+  const [loadingAbout, setLoadingAbout] = useState(true);
+  const [savingAbout, setSavingAbout] = useState(false);
+  const [savedAbout, setSavedAbout] = useState(false);
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
 
-  // Categories state
+  // ── Social state ─────────────────────────────────────────────────
+  const [social, setSocial] = useState<SocialData>(SOCIAL_DEFAULTS);
+  const [loadingSocial, setLoadingSocial] = useState(true);
+  const [savingSocial, setSavingSocial] = useState(false);
+  const [savedSocial, setSavedSocial] = useState(false);
+
+  // ── Categories state ─────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
   const [catsLoading, setCatsLoading] = useState(true);
   const [newCatLabel, setNewCatLabel] = useState("");
   const [addingCat, setAddingCat] = useState(false);
   const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
+
   const fileRefs = [
     useRef<HTMLInputElement>(null),
     useRef<HTMLInputElement>(null),
@@ -45,53 +106,46 @@ export default function ConfiguracionPage() {
   ];
 
   useEffect(() => {
+    // About
     fetch("/api/admin/settings")
       .then((r) => r.json())
       .then((data) => {
         if (data?.about) {
           const imgs = [...(data.about.images ?? [])];
           while (imgs.length < 4) imgs.push("");
-          setAbout({ ...DEFAULTS, ...data.about, images: imgs });
+          setAbout({ ...ABOUT_DEFAULTS, ...data.about, images: imgs });
         }
       })
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingAbout(false));
 
+    // Social
+    fetch("/api/admin/social")
+      .then((r) => r.json())
+      .then((data) => setSocial({ ...SOCIAL_DEFAULTS, ...data }))
+      .finally(() => setLoadingSocial(false));
+
+    // Categories
     fetch("/api/admin/categories")
       .then((r) => r.json())
       .then((d) => setCategories(d.categories ?? []))
       .finally(() => setCatsLoading(false));
   }, []);
 
-  async function handleAddCategory(e: React.FormEvent) {
+  // ── Handlers: about ──────────────────────────────────────────────
+  async function handleSaveAbout(e: React.FormEvent) {
     e.preventDefault();
-    const label = newCatLabel.trim();
-    if (!label) return;
-    setAddingCat(true);
+    setSavingAbout(true);
     try {
-      const r = await fetch("/api/admin/categories", {
-        method: "POST",
+      const images = about.images.filter(Boolean);
+      await fetch("/api/admin/settings", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
+        body: JSON.stringify({ about: { ...about, images } }),
       });
-      const d = await r.json();
-      if (d.category) {
-        setCategories((prev) =>
-          [...prev, d.category].sort((a, b) => a.label.localeCompare(b.label))
-        );
-        setNewCatLabel("");
-      }
+      setSavedAbout(true);
+      setTimeout(() => setSavedAbout(false), 3000);
     } finally {
-      setAddingCat(false);
-    }
-  }
-
-  async function handleDeleteCategory(id: string) {
-    setDeletingCatId(id);
-    try {
-      await fetch(`/api/admin/categories/${id}`, { method: "DELETE" });
-      setCategories((prev) => prev.filter((c) => c._id !== id));
-    } finally {
-      setDeletingCatId(null);
+      setSavingAbout(false);
     }
   }
 
@@ -133,24 +187,58 @@ export default function ConfiguracionPage() {
     }
   }
 
-  async function handleSave(e: React.FormEvent) {
+  // ── Handlers: social ─────────────────────────────────────────────
+  async function handleSaveSocial(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
+    setSavingSocial(true);
     try {
-      const images = about.images.filter(Boolean);
-      await fetch("/api/admin/settings", {
+      await fetch("/api/admin/social", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ about: { ...about, images } }),
+        body: JSON.stringify(social),
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      setSavedSocial(true);
+      setTimeout(() => setSavedSocial(false), 3000);
     } finally {
-      setSaving(false);
+      setSavingSocial(false);
     }
   }
 
-  if (loading) {
+  // ── Handlers: categories ─────────────────────────────────────────
+  async function handleAddCategory(e: React.FormEvent) {
+    e.preventDefault();
+    const label = newCatLabel.trim();
+    if (!label) return;
+    setAddingCat(true);
+    try {
+      const r = await fetch("/api/admin/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      const d = await r.json();
+      if (d.category) {
+        setCategories((prev) =>
+          [...prev, d.category].sort((a, b) => a.label.localeCompare(b.label))
+        );
+        setNewCatLabel("");
+      }
+    } finally {
+      setAddingCat(false);
+    }
+  }
+
+  async function handleDeleteCategory(id: string) {
+    setDeletingCatId(id);
+    try {
+      await fetch(`/api/admin/categories/${id}`, { method: "DELETE" });
+      setCategories((prev) => prev.filter((c) => c._id !== id));
+    } finally {
+      setDeletingCatId(null);
+    }
+  }
+
+  if (loadingAbout || loadingSocial) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-brand-pink" />
@@ -159,14 +247,117 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <h1 className="font-brand text-2xl font-bold text-brand-dark mb-6">Configuración del sitio</h1>
+    <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
+      <h1 className="font-brand text-2xl font-bold text-brand-dark">Configuración del sitio</h1>
 
-      <form onSubmit={handleSave} className="space-y-6">
+      {/* ── Redes Sociales ──────────────────────────────────────────── */}
+      <form onSubmit={handleSaveSocial}>
         <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
-          <h2 className="font-semibold text-brand-dark text-lg">Sección "Nosotros"</h2>
+          <div>
+            <h2 className="font-semibold text-brand-dark text-lg">Redes sociales y contacto</h2>
+            <p className="text-sm text-brand-dark/50 mt-0.5">
+              Estos datos aparecen en el pie de página de tu tienda.
+            </p>
+          </div>
 
-          {/* Título */}
+          {/* WhatsApp */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">
+              Número de WhatsApp
+            </label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/30" strokeWidth={2} />
+              <input
+                type="tel"
+                value={social.whatsapp}
+                onChange={(e) => setSocial({ ...social, whatsapp: e.target.value })}
+                placeholder="50688888888"
+                className="w-full border border-brand-muted rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+            <p className="text-xs text-brand-dark/40 mt-1">
+              Incluí el código de país sin el +. Ej: 50688887777
+            </p>
+          </div>
+
+          {/* Instagram */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">Instagram</label>
+            <div className="relative">
+              <IconInstagram className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dark/30" />
+              <input
+                type="url"
+                value={social.instagram}
+                onChange={(e) => setSocial({ ...social, instagram: e.target.value })}
+                placeholder="https://www.instagram.com/tuperfil"
+                className="w-full border border-brand-muted rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+          </div>
+
+          {/* Facebook */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">Facebook</label>
+            <div className="relative">
+              <IconFacebook className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dark/30" />
+              <input
+                type="url"
+                value={social.facebook}
+                onChange={(e) => setSocial({ ...social, facebook: e.target.value })}
+                placeholder="https://www.facebook.com/tupagina"
+                className="w-full border border-brand-muted rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+          </div>
+
+          {/* TikTok */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">TikTok</label>
+            <div className="relative">
+              <IconTikTok className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dark/30" />
+              <input
+                type="url"
+                value={social.tiktok}
+                onChange={(e) => setSocial({ ...social, tiktok: e.target.value })}
+                placeholder="https://www.tiktok.com/@tuperfil"
+                className="w-full border border-brand-muted rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+          </div>
+
+          {/* YouTube */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">YouTube</label>
+            <div className="relative">
+              <IconYouTube className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dark/30" />
+              <input
+                type="url"
+                value={social.youtube}
+                onChange={(e) => setSocial({ ...social, youtube: e.target.value })}
+                placeholder="https://www.youtube.com/@tucanal"
+                className="w-full border border-brand-muted rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <Button type="submit" disabled={savingSocial} className="flex-1">
+              {savingSocial ? "Guardando..." : "Guardar redes sociales"}
+            </Button>
+            {savedSocial && (
+              <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+                <Check className="w-4 h-4" /> Guardado
+              </span>
+            )}
+          </div>
+        </section>
+      </form>
+
+      {/* ── Sección Nosotros ────────────────────────────────────────── */}
+      <form onSubmit={handleSaveAbout}>
+        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+          <h2 className="font-semibold text-brand-dark text-lg">Sección &quot;Nosotros&quot;</h2>
+
           <div>
             <label className="block text-sm font-medium text-brand-dark mb-1">Título</label>
             <input
@@ -177,7 +368,6 @@ export default function ConfiguracionPage() {
             />
           </div>
 
-          {/* Párrafo 1 */}
           <div>
             <label className="block text-sm font-medium text-brand-dark mb-1">Primer párrafo</label>
             <textarea
@@ -188,7 +378,6 @@ export default function ConfiguracionPage() {
             />
           </div>
 
-          {/* Párrafo 2 */}
           <div>
             <label className="block text-sm font-medium text-brand-dark mb-1">Segundo párrafo</label>
             <textarea
@@ -199,14 +388,16 @@ export default function ConfiguracionPage() {
             />
           </div>
 
-          {/* Imágenes */}
           <div>
             <label className="block text-sm font-medium text-brand-dark mb-2">
               Imágenes (4 fotos para el collage)
             </label>
             <div className="grid grid-cols-4 gap-2">
               {about.images.map((url, idx) => (
-                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-brand-muted bg-brand-muted/20 group">
+                <div
+                  key={idx}
+                  className="relative aspect-square rounded-xl overflow-hidden border border-brand-muted bg-brand-muted/20 group"
+                >
                   {url ? (
                     <>
                       <Image src={url} alt={`Foto ${idx + 1}`} fill className="object-cover" sizes="100px" />
@@ -255,24 +446,24 @@ export default function ConfiguracionPage() {
               ))}
             </div>
             <p className="text-xs text-brand-dark/40 mt-1.5">
-              Si no subes imágenes, se usan las predeterminadas del sistema.
+              Si no subís imágenes, se usan las predeterminadas del sistema.
             </p>
           </div>
-        </section>
 
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={saving} className="flex-1">
-            {saving ? "Guardando..." : "Guardar cambios"}
-          </Button>
-          {saved && (
-            <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
-              <Check className="w-4 h-4" /> Guardado
-            </span>
-          )}
-        </div>
+          <div className="flex items-center gap-3 pt-1">
+            <Button type="submit" disabled={savingAbout} className="flex-1">
+              {savingAbout ? "Guardando..." : "Guardar sección Nosotros"}
+            </Button>
+            {savedAbout && (
+              <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+                <Check className="w-4 h-4" /> Guardado
+              </span>
+            )}
+          </div>
+        </section>
       </form>
 
-      {/* ── Categorías de productos ── */}
+      {/* ── Categorías de productos ─────────────────────────────────── */}
       <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
         <div>
           <h2 className="font-semibold text-brand-dark text-lg">Categorías de productos</h2>
@@ -322,11 +513,7 @@ export default function ConfiguracionPage() {
             className="flex-1 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
           />
           <Button type="submit" disabled={addingCat || !newCatLabel.trim()} size="sm">
-            {addingCat ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Plus className="w-4 h-4" />
-            )}
+            {addingCat ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
           </Button>
         </form>
       </section>

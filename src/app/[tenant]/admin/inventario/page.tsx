@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import StatsCard from "@/components/admin/StatsCard";
 import { IProduct } from "@/models/Product";
-import { Package, TrendingUp, AlertTriangle, Check, X } from "lucide-react";
+import { Package, TrendingUp, AlertTriangle, ShoppingBag, Check, X } from "lucide-react";
 
 type ProductRow = IProduct & { _id: string };
 
@@ -59,6 +59,7 @@ export default function AdminInventarioPage() {
   }
 
   const totalUnits    = products.reduce((s, p) => s + (p.stock ?? 0), 0);
+  const totalSold     = products.reduce((s, p) => s + (p.sold ?? 0), 0);
   const totalRevenue  = products.reduce((s, p) => s + (p.stock ?? 0) * p.price, 0);
   const lowStockCount = products.filter(p => (p.stock ?? 0) > 0 && (p.stock ?? 0) <= 3).length;
   const outOfStock    = products.filter(p => (p.stock ?? 0) === 0).length;
@@ -71,7 +72,7 @@ export default function AdminInventarioPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatsCard
           label="Unidades en stock"
           value={totalUnits}
@@ -80,11 +81,18 @@ export default function AdminInventarioPage() {
           sub={`${outOfStock} sin stock`}
         />
         <StatsCard
+          label="Unidades vendidas"
+          value={totalSold}
+          icon={ShoppingBag}
+          color="green"
+          sub="Total acumulado"
+        />
+        <StatsCard
           label="Ingresos potenciales"
           value={`₡${totalRevenue.toLocaleString("es-CR")}`}
           icon={TrendingUp}
           color="green"
-          sub="Si se vende todo el inventario"
+          sub="Si se vende todo"
         />
         <StatsCard
           label="Stock bajo"
@@ -107,6 +115,7 @@ export default function AdminInventarioPage() {
                   <th className="text-left px-4 py-3 hidden md:table-cell">Categoría</th>
                   <th className="text-left px-4 py-3">Precio</th>
                   <th className="text-left px-4 py-3">Stock</th>
+                  <th className="text-left px-4 py-3 hidden sm:table-cell">Vendidos</th>
                   <th className="text-left px-4 py-3 hidden sm:table-cell">Ingreso potencial</th>
                   <th className="text-left px-4 py-3 hidden sm:table-cell">Estado</th>
                 </tr>
@@ -167,6 +176,11 @@ export default function AdminInventarioPage() {
                         </button>
                       )}
                     </td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-brand-muted text-brand-dark/70">
+                        {p.sold ?? 0}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 hidden sm:table-cell text-brand-dark/60">
                       {(p.stock ?? 0) > 0
                         ? `₡${((p.stock ?? 0) * p.price).toLocaleString("es-CR")}`
@@ -183,7 +197,7 @@ export default function AdminInventarioPage() {
                 ))}
                 {products.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-brand-dark/40">
+                    <td colSpan={7} className="px-4 py-8 text-center text-brand-dark/40">
                       No hay productos en el catálogo.
                     </td>
                   </tr>

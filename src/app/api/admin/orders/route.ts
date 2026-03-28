@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
+import { Product } from "@/models/Product";
 import { getSession } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
@@ -44,6 +45,26 @@ export async function POST(request: NextRequest) {
     quantity:    items[0]?.quantity    ?? 1,
     options:     items[0]?.itemToppings?.flat() ?? [],
   });
+
+  // Descontar stock e incrementar vendidos por cada item del pedido
+  const stockOps = items
+    .filter((i: { productId?: string; quantity?: number }) => i.productId)
+    .map((i: { productId: string; quantity: number }) => ({
+      updateOne: {
+        filter: { _id: i.productId, tenantId: session.tenantId },
+        // Pipeline de agregación para garantizar que stock no baje de 0
+        update: [{
+          $set: {
+            stock: { $max: [0, { $subtract: ["$stock", i.quantity] }] },
+            sold:  { $add: [{ $ifNull: ["$sold", 0] }, i.quantity] },
+          },
+        }],
+      },
+    }));
+
+  if (stockOps.length > 0) {
+    await Product.bulkWrite(stockOps);
+  }
 
   return NextResponse.json({ order }, { status: 201 });
 }

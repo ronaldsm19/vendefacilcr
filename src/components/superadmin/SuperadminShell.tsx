@@ -1,22 +1,49 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, Zap } from "lucide-react";
 import SuperadminSidebar from "@/components/superadmin/SuperadminSidebar";
 
 export default function SuperadminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
 
+  // Auth guard — skip on login page
+  useEffect(() => {
+    if (pathname === "/superadmin/login") {
+      setAuthChecked(true);
+      return;
+    }
+    fetch("/api/superadmin/auth/me").then((res) => {
+      if (res.status === 401) {
+        router.replace("/superadmin/login");
+      } else {
+        setAuthChecked(true);
+      }
+    }).catch(() => {
+      router.replace("/superadmin/login");
+    });
+  }, [pathname, router]);
+
   if (pathname === "/superadmin/login") {
     return (
       <div className="min-h-screen" style={{ background: "#06060A" }}>
         {children}
+      </div>
+    );
+  }
+
+  if (!authChecked) {
+    return (
+      <div className="flex h-screen items-center justify-center" style={{ background: "#06060A" }}>
+        <p className="text-white/30 text-sm">Verificando sesión...</p>
       </div>
     );
   }

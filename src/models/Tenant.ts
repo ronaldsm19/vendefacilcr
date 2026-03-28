@@ -17,6 +17,10 @@ export interface ITenant {
   plan: "emprende" | "pro" | "premium";
   status: "active" | "inactive" | "suspended";
   theme: ITenantTheme;
+  instagram: string;
+  facebook: string;
+  tiktok: string;
+  youtube: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +40,10 @@ const TenantSchema = new Schema(
       secondaryColor: { type: String, default: "#FF8C42" },
       accentColor:    { type: String, default: "#FFD166" },
     },
+    instagram: { type: String, default: "" },
+    facebook:  { type: String, default: "" },
+    tiktok:    { type: String, default: "" },
+    youtube:   { type: String, default: "" },
   },
   { timestamps: true }
 );

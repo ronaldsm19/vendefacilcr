@@ -17,6 +17,7 @@ export interface IProduct {
   deliveryNote: string;    // nota de horarios/costo de envío
   offers: { qty: number; price: number }[];  // ofertas por volumen
   stock: number;
+  sold: number;            // unidades vendidas acumuladas
   createdAt: Date;
   updatedAt: Date;
 }
@@ -79,6 +80,11 @@ const ProductSchema = new Schema(
       type: Number,
       default: 0,
       min: [0, "El stock no puede ser negativo"],
+    },
+    sold: {
+      type: Number,
+      default: 0,
+      min: [0, "Las unidades vendidas no pueden ser negativas"],
     },
   },
   { timestamps: true }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Zap } from "lucide-react";
 
@@ -10,6 +10,28 @@ export default function SuperadminLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  // Si ya hay sesión activa, redirige directo al panel
+  useEffect(() => {
+    fetch("/api/superadmin/auth/me").then((res) => {
+      if (res.ok) {
+        router.replace("/superadmin");
+      } else {
+        setChecking(false);
+      }
+    }).catch(() => {
+      setChecking(false);
+    });
+  }, [router]);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#06060A" }}>
+        <p className="text-white/30 text-sm">Verificando sesión...</p>
+      </div>
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

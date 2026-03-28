@@ -7,6 +7,7 @@ import { SeedProduct } from "@/data/seed";
 interface WhatsAppButtonProps {
   product?: SeedProduct & { _id?: string };
   floating?: boolean;
+  whatsappNumber?: string;
   className?: string;
 }
 
@@ -113,10 +114,12 @@ export function WhatsAppInlineButton({
 }
 
 // ── Floating button (fixed bottom-right) ─────────────────────────
-export default function WhatsAppButton({ floating }: WhatsAppButtonProps) {
+export default function WhatsAppButton({ floating, whatsappNumber }: WhatsAppButtonProps) {
   if (!floating) return null;
 
-  const url = buildWhatsAppMessage();
+  const number = whatsappNumber ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
+  const msg    = encodeURIComponent("Hola! Quiero hacer un pedido 😊");
+  const url    = `https://wa.me/${number}?text=${msg}`;
 
   return (
     <motion.a

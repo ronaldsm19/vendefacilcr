@@ -18,8 +18,8 @@ export const metadata: Metadata = {
   description:
     "Creá tu página de ventas profesional en minutos. Vendé por WhatsApp e Instagram como un negocio establecido. Para emprendedores costarricenses.",
   icons: {
-    icon: "/icon-square.png",
-    apple: "/icon-square.png",
+    icon: "/favicon.svg",
+    apple: "/favicon.svg",
   },
   openGraph: {
     title: "VendeFácil | Tu tienda online lista para vender",

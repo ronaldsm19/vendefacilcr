@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     // Generar nombre único
     const ext = file.name.split(".").pop() ?? "jpg";
     const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const filePath = `${folder}/${fileName}`;
+    const filePath = `vendefacilcr/${session.tenantSlug}/${folder}/${fileName}`;
 
     // Convertir File a ArrayBuffer para Supabase
     const arrayBuffer = await file.arrayBuffer();

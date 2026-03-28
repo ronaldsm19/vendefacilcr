@@ -6,7 +6,7 @@ import BestSellersSection from "@/components/BestSellersSection";
 import ProductsSection from "@/components/ProductsSection";
 import TrustSection from "@/components/TrustSection";
 import AboutSection from "@/components/AboutSection";
-import Footer from "@/components/Footer";
+import Footer, { type SocialLinks } from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
@@ -23,7 +23,12 @@ async function getTenant(slug: string) {
       _id: string;
       slug: string;
       name: string;
+      logoUrl: string;
       whatsappNumber: string;
+      instagram: string;
+      facebook: string;
+      tiktok: string;
+      youtube: string;
       theme: { primaryColor: string; secondaryColor: string; accentColor: string };
     };
   } catch {
@@ -74,8 +79,15 @@ export default async function TenantStorefront({
 
   const { primaryColor, secondaryColor, accentColor } = tenant.theme;
 
+  const social: SocialLinks = {
+    whatsapp:  tenant.whatsappNumber || undefined,
+    instagram: tenant.instagram      || undefined,
+    facebook:  tenant.facebook       || undefined,
+    tiktok:    tenant.tiktok         || undefined,
+    youtube:   tenant.youtube        || undefined,
+  };
+
   return (
-    // Inject tenant CSS vars — overrides @theme color vars for all children
     <div
       style={
         {
@@ -91,8 +103,8 @@ export default async function TenantStorefront({
       <ProductsSection products={products} />
       <TrustSection />
       <AboutSection aboutData={settings?.about} />
-      <Footer />
-      <WhatsAppButton floating />
+      <Footer tenantName={tenant.name} logoUrl={tenant.logoUrl || undefined} social={social} />
+      <WhatsAppButton floating whatsappNumber={tenant.whatsappNumber} />
     </div>
   );
 }
