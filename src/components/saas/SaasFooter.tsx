@@ -1,3 +1,11 @@
+const WA_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50661266865";
+
+function formatPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  if (d.startsWith("506") && d.length >= 11) return `+506 ${d.slice(3, 7)}-${d.slice(7, 11)}`;
+  return `+${d}`;
+}
+
 const NAV_LINKS = [
   { label: "Características", href: "#caracteristicas" },
   { label: "Cómo funciona",   href: "#como-funciona" },
@@ -33,7 +41,7 @@ export default function SaasFooter() {
                 </svg>
               </a>
               <a
-                href="https://wa.me/50661266865"
+                href={`https://wa.me/${WA_NUMBER}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="WhatsApp"
@@ -65,7 +73,7 @@ export default function SaasFooter() {
           <div>
             <h3 className="text-xs font-semibold text-white/40 uppercase tracking-[0.2em] mb-5">Contacto</h3>
             <ul className="space-y-2.5 text-sm text-white/45">
-              <li>WhatsApp: +506 6126-6865</li>
+              <li>WhatsApp: {formatPhone(WA_NUMBER)}</li>
               <li>Costa Rica</li>
               <li>Lun – Vie: 8am – 6pm</li>
             </ul>

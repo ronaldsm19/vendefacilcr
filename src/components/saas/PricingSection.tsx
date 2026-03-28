@@ -69,7 +69,7 @@ const PLANS = [
 ];
 
 function waUrl(planName: string) {
-  return `https://wa.me/50661266865?text=${encodeURIComponent(
+  return `https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50661266865"}?text=${encodeURIComponent(
     `Hola! Me interesa el plan ${planName} de VendeFácil 🚀`
   )}`;
 }

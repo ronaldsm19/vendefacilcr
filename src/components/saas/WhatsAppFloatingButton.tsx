@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 
-const WA_URL = `https://wa.me/50661266865?text=${encodeURIComponent("Hola! Me interesa conocer más sobre VendeFácil 🚀")}`;
+const WA_URL = `https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50661266865"}?text=${encodeURIComponent("Hola! Me interesa conocer más sobre VendeFácil 🚀")}`;
 
 export default function WhatsAppFloatingButton() {
   return (

@@ -13,7 +13,7 @@ const fadeUp = (delay = 0) => ({
   },
 });
 
-const WA_URL = `https://wa.me/50661266865?text=${encodeURIComponent(
+const WA_URL = `https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50661266865"}?text=${encodeURIComponent(
   "Hola! Quiero empezar con VendeFácil para mi negocio 🚀"
 )}`;
 

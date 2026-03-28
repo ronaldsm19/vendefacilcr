@@ -11,7 +11,7 @@ const NAV_LINKS = [
   { label: "FAQ",             href: "#faq"              },
 ];
 
-const WA_URL = `https://wa.me/50661266865?text=${encodeURIComponent("Hola! Me interesa VendeFácil para mi negocio 🚀")}`;
+const WA_URL = `https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50661266865"}?text=${encodeURIComponent("Hola! Me interesa VendeFácil para mi negocio 🚀")}`;
 
 export default function SaasNavbar() {
   const [scrolled, setScrolled] = useState(false);
