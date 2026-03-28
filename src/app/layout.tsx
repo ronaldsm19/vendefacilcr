@@ -25,7 +25,6 @@ export const metadata: Metadata = {
     title: "VendeFácil | Tu tienda online lista para vender",
     description: "Creá tu página de ventas profesional en minutos. Para emprendedores costarricenses.",
     type: "website",
-    images: ["/logo.png"],
   },
 };
 
