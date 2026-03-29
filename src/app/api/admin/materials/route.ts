@@ -20,21 +20,22 @@ export async function POST(request: NextRequest) {
 
   await connectToDatabase();
   const body = await request.json();
-  const { name, type, unit, stock, minStock, costPerUnit, notes } = body;
+  const { name, type, unit, stock, minStock, unitsPerPurchase, costPerUnit, notes } = body;
 
   if (!name || !unit) {
     return NextResponse.json({ error: "Nombre y unidad son requeridos" }, { status: 400 });
   }
 
   const material = await RawMaterial.create({
-    tenantId:    session.tenantId,
+    tenantId:         session.tenantId,
     name,
-    type:        type ?? "ingrediente",
+    type:             type ?? "ingrediente",
     unit,
-    stock:       typeof stock       === "number" ? stock       : 0,
-    minStock:    typeof minStock    === "number" ? minStock    : 0,
-    costPerUnit: typeof costPerUnit === "number" ? costPerUnit : undefined,
-    notes:       notes ?? undefined,
+    stock:            typeof stock            === "number" ? stock            : 0,
+    minStock:         typeof minStock         === "number" ? minStock         : 0,
+    unitsPerPurchase: typeof unitsPerPurchase === "number" ? unitsPerPurchase : undefined,
+    costPerUnit:      typeof costPerUnit      === "number" ? costPerUnit      : undefined,
+    notes:            notes ?? undefined,
   });
 
   return NextResponse.json({ material }, { status: 201 });

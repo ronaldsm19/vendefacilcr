@@ -37,13 +37,14 @@ const typeBadgeColor: Record<RawMaterialType, string> = {
 };
 
 const emptyForm = {
-  name:        "",
-  type:        "ingrediente" as RawMaterialType,
-  unit:        "",
-  stock:       "",
-  minStock:    "",
-  costPerUnit: "",
-  notes:       "",
+  name:             "",
+  type:             "ingrediente" as RawMaterialType,
+  unit:             "",
+  stock:            "",
+  minStock:         "",
+  unitsPerPurchase: "",
+  costPerUnit:      "",
+  notes:            "",
 };
 
 export default function AdminMaterialesPage() {
@@ -104,13 +105,14 @@ export default function AdminMaterialesPage() {
   function openEdit(m: MaterialRow) {
     setFormEditing(m);
     setForm({
-      name:        m.name,
-      type:        m.type,
-      unit:        m.unit,
-      stock:       String(m.stock ?? 0),
-      minStock:    String(m.minStock ?? 0),
-      costPerUnit: m.costPerUnit !== undefined ? String(m.costPerUnit) : "",
-      notes:       m.notes ?? "",
+      name:             m.name,
+      type:             m.type,
+      unit:             m.unit,
+      stock:            String(m.stock ?? 0),
+      minStock:         String(m.minStock ?? 0),
+      unitsPerPurchase: m.unitsPerPurchase !== undefined ? String(m.unitsPerPurchase) : "",
+      costPerUnit:      m.costPerUnit      !== undefined ? String(m.costPerUnit)      : "",
+      notes:            m.notes ?? "",
     });
     setShowForm(true);
   }
@@ -119,13 +121,14 @@ export default function AdminMaterialesPage() {
     e.preventDefault();
     setSaving(true);
     const payload = {
-      name:        form.name,
-      type:        form.type,
-      unit:        form.unit,
-      stock:       parseFloat(form.stock) || 0,
-      minStock:    parseFloat(form.minStock) || 0,
-      costPerUnit: form.costPerUnit !== "" ? parseFloat(form.costPerUnit) : undefined,
-      notes:       form.notes || undefined,
+      name:             form.name,
+      type:             form.type,
+      unit:             form.unit,
+      stock:            parseFloat(form.stock) || 0,
+      minStock:         parseFloat(form.minStock) || 0,
+      unitsPerPurchase: form.unitsPerPurchase !== "" ? parseFloat(form.unitsPerPurchase) : undefined,
+      costPerUnit:      form.costPerUnit      !== "" ? parseFloat(form.costPerUnit)      : undefined,
+      notes:            form.notes || undefined,
     };
 
     if (formEditing) {
@@ -315,9 +318,16 @@ export default function AdminMaterialesPage() {
                       </td>
 
                       <td className="px-4 py-3 hidden md:table-cell text-brand-dark/60 text-xs">
-                        {m.costPerUnit !== undefined
-                          ? `₡${m.costPerUnit.toLocaleString("es-CR")}`
-                          : "—"}
+                        {m.costPerUnit !== undefined ? (
+                          <span>
+                            ₡{m.costPerUnit.toLocaleString("es-CR")}
+                            {m.unitsPerPurchase !== undefined && (
+                              <span className="block text-brand-dark/30">
+                                /{m.unitsPerPurchase} {m.unit}
+                              </span>
+                            )}
+                          </span>
+                        ) : "—"}
                       </td>
 
                       <td className="px-4 py-3 hidden sm:table-cell">
@@ -428,10 +438,10 @@ export default function AdminMaterialesPage() {
                 </datalist>
               </div>
 
-              {/* Stock (only on create) */}
+              {/* Stock actual (only on create) */}
               {!formEditing && (
                 <div>
-                  <label className="block text-sm font-medium text-brand-dark mb-1">Stock inicial</label>
+                  <label className="block text-sm font-medium text-brand-dark mb-1">Stock actual</label>
                   <input
                     type="number"
                     min={0}
@@ -458,9 +468,28 @@ export default function AdminMaterialesPage() {
                 />
               </div>
 
-              {/* Costo por unidad */}
+              {/* Cantidad por unidad de compra */}
               <div>
-                <label className="block text-sm font-medium text-brand-dark mb-1">Costo por unidad (₡)</label>
+                <label className="block text-sm font-medium text-brand-dark mb-1">
+                  Cantidad por unidad de compra
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.001"
+                  value={form.unitsPerPurchase}
+                  onChange={(e) => setForm(f => ({ ...f, unitsPerPurchase: e.target.value }))}
+                  placeholder={`Ej: 250 (${form.unit || "unidades"} por compra`}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+                />
+                <p className="text-xs text-brand-dark/40 mt-1">¿Cuánto trae cada unidad que comprás?</p>
+              </div>
+
+              {/* Costo por unidad de compra */}
+              <div>
+                <label className="block text-sm font-medium text-brand-dark mb-1">
+                  Costo por unidad de compra (₡)
+                </label>
                 <input
                   type="number"
                   min={0}
@@ -470,6 +499,7 @@ export default function AdminMaterialesPage() {
                   placeholder="Opcional"
                   className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
                 />
+                <p className="text-xs text-brand-dark/40 mt-1">Precio que pagás por esa unidad de compra</p>
               </div>
 
               {/* Notas */}
