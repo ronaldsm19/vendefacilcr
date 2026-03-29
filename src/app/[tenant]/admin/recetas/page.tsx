@@ -24,6 +24,7 @@ import { IRawMaterial } from "@/models/RawMaterial";
 import { IRecipe, IRecipeIngredient } from "@/models/Recipe";
 
 type RecipeRow = IRecipe & { _id: string };
+type ProductOption = { _id: string; name: string };
 
 type ValidateResult = {
   canMake: number;
@@ -53,6 +54,7 @@ function computeCost(recipe: RecipeRow, materials: IRawMaterial[]): number | nul
 export default function AdminRecetasPage() {
   const [recipes, setRecipes]             = useState<RecipeRow[]>([]);
   const [materials, setMaterials]         = useState<IRawMaterial[]>([]);
+  const [products, setProducts]           = useState<ProductOption[]>([]);
   const [loading, setLoading]             = useState(true);
   const [saving, setSaving]               = useState(false);
   const [showForm, setShowForm]           = useState(false);
@@ -65,12 +67,14 @@ export default function AdminRecetasPage() {
   const [validation, setValidation]       = useState<ValidateResult | null>(null);
 
   async function load() {
-    const [rr, rm] = await Promise.all([
+    const [rr, rm, rp] = await Promise.all([
       fetch("/api/admin/recipes").then((r) => r.json()),
       fetch("/api/admin/materials").then((r) => r.json()),
+      fetch("/api/admin/products").then((r) => r.json()),
     ]);
     setRecipes(rr.recipes ?? []);
     setMaterials(rm.materials ?? []);
+    setProducts(rp.products ?? []);
     setLoading(false);
   }
 
@@ -380,19 +384,32 @@ export default function AdminRecetasPage() {
             <DialogTitle>{formEditing ? "Editar receta" : "Nueva receta"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleFormSubmit} className="px-6 pb-2 space-y-4">
-            {/* Nombre */}
+            {/* Nombre — lista de productos */}
             <div>
               <label className="block text-sm font-medium text-brand-dark mb-1">
-                Nombre <span className="text-red-400">*</span>
+                Producto <span className="text-red-400">*</span>
               </label>
-              <input
-                required
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="Ej: Apretado de Fresa con Crema"
-                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-              />
+              {products.length === 0 ? (
+                <p className="text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">
+                  No hay productos registrados. Agregá productos primero.
+                </p>
+              ) : (
+                <select
+                  required
+                  value={form.name}
+                  onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
+                >
+                  <option value="">Seleccionar producto...</option>
+                  {/* Si editando y el nombre no está en la lista, mostrarlo igual */}
+                  {formEditing && form.name && !products.find(p => p.name === form.name) && (
+                    <option value={form.name}>{form.name}</option>
+                  )}
+                  {products.map((p) => (
+                    <option key={p._id} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Descripción */}
