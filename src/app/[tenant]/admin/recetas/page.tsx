@@ -45,7 +45,12 @@ function computeCost(recipe: RecipeRow, materials: IRawMaterial[]): number | nul
   for (const ing of recipe.ingredients) {
     const mat = materials.find((m) => String(m._id) === String(ing.rawMaterialId));
     if (!mat?.costPerUnit) return null;
-    total += ing.quantity * mat.costPerUnit;
+    // Si tiene unitsPerPurchase: costo por unidad base = costPerUnit / unitsPerPurchase
+    // Ej: vainilla ₡890/250ml → ₡3.56/ml × 7.5ml = ₡26.70
+    const costPerBaseUnit = mat.unitsPerPurchase && mat.unitsPerPurchase > 0
+      ? mat.costPerUnit / mat.unitsPerPurchase
+      : mat.costPerUnit;
+    total += ing.quantity * costPerBaseUnit;
   }
   const batchYield = recipe.yield > 0 ? recipe.yield : 1;
   return total / batchYield;
