@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
-import { Recipe } from "@/models/Recipe";
+import { Recipe, IRecipeIngredient } from "@/models/Recipe";
 import { RawMaterial } from "@/models/RawMaterial";
 import { getSession } from "@/lib/auth";
 
@@ -21,7 +21,7 @@ export async function POST(
     return NextResponse.json({ canMake: 0, missing: [], message: "La receta no tiene ingredientes" });
   }
 
-  const materialIds = recipe.ingredients.map((i) => i.rawMaterialId);
+  const materialIds = recipe.ingredients.map((i: IRecipeIngredient) => i.rawMaterialId);
   const materials = await RawMaterial.find({
     _id: { $in: materialIds },
     tenantId: session.tenantId,
