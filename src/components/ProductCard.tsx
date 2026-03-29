@@ -126,7 +126,7 @@ export default function ProductCard({ product, index = 0, whatsappNumber }: Prod
             <Button
               variant="outline"
               size="sm"
-              onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); }}
+              onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); trackClick(product._id); }}
             >
               Ver más
             </Button>

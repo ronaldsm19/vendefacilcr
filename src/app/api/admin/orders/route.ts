@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { Product } from "@/models/Product";
@@ -51,7 +52,10 @@ export async function POST(request: NextRequest) {
     .filter((i: { productId?: string; quantity?: number }) => i.productId)
     .map((i: { productId: string; quantity: number }) => ({
       updateOne: {
-        filter: { _id: i.productId, tenantId: session.tenantId },
+        filter: {
+          _id:      new mongoose.Types.ObjectId(i.productId),
+          tenantId: new mongoose.Types.ObjectId(session.tenantId),
+        },
         // Pipeline de agregación para garantizar que stock no baje de 0
         update: [{
           $set: {

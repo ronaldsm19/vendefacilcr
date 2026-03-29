@@ -12,6 +12,8 @@ import {
   LogOut,
   X,
   Warehouse,
+  FlaskConical,
+  BookOpen,
 } from "lucide-react";
 
 function buildNavItems(base: string) {
@@ -19,6 +21,8 @@ function buildNavItems(base: string) {
     { href: base,                       label: "Dashboard",     icon: LayoutDashboard },
     { href: `${base}/productos`,        label: "Productos",     icon: Package },
     { href: `${base}/inventario`,       label: "Inventario",    icon: Warehouse },
+    { href: `${base}/materiales`,       label: "Materiales",    icon: FlaskConical },
+    { href: `${base}/recetas`,          label: "Recetas",       icon: BookOpen },
     { href: `${base}/pedidos`,          label: "Pedidos",       icon: ShoppingBag },
     { href: `${base}/gastos`,           label: "Gastos",        icon: Receipt },
     { href: `${base}/finanzas`,         label: "Finanzas",      icon: TrendingUp },
