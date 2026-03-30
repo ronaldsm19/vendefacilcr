@@ -6,17 +6,17 @@ import { IRawMaterial } from "@/models/RawMaterial";
 
 interface MaterialComboboxProps {
   materials: IRawMaterial[];
-  value: string;           // rawMaterialId seleccionado
+  value: string;
   onChange: (id: string) => void;
 }
 
 export default function MaterialCombobox({ materials, value, onChange }: MaterialComboboxProps) {
-  const selected   = materials.find((m) => String(m._id) === value);
-  const [query, setQuery]   = useState(selected ? `${selected.name} (${selected.unit})` : "");
-  const [open, setOpen]     = useState(false);
-  const containerRef        = useRef<HTMLDivElement>(null);
+  const selected      = materials.find((m) => String(m._id) === value);
+  const [query, setQuery]       = useState(selected ? `${selected.name} (${selected.unit})` : "");
+  const [open, setOpen]         = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const containerRef  = useRef<HTMLDivElement>(null);
 
-  // Sync label when value changes externally (e.g. on edit open)
   useEffect(() => {
     const mat = materials.find((m) => String(m._id) === value);
     setQuery(mat ? `${mat.name} (${mat.unit})` : "");
@@ -28,7 +28,6 @@ export default function MaterialCombobox({ materials, value, onChange }: Materia
     function handleClick(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         close();
-        // If nothing selected, reset the text
         const mat = materials.find((m) => String(m._id) === value);
         setQuery(mat ? `${mat.name} (${mat.unit})` : "");
       }
@@ -36,6 +35,25 @@ export default function MaterialCombobox({ materials, value, onChange }: Materia
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [close, value, materials]);
+
+  // Recalculate dropdown position when opening
+  function openDropdown() {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const dropdownH  = Math.min(220, spaceBelow - 8);
+
+      setDropdownStyle({
+        position: "fixed",
+        top:      rect.bottom + 4,
+        left:     rect.left,
+        width:    rect.width,
+        maxHeight: Math.max(dropdownH, 120),
+        zIndex:   9999,
+      });
+    }
+    setOpen(true);
+  }
 
   const filtered = query.trim()
     ? materials.filter((m) =>
@@ -45,14 +63,13 @@ export default function MaterialCombobox({ materials, value, onChange }: Materia
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     setQuery(e.target.value);
-    setOpen(true);
-    // Clear selection if user is typing something different
+    if (!open) openDropdown();
     if (value) onChange("");
   }
 
   function handleFocus() {
     setQuery("");
-    setOpen(true);
+    openDropdown();
   }
 
   function select(mat: IRawMaterial) {
@@ -78,7 +95,10 @@ export default function MaterialCombobox({ materials, value, onChange }: Materia
       </div>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-brand-muted rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+        <div
+          style={dropdownStyle}
+          className="bg-white border border-brand-muted rounded-xl shadow-lg overflow-y-auto"
+        >
           {filtered.length === 0 ? (
             <p className="px-3 py-2.5 text-xs text-brand-dark/40">Sin resultados</p>
           ) : (

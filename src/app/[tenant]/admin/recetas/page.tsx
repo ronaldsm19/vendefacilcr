@@ -424,7 +424,7 @@ export default function AdminRecetasPage() {
 
       {/* Add/Edit Recipe Modal */}
       <Dialog open={showForm} onOpenChange={(open) => { if (!open) setShowForm(false); }}>
-        <DialogContent className="sm:max-w-2xl flex flex-col overflow-hidden">
+        <DialogContent className="sm:max-w-2xl flex flex-col overflow-hidden h-[90vh]">
           <DialogHeader>
             <DialogTitle>{formEditing ? "Editar receta" : "Nueva receta"}</DialogTitle>
           </DialogHeader>
