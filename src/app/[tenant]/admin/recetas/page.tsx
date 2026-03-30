@@ -19,12 +19,16 @@ import {
   XCircle,
   FlaskConical,
   ChevronRight,
+  ChefHat,
+  History,
 } from "lucide-react";
 import { IRawMaterial } from "@/models/RawMaterial";
 import { IRecipe, IRecipeIngredient } from "@/models/Recipe";
+import { IProduction } from "@/models/Production";
 
-type RecipeRow = IRecipe & { _id: string };
+type RecipeRow    = IRecipe & { _id: string };
 type ProductOption = { _id: string; name: string };
+type ProductionRow = IProduction & { _id: string };
 
 type ValidateResult = {
   canMake: number;
@@ -60,6 +64,7 @@ export default function AdminRecetasPage() {
   const [recipes, setRecipes]             = useState<RecipeRow[]>([]);
   const [materials, setMaterials]         = useState<IRawMaterial[]>([]);
   const [products, setProducts]           = useState<ProductOption[]>([]);
+  const [productions, setProductions]     = useState<ProductionRow[]>([]);
   const [loading, setLoading]             = useState(true);
   const [saving, setSaving]               = useState(false);
   const [showForm, setShowForm]           = useState(false);
@@ -68,19 +73,45 @@ export default function AdminRecetasPage() {
   const [rows, setRows]                   = useState<IngredientRow[]>([{ rawMaterialId: "", quantity: "" }]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [selected, setSelected]           = useState<RecipeRow | null>(null);
+  const [producing, setProducing]         = useState<RecipeRow | null>(null);
+  const [batches, setBatches]             = useState("1");
+  const [productionNotes, setProductionNotes] = useState("");
   const [validating, setValidating]       = useState(false);
   const [validation, setValidation]       = useState<ValidateResult | null>(null);
 
   async function load() {
-    const [rr, rm, rp] = await Promise.all([
+    const [rr, rm, rp, rprod] = await Promise.all([
       fetch("/api/admin/recipes").then((r) => r.json()),
       fetch("/api/admin/materials").then((r) => r.json()),
       fetch("/api/admin/products").then((r) => r.json()),
+      fetch("/api/admin/productions").then((r) => r.json()),
     ]);
     setRecipes(rr.recipes ?? []);
     setMaterials(rm.materials ?? []);
     setProducts(rp.products ?? []);
+    setProductions(rprod.productions ?? []);
     setLoading(false);
+  }
+
+  async function handleProduce() {
+    const n = parseInt(batches);
+    if (!producing || isNaN(n) || n < 1) return;
+    setSaving(true);
+    const res = await fetch("/api/admin/productions", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ recipeId: producing._id, batches: n, notes: productionNotes || undefined }),
+    });
+    const data = await res.json();
+    setSaving(false);
+    if (!res.ok) {
+      alert(data.error ?? "Error al registrar producción");
+      return;
+    }
+    await load();
+    setProducing(null);
+    setBatches("1");
+    setProductionNotes("");
   }
 
   useEffect(() => { load(); }, []);
@@ -272,6 +303,14 @@ export default function AdminRecetasPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 pt-1 border-t border-brand-muted">
+                  <Button
+                    size="sm"
+                    className="flex-1 text-xs"
+                    onClick={() => { setProducing(recipe); setBatches("1"); setProductionNotes(""); }}
+                  >
+                    <ChefHat className="w-3.5 h-3.5 mr-1" />
+                    Producir
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -537,6 +576,136 @@ export default function AdminRecetasPage() {
               }}
             >
               {saving ? "Guardando..." : formEditing ? "Guardar cambios" : "Crear receta"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Production History */}
+      {productions.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-brand-dark/50" />
+            <h2 className="font-brand text-lg font-bold text-brand-dark">Historial de producción</h2>
+          </div>
+          <div className="bg-white rounded-2xl card-shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[520px]">
+                <thead>
+                  <tr className="border-b border-brand-muted text-brand-dark/50 text-xs uppercase tracking-wider">
+                    <th className="text-left px-4 py-3">Fecha</th>
+                    <th className="text-left px-4 py-3">Receta</th>
+                    <th className="text-left px-4 py-3">Tandas</th>
+                    <th className="text-left px-4 py-3">Unidades</th>
+                    <th className="text-left px-4 py-3 hidden md:table-cell">Notas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productions.map((p) => (
+                    <tr key={p._id} className="border-b border-brand-muted/50 hover:bg-brand-muted/20 transition-colors">
+                      <td className="px-4 py-3 text-brand-dark/60 text-xs whitespace-nowrap">
+                        {new Date(p.createdAt).toLocaleDateString("es-CR", {
+                          day:   "2-digit",
+                          month: "short",
+                          year:  "numeric",
+                          hour:  "2-digit",
+                          minute:"2-digit",
+                        })}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-brand-dark">{p.recipeName}</td>
+                      <td className="px-4 py-3 text-brand-dark/70">{p.batches}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600">
+                          {p.unitsProduced} u
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell text-brand-dark/40 text-xs">
+                        {p.notes ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Produce Modal */}
+      <Dialog open={!!producing} onOpenChange={(open) => { if (!open) setProducing(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Registrar producción</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-2 space-y-4">
+            <p className="text-sm text-brand-dark/70">
+              Receta: <span className="font-semibold text-brand-dark">{producing?.name}</span>
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-brand-dark mb-1">
+                  Tandas producidas
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={batches}
+                  onChange={(e) => setBatches(e.target.value)}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+                />
+              </div>
+              <div className="flex flex-col justify-end">
+                <p className="text-xs text-brand-dark/50 mb-1">Unidades a producir</p>
+                <p className="text-2xl font-bold gradient-text">
+                  {(parseInt(batches) || 0) * (producing?.yield ?? 1)}
+                </p>
+              </div>
+            </div>
+
+            {/* Ingredients preview */}
+            {producing && producing.ingredients.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-brand-dark/50 uppercase tracking-wide mb-2">
+                  Ingredientes a descontar
+                </p>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {producing.ingredients.map((ing, i) => {
+                    const total = ing.quantity * (parseInt(batches) || 1);
+                    const mat = materials.find(m => String(m._id) === String(ing.rawMaterialId));
+                    const hasStock = (mat?.stock ?? 0) >= total;
+                    return (
+                      <div key={i} className={`flex items-center justify-between text-sm px-3 py-1.5 rounded-lg ${hasStock ? "bg-brand-muted/30" : "bg-red-50"}`}>
+                        <span className={hasStock ? "text-brand-dark/70" : "text-red-600 font-medium"}>
+                          {ing.rawMaterialName}
+                        </span>
+                        <span className={`text-xs font-semibold ${hasStock ? "text-brand-dark/50" : "text-red-500"}`}>
+                          -{total} {ing.unit}
+                          {!hasStock && <span className="ml-1">(sin stock)</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Notas (opcional)</label>
+              <input
+                type="text"
+                value={productionNotes}
+                onChange={(e) => setProductionNotes(e.target.value)}
+                placeholder="Ej: Producción para pedido del sábado"
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProducing(null)}>Cancelar</Button>
+            <Button onClick={handleProduce} disabled={saving || !batches || parseInt(batches) < 1}>
+              {saving ? "Registrando..." : "Confirmar producción"}
             </Button>
           </DialogFooter>
         </DialogContent>
