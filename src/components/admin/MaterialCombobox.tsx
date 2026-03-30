@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, FlaskConical } from "lucide-react";
 import { IRawMaterial } from "@/models/RawMaterial";
 
@@ -11,46 +12,38 @@ interface MaterialComboboxProps {
 }
 
 export default function MaterialCombobox({ materials, value, onChange }: MaterialComboboxProps) {
-  const selected      = materials.find((m) => String(m._id) === value);
-  const [query, setQuery]       = useState(selected ? `${selected.name} (${selected.unit})` : "");
-  const [open, setOpen]         = useState(false);
-  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
-  const containerRef  = useRef<HTMLDivElement>(null);
+  const selected     = materials.find((m) => String(m._id) === value);
+  const [query, setQuery]         = useState(selected ? `${selected.name} (${selected.unit})` : "");
+  const [open, setOpen]           = useState(false);
+  const [rect, setRect]           = useState<DOMRect | null>(null);
+  const containerRef              = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const mat = materials.find((m) => String(m._id) === value);
     setQuery(mat ? `${mat.name} (${mat.unit})` : "");
   }, [value, materials]);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setOpen(false);
+    const mat = materials.find((m) => String(m._id) === value);
+    setQuery(mat ? `${mat.name} (${mat.unit})` : "");
+  }, [value, materials]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        close();
-        const mat = materials.find((m) => String(m._id) === value);
-        setQuery(mat ? `${mat.name} (${mat.unit})` : "");
+      if (!containerRef.current?.contains(e.target as Node)) {
+        // Check if the click was inside the portal dropdown
+        const portal = document.getElementById("material-combobox-portal");
+        if (!portal?.contains(e.target as Node)) close();
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [close, value, materials]);
+  }, [close]);
 
-  // Recalculate dropdown position when opening
   function openDropdown() {
     if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const dropdownH  = Math.min(220, spaceBelow - 8);
-
-      setDropdownStyle({
-        position: "fixed",
-        top:      rect.bottom + 4,
-        left:     rect.left,
-        width:    rect.width,
-        maxHeight: Math.max(dropdownH, 120),
-        zIndex:   9999,
-      });
+      setRect(containerRef.current.getBoundingClientRect());
     }
     setOpen(true);
   }
@@ -78,6 +71,44 @@ export default function MaterialCombobox({ materials, value, onChange }: Materia
     setOpen(false);
   }
 
+  const dropdown = open && rect ? (
+    <div
+      id="material-combobox-portal"
+      style={{
+        position: "fixed",
+        top:      rect.bottom + 4,
+        left:     rect.left,
+        width:    rect.width,
+        zIndex:   9999,
+        maxHeight: 220,
+        overflowY: "auto",
+      }}
+      className="bg-white border border-brand-muted rounded-xl shadow-xl"
+    >
+      {filtered.length === 0 ? (
+        <p className="px-3 py-2.5 text-xs text-brand-dark/40">Sin resultados</p>
+      ) : (
+        filtered.map((m) => (
+          <button
+            key={String(m._id)}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => select(m)}
+            className={`w-full text-left px-3 py-2.5 hover:bg-brand-muted/30 flex items-center gap-2.5 border-b border-brand-muted/50 last:border-0 ${
+              String(m._id) === value ? "bg-brand-pink/5" : ""
+            }`}
+          >
+            <FlaskConical className="w-3.5 h-3.5 text-brand-pink shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-brand-dark truncate">{m.name}</p>
+              <p className="text-xs text-brand-dark/40">{m.unit}</p>
+            </div>
+          </button>
+        ))
+      )}
+    </div>
+  ) : null;
+
   return (
     <div ref={containerRef} className="relative flex-1">
       <div className="flex items-center border border-brand-muted rounded-xl px-3 py-2 text-sm gap-1.5 focus-within:border-brand-pink bg-white">
@@ -94,34 +125,10 @@ export default function MaterialCombobox({ materials, value, onChange }: Materia
         />
       </div>
 
-      {open && (
-        <div
-          style={dropdownStyle}
-          className="bg-white border border-brand-muted rounded-xl shadow-lg overflow-y-auto"
-        >
-          {filtered.length === 0 ? (
-            <p className="px-3 py-2.5 text-xs text-brand-dark/40">Sin resultados</p>
-          ) : (
-            filtered.map((m) => (
-              <button
-                key={String(m._id)}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => select(m)}
-                className={`w-full text-left px-3 py-2.5 hover:bg-brand-muted/30 flex items-center gap-2.5 border-b border-brand-muted/50 last:border-0 ${
-                  String(m._id) === value ? "bg-brand-pink/5" : ""
-                }`}
-              >
-                <FlaskConical className="w-3.5 h-3.5 text-brand-pink shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-brand-dark truncate">{m.name}</p>
-                  <p className="text-xs text-brand-dark/40">{m.unit}</p>
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      {/* Portal: rendered in document.body to escape parent transforms */}
+      {typeof window !== "undefined" && dropdown
+        ? createPortal(dropdown, document.body)
+        : null}
     </div>
   );
 }
