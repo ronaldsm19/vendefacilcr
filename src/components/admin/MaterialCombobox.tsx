@@ -57,7 +57,7 @@ export default function MaterialCombobox({ materials, value, onChange }: Materia
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     setQuery(e.target.value);
     if (!open) openDropdown();
-    if (value) onChange("");
+    // No llamar onChange("") aquí — solo cambiar el valor al seleccionar un item
   }
 
   function handleFocus() {
