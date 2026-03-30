@@ -25,6 +25,7 @@ import {
 import { IRawMaterial } from "@/models/RawMaterial";
 import { IRecipe, IRecipeIngredient } from "@/models/Recipe";
 import { IProduction } from "@/models/Production";
+import MaterialCombobox from "@/components/admin/MaterialCombobox";
 
 type RecipeRow    = IRecipe & { _id: string };
 type ProductOption = { _id: string; name: string };
@@ -524,18 +525,11 @@ export default function AdminRecetasPage() {
               <div className="space-y-2">
                 {rows.map((row, idx) => (
                   <div key={idx} className="flex gap-2 items-center">
-                    <select
+                    <MaterialCombobox
+                      materials={materials}
                       value={row.rawMaterialId}
-                      onChange={(e) => setRows(r => r.map((x, i) => i === idx ? { ...x, rawMaterialId: e.target.value } : x))}
-                      className="flex-1 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
-                    >
-                      <option value="">Seleccionar material...</option>
-                      {materials.map((m) => (
-                        <option key={String(m._id)} value={String(m._id)}>
-                          {m.name} ({m.unit})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(id) => setRows(r => r.map((x, i) => i === idx ? { ...x, rawMaterialId: id } : x))}
+                    />
                     <input
                       type="number"
                       min="0.001"
