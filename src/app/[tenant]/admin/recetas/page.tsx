@@ -384,10 +384,11 @@ export default function AdminRecetasPage() {
 
       {/* Add/Edit Recipe Modal */}
       <Dialog open={showForm} onOpenChange={(open) => { if (!open) setShowForm(false); }}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>{formEditing ? "Editar receta" : "Nueva receta"}</DialogTitle>
           </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
           <form onSubmit={handleFormSubmit} className="px-6 pb-2 space-y-4">
             {/* Nombre — lista de productos */}
             <div>
@@ -522,6 +523,7 @@ export default function AdminRecetasPage() {
               </div>
             </div>
           </form>
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
               Cancelar

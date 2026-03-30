@@ -49,19 +49,19 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="flex h-screen overflow-hidden bg-brand-muted/20">
-      {/* Desktop sidebar — fixed height, scrolls internally if needed */}
-      <div className="hidden md:flex shrink-0 h-screen overflow-y-auto">
+      {/* Desktop sidebar — only on lg+ (≥1024px), so phones in landscape still use drawer */}
+      <div className="hidden lg:flex shrink-0 h-screen overflow-y-auto">
         <AdminSidebar />
       </div>
 
-      {/* Mobile sidebar drawer */}
+      {/* Mobile/tablet sidebar drawer */}
       {sidebarOpen && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
             onClick={() => setSidebarOpen(false)}
           />
-          <div className="fixed inset-y-0 left-0 z-50 md:hidden">
+          <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
             <AdminSidebar onClose={() => setSidebarOpen(false)} />
           </div>
         </>
@@ -69,8 +69,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
       {/* Content area — scrolls independently of the sidebar */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile top bar */}
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-brand-dark shrink-0 z-30">
+        {/* Mobile/tablet top bar */}
+        <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-brand-dark shrink-0 z-30">
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
