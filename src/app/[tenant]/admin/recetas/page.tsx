@@ -424,7 +424,16 @@ export default function AdminRecetasPage() {
 
       {/* Add/Edit Recipe Modal */}
       <Dialog open={showForm} onOpenChange={(open) => { if (!open) setShowForm(false); }}>
-        <DialogContent className="sm:max-w-2xl flex flex-col overflow-hidden h-[90vh]">
+        <DialogContent
+          className="sm:max-w-2xl flex flex-col overflow-hidden h-[90vh]"
+          onInteractOutside={(e) => {
+            // Prevent Radix from closing the dialog when the user clicks inside
+            // the MaterialCombobox portal dropdown (rendered in document.body)
+            const target = (e as CustomEvent).detail?.originalEvent?.target as Node | null;
+            const portal = document.getElementById("material-combobox-portal");
+            if (portal && target && portal.contains(target)) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{formEditing ? "Editar receta" : "Nueva receta"}</DialogTitle>
           </DialogHeader>
