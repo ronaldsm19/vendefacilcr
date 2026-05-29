@@ -8,12 +8,15 @@
   --color-brand-yellow: #FFD166;
   --color-brand-dark:   #1A1A2E;
   --color-brand-muted:  #F8F0F5;
+  --color-surface:      #FFFFFF;
+  --color-surface-alt:  #F8F0F5;
 }
 
 /* Fonts and animations stay inline (no per-tenant override needed) */
 @theme inline {
-  --font-brand: var(--font-playfair), Georgia, serif;
-  --font-sans:  var(--font-inter), system-ui, sans-serif;
+  --font-brand:    var(--font-playfair), Georgia, serif;
+  --font-sans:     var(--font-inter), system-ui, sans-serif;
+  --font-primary:  var(--font-inter), system-ui, sans-serif;
 
   --animate-fade-up:       fade-up 0.6s ease-out forwards;
   --animate-fade-up-delay: fade-up 0.6s ease-out 0.2s forwards;
@@ -65,6 +68,10 @@ body {
 
 @utility card-shadow-hover {
   box-shadow: 0 16px 48px rgba(255, 107, 157, 0.24);
+}
+
+@utility font-primary {
+  font-family: var(--font-primary);
 }
 
 /* ─── SaaS / VendeFácil Design Tokens ──────────────────── */

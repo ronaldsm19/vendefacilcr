@@ -53,7 +53,7 @@ function ProductsGrid({ products, whatsappNumber }: ProductsSectionProps) {
             className={`px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 border cursor-pointer ${
               activeCategory === cat.key
                 ? "gradient-bg text-white border-transparent shadow-md"
-                : "bg-white text-brand-dark/60 border-brand-dark/10 hover:border-brand-pink/30 hover:text-brand-pink"
+                : "bg-surface text-brand-dark/60 border-brand-dark/10 hover:border-brand-pink/30 hover:text-brand-pink"
             }`}
           >
             {cat.label}
@@ -61,7 +61,7 @@ function ProductsGrid({ products, whatsappNumber }: ProductsSectionProps) {
               className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${
                 activeCategory === cat.key
                   ? "bg-white/20 text-white"
-                  : "bg-brand-muted text-brand-dark/50"
+                  : "bg-surface-alt text-brand-dark/50"
               }`}
             >
               {cat.key === "all"
@@ -97,7 +97,7 @@ function ProductsGrid({ products, whatsappNumber }: ProductsSectionProps) {
 
 export default function ProductsSection({ products, whatsappNumber }: ProductsSectionProps) {
   return (
-    <section id="productos" className="py-24 px-6 bg-brand-muted/30">
+    <section id="productos" className="py-24 px-6 bg-surface-alt">
       <div className="max-w-6xl mx-auto">
         {/* ── Section heading ── */}
         <div className="text-center mb-14">

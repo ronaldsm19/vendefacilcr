@@ -11,6 +11,8 @@ export interface SocialLinks {
 interface FooterProps {
   tenantName?: string;
   logoUrl?: string;
+  logoShape?: "circle" | "rounded" | "square" | "none";
+  logoBgColor?: string;
   social?: SocialLinks;
 }
 
@@ -22,8 +24,11 @@ function formatPhone(raw: string): string {
   return `+${digits}`;
 }
 
-export default function Footer({ tenantName, logoUrl, social = {} }: FooterProps) {
+export default function Footer({ tenantName, logoUrl, logoShape = "circle", logoBgColor, social = {} }: FooterProps) {
   const { whatsapp, instagram, facebook, tiktok, youtube } = social;
+  const shapeClass = (
+    { circle: "rounded-full", rounded: "rounded-2xl", square: "rounded-none", none: "rounded-none" } as Record<string, string>
+  )[logoShape] ?? "rounded-full";
   const whatsappUrl   = whatsapp ? `https://wa.me/${whatsapp}` : null;
   const displayPhone  = whatsapp ? formatPhone(whatsapp) : null;
 
@@ -38,13 +43,18 @@ export default function Footer({ tenantName, logoUrl, social = {} }: FooterProps
           <div>
             <div className="flex items-center gap-3 mb-3">
               {logoUrl ? (
-                <Image
-                  src={logoUrl}
-                  alt={`${tenantName ?? "Tienda"} logo`}
-                  width={52}
-                  height={52}
-                  className="rounded-full object-cover"
-                />
+                <div
+                  className={`flex items-center justify-center overflow-hidden w-[52px] h-[52px] shrink-0 ${shapeClass}`}
+                  style={logoBgColor ? { backgroundColor: logoBgColor } : undefined}
+                >
+                  <Image
+                    src={logoUrl}
+                    alt={`${tenantName ?? "Tienda"} logo`}
+                    width={52}
+                    height={52}
+                    className={`object-cover ${shapeClass}`}
+                  />
+                </div>
               ) : null}
               <p className="font-brand text-2xl font-bold gradient-text">
                 {tenantName ?? "Mi Tienda"}

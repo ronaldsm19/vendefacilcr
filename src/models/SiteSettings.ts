@@ -2,6 +2,11 @@ import mongoose, { Schema } from "mongoose";
 
 export interface ISiteSettings {
   tenantId: string;
+  hero: {
+    tagline: string;
+    subtagline: string;
+    badge: string;
+  };
   about: {
     title: string;
     paragraph1: string;
@@ -13,10 +18,15 @@ export interface ISiteSettings {
 const SiteSettingsSchema = new Schema(
   {
     tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    hero: {
+      tagline:    { type: String, default: "" },
+      subtagline: { type: String, default: "" },
+      badge:      { type: String, default: "" },
+    },
     about: {
-      title:      { type: String, default: "Hechos con amor en Turrialba" },
-      paragraph1: { type: String, default: "Dulce Pecado nació de un momento espontáneo, con muchas ganas de crear algo especial." },
-      paragraph2: { type: String, default: "Hoy, cada postre y cada apretado gourmet está hecho con amor, buscando convertir lo simple en algo delicioso 🤍✨" },
+      title:      { type: String, default: "" },
+      paragraph1: { type: String, default: "" },
+      paragraph2: { type: String, default: "" },
       images:     { type: [String], default: [] },
     },
   },

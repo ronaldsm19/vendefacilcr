@@ -13,7 +13,7 @@ export default function BestSellersSection({ products, whatsappNumber }: BestSel
   if (products.length === 0) return null;
 
   return (
-    <section className="py-20 px-6 bg-white">
+    <section className="py-20 px-6 bg-surface">
       <div className="max-w-6xl mx-auto">
         {/* Heading */}
         <div className="text-center mb-12">

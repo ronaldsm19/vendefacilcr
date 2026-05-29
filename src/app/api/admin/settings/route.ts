@@ -4,16 +4,16 @@ import { SiteSettings } from "@/models/SiteSettings";
 import { getSession } from "@/lib/auth";
 
 const DEFAULTS = {
+  hero: {
+    tagline:    "",
+    subtagline: "",
+    badge:      "",
+  },
   about: {
-    title: "Hechos con amor en Turrialba",
-    paragraph1: "Dulce Pecado nació de un momento espontáneo, con muchas ganas de crear algo especial.",
-    paragraph2: "Hoy, cada postre y cada apretado gourmet está hecho con amor, buscando convertir lo simple en algo delicioso 🤍✨",
-    images: [
-      "https://images.unsplash.com/photo-1551024506-0bccd828d307?w=400&q=80&fit=crop",
-      "https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?w=400&q=80&fit=crop",
-      "https://images.unsplash.com/photo-1488477181946-6428a0291777?w=400&q=80&fit=crop",
-      "https://images.unsplash.com/photo-1560008581-09826d1de69e?w=400&q=80&fit=crop",
-    ],
+    title:      "",
+    paragraph1: "",
+    paragraph2: "",
+    images:     [],
   },
 };
 

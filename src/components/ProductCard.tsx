@@ -46,7 +46,7 @@ export default function ProductCard({ product, index = 0, whatsappNumber }: Prod
           ease: [0.22, 1, 0.36, 1],
         }}
         whileHover={{ y: -6 }}
-        className="group relative bg-white rounded-2xl overflow-hidden card-shadow hover:card-shadow-hover transition-shadow duration-300 cursor-pointer flex flex-col"
+        className="group relative bg-surface rounded-2xl overflow-hidden card-shadow hover:card-shadow-hover transition-shadow duration-300 cursor-pointer flex flex-col"
         onClick={() => { setIsModalOpen(true); trackClick(product._id); }}
       >
         {/* ── Image ── */}

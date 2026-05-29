@@ -53,7 +53,7 @@ export async function PATCH(
         whatsappNumber: tenantReq.whatsappNumber,
         plan:           tenantReq.plan,
         status:         "active",
-        theme: { primaryColor: "#FF6B9D", secondaryColor: "#FF8C42", accentColor: "#FFD166" },
+        theme: { primaryColor: "#6366F1", secondaryColor: "#8B5CF6", accentColor: "#F59E0B" },
       });
     } catch (err) {
       console.error("Error creating tenant", err);

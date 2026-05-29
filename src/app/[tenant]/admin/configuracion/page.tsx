@@ -3,13 +3,19 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import {
-  Upload, X, Loader2, Check, Plus, Trash2, Phone,
+  Upload, X, Loader2, Check, Plus, Trash2, Phone, Palette,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Category {
   _id: string;
   label: string;
+}
+
+interface HeroData {
+  tagline: string;
+  subtagline: string;
+  badge: string;
 }
 
 interface AboutData {
@@ -27,6 +33,12 @@ interface SocialData {
   youtube: string;
 }
 
+const HERO_DEFAULTS: HeroData = {
+  tagline:    "",
+  subtagline: "",
+  badge:      "",
+};
+
 const ABOUT_DEFAULTS: AboutData = {
   title: "",
   paragraph1: "",
@@ -41,6 +53,45 @@ const SOCIAL_DEFAULTS: SocialData = {
   tiktok: "",
   youtube: "",
 };
+
+interface ThemeData {
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  darkMode: boolean;
+  fontFamily: string;
+  logoShape: string;
+  logoBgColor: string;
+  heroImageUrl: string;
+}
+
+const THEME_DEFAULTS: ThemeData = {
+  primaryColor: "#6366F1",
+  secondaryColor: "#8B5CF6",
+  accentColor: "#F59E0B",
+  backgroundColor: "#FFFFFF",
+  darkMode: false,
+  fontFamily: "default",
+  logoShape: "circle",
+  logoBgColor: "",
+  heroImageUrl: "",
+};
+
+const FONT_OPTIONS: { key: string; label: string; css: string }[] = [
+  { key: "default",    label: "Inter",             css: "Inter, system-ui, sans-serif" },
+  { key: "playfair",   label: "Playfair Display",  css: "var(--font-playfair), Georgia, serif" },
+  { key: "montserrat", label: "Montserrat",         css: "var(--font-montserrat), system-ui, sans-serif" },
+  { key: "nunito",     label: "Nunito",             css: "var(--font-nunito), system-ui, sans-serif" },
+  { key: "lato",       label: "Lato",               css: "var(--font-lato), system-ui, sans-serif" },
+];
+
+const SHAPE_OPTIONS: { key: string; label: string; borderClass: string }[] = [
+  { key: "circle",  label: "Circular",    borderClass: "rounded-full" },
+  { key: "rounded", label: "Redondeado",  borderClass: "rounded-xl" },
+  { key: "square",  label: "Cuadrado",    borderClass: "rounded-none" },
+  { key: "none",    label: "Sin marco",   borderClass: "rounded-none" },
+];
 
 function IconInstagram({ className }: { className?: string }) {
   return (
@@ -78,6 +129,24 @@ function IconYouTube({ className }: { className?: string }) {
 }
 
 export default function ConfiguracionPage() {
+  // ── Logo state ───────────────────────────────────────────────────
+  const [logoUrl, setLogoUrl] = useState("");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoFileRef = useRef<HTMLInputElement>(null);
+
+  // ── Theme state ───────────────────────────────────────────────────
+  const [theme, setTheme] = useState<ThemeData>(THEME_DEFAULTS);
+  const [loadingTheme, setLoadingTheme] = useState(true);
+  const [savingTheme, setSavingTheme] = useState(false);
+  const [savedTheme, setSavedTheme] = useState(false);
+  const [uploadingHero, setUploadingHero] = useState(false);
+  const heroFileRef = useRef<HTMLInputElement>(null);
+
+  // ── Hero state ───────────────────────────────────────────────────
+  const [hero, setHero] = useState<HeroData>(HERO_DEFAULTS);
+  const [savingHero, setSavingHero] = useState(false);
+  const [savedHero, setSavedHero] = useState(false);
+
   // ── About state ──────────────────────────────────────────────────
   const [about, setAbout] = useState<AboutData>(ABOUT_DEFAULTS);
   const [loadingAbout, setLoadingAbout] = useState(true);
@@ -106,10 +175,22 @@ export default function ConfiguracionPage() {
   ];
 
   useEffect(() => {
-    // About
+    // Logo
+    fetch("/api/admin/profile")
+      .then((r) => r.json())
+      .then((data) => { if (data?.logoUrl) setLogoUrl(data.logoUrl); });
+
+    // Theme
+    fetch("/api/admin/theme")
+      .then((r) => r.json())
+      .then((data) => setTheme({ ...THEME_DEFAULTS, ...data }))
+      .finally(() => setLoadingTheme(false));
+
+    // About + Hero
     fetch("/api/admin/settings")
       .then((r) => r.json())
       .then((data) => {
+        if (data?.hero) setHero({ ...HERO_DEFAULTS, ...data.hero });
         if (data?.about) {
           const imgs = [...(data.about.images ?? [])];
           while (imgs.length < 4) imgs.push("");
@@ -130,6 +211,107 @@ export default function ConfiguracionPage() {
       .then((d) => setCategories(d.categories ?? []))
       .finally(() => setCatsLoading(false));
   }, []);
+
+  // ── Handlers: logo ───────────────────────────────────────────────
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (logoUrl) formData.append("oldImageUrl", logoUrl);
+      const res = await fetch("/api/admin/upload?folder=logo", { method: "POST", body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        setLogoUrl(data.url);
+        await fetch("/api/admin/profile", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ logoUrl: data.url }),
+        });
+      }
+    } finally {
+      setUploadingLogo(false);
+      if (logoFileRef.current) logoFileRef.current.value = "";
+    }
+  }
+
+  async function handleRemoveLogo() {
+    if (!logoUrl) return;
+    fetch("/api/admin/upload", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: logoUrl }),
+    }).catch(console.error);
+    setLogoUrl("");
+    await fetch("/api/admin/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logoUrl: "" }),
+    });
+  }
+
+  // ── Handlers: theme ──────────────────────────────────────────────
+  async function handleSaveTheme(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingTheme(true);
+    try {
+      await fetch("/api/admin/theme", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(theme),
+      });
+      setSavedTheme(true);
+      setTimeout(() => setSavedTheme(false), 3000);
+    } finally {
+      setSavingTheme(false);
+    }
+  }
+
+  async function handleHeroUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingHero(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (theme.heroImageUrl) formData.append("oldImageUrl", theme.heroImageUrl);
+      const res = await fetch("/api/admin/upload?folder=hero", { method: "POST", body: formData });
+      const data = await res.json();
+      if (res.ok) setTheme((prev) => ({ ...prev, heroImageUrl: data.url }));
+    } finally {
+      setUploadingHero(false);
+      if (heroFileRef.current) heroFileRef.current.value = "";
+    }
+  }
+
+  async function handleRemoveHero() {
+    if (!theme.heroImageUrl) return;
+    fetch("/api/admin/upload", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: theme.heroImageUrl }),
+    }).catch(console.error);
+    setTheme((prev) => ({ ...prev, heroImageUrl: "" }));
+  }
+
+  // ── Handlers: hero text ──────────────────────────────────────────
+  async function handleSaveHero(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingHero(true);
+    try {
+      await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hero }),
+      });
+      setSavedHero(true);
+      setTimeout(() => setSavedHero(false), 3000);
+    } finally {
+      setSavingHero(false);
+    }
+  }
 
   // ── Handlers: about ──────────────────────────────────────────────
   async function handleSaveAbout(e: React.FormEvent) {
@@ -238,7 +420,7 @@ export default function ConfiguracionPage() {
     }
   }
 
-  if (loadingAbout || loadingSocial) {
+  if (loadingAbout || loadingSocial || loadingTheme) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-brand-pink" />
@@ -249,6 +431,360 @@ export default function ConfiguracionPage() {
   return (
     <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
       <h1 className="font-brand text-2xl font-bold text-brand-dark">Configuración del sitio</h1>
+
+      {/* ── Logo ────────────────────────────────────────────────────── */}
+      <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+        <div>
+          <h2 className="font-semibold text-brand-dark text-lg">Logo de tu tienda</h2>
+          <p className="text-sm text-brand-dark/50 mt-0.5">
+            Aparece en la portada y en el panel de login de tu tienda.
+          </p>
+        </div>
+
+        <input
+          ref={logoFileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={handleLogoUpload}
+        />
+
+        {logoUrl ? (
+          <div className="flex items-center gap-4">
+            <div className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-brand-muted shadow-sm shrink-0">
+              <Image src={logoUrl} alt="Logo" fill className="object-cover" sizes="80px" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => logoFileRef.current?.click()}
+                disabled={uploadingLogo}
+              >
+                {uploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                Cambiar logo
+              </Button>
+              <button
+                type="button"
+                onClick={handleRemoveLogo}
+                className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
+              >
+                Eliminar logo
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => logoFileRef.current?.click()}
+            disabled={uploadingLogo}
+            className="w-full border-2 border-dashed border-brand-muted rounded-xl p-6 flex flex-col items-center gap-2 hover:border-brand-pink/40 hover:bg-brand-pink/5 transition-all"
+          >
+            {uploadingLogo ? (
+              <Loader2 className="w-6 h-6 animate-spin text-brand-pink" />
+            ) : (
+              <>
+                <Upload className="w-6 h-6 text-brand-dark/30" />
+                <span className="text-sm text-brand-dark/40">Subir logo</span>
+                <span className="text-xs text-brand-dark/30">JPG, PNG, WebP — máx 5 MB</span>
+              </>
+            )}
+          </button>
+        )}
+      </section>
+
+      {/* ── Apariencia ──────────────────────────────────────────────── */}
+      <form onSubmit={handleSaveTheme}>
+        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-6">
+          <div className="flex items-center gap-2">
+            <Palette className="w-5 h-5 text-brand-pink" />
+            <div>
+              <h2 className="font-semibold text-brand-dark text-lg">Apariencia de tu tienda</h2>
+              <p className="text-sm text-brand-dark/50 mt-0.5">
+                Personalizá los colores, tipografía y fondo de tu tienda.
+              </p>
+            </div>
+          </div>
+
+          {/* Colores de marca */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-3">Colores de tu marca</label>
+            <div className="grid grid-cols-3 gap-4">
+              {(
+                [
+                  { key: "primaryColor",   label: "Principal" },
+                  { key: "secondaryColor", label: "Secundario" },
+                  { key: "accentColor",    label: "Acento" },
+                ] as { key: keyof ThemeData; label: string }[]
+              ).map(({ key, label }) => (
+                <div key={key} className="flex flex-col items-center gap-2">
+                  <div className="relative w-12 h-12 rounded-xl border-2 border-brand-muted shadow-sm cursor-pointer hover:shadow-md transition-shadow">
+                    <div className="absolute inset-0 rounded-xl pointer-events-none" style={{ backgroundColor: theme[key] as string }} />
+                    <input
+                      type="color"
+                      value={theme[key] as string}
+                      onChange={(e) => setTheme((prev) => ({ ...prev, [key]: e.target.value }))}
+                      className="absolute inset-0 w-full h-full cursor-pointer opacity-0 z-10"
+                    />
+                  </div>
+                  <span className="text-xs text-brand-dark/60 font-medium">{label}</span>
+                  <span className="text-xs text-brand-dark/40 font-mono">{theme[key] as string}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Color de fondo */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">Color de fondo de la tienda</label>
+            <p className="text-xs text-brand-dark/40 mb-3">Se aplica al fondo de las secciones de contenido. Se ignora si el modo oscuro está activo.</p>
+            <div className="flex items-center gap-3">
+              <div className={`relative w-12 h-12 rounded-xl border-2 border-brand-muted shadow-sm transition-opacity ${theme.darkMode ? "opacity-40 pointer-events-none" : "hover:shadow-md cursor-pointer"}`}>
+                <div className="absolute inset-0 rounded-xl border border-brand-muted/50 pointer-events-none" style={{ backgroundColor: theme.backgroundColor }} />
+                <input
+                  type="color"
+                  value={theme.backgroundColor}
+                  onChange={(e) => setTheme((prev) => ({ ...prev, backgroundColor: e.target.value }))}
+                  disabled={theme.darkMode}
+                  className="absolute inset-0 w-full h-full cursor-pointer opacity-0 z-10"
+                />
+              </div>
+              <span className="text-sm text-brand-dark/60 font-mono">{theme.backgroundColor}</span>
+            </div>
+          </div>
+
+          {/* Modo oscuro */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">Modo oscuro</label>
+            <p className="text-xs text-brand-dark/40 mb-3">Activa un fondo oscuro para toda la tienda. Ideal para marcas con identidad oscura.</p>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={theme.darkMode}
+              onClick={() => setTheme((prev) => ({ ...prev, darkMode: !prev.darkMode }))}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 ${theme.darkMode ? "gradient-bg" : "bg-brand-muted"}`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${theme.darkMode ? "translate-x-6" : "translate-x-1"}`}
+              />
+            </button>
+            <span className="ml-3 text-sm text-brand-dark/60">{theme.darkMode ? "Activo" : "Inactivo"}</span>
+          </div>
+
+          {/* Tipografía */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-3">Tipografía</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {FONT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setTheme((prev) => ({ ...prev, fontFamily: opt.key }))}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${
+                    theme.fontFamily === opt.key
+                      ? "border-brand-pink bg-brand-pink/5"
+                      : "border-brand-muted hover:border-brand-pink/30"
+                  }`}
+                >
+                  <p className="text-lg font-bold text-brand-dark" style={{ fontFamily: opt.css }}>Aa</p>
+                  <p className="text-xs text-brand-dark/50 mt-1 truncate">{opt.label}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Forma del logo */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-3">Forma del logo</label>
+            <div className="flex flex-wrap gap-3">
+              {SHAPE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setTheme((prev) => ({ ...prev, logoShape: opt.key }))}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all min-w-[72px] ${
+                    theme.logoShape === opt.key
+                      ? "border-brand-pink bg-brand-pink/5"
+                      : "border-brand-muted hover:border-brand-pink/30"
+                  }`}
+                >
+                  <div className={`w-10 h-10 bg-brand-muted border-2 border-brand-dark/10 ${opt.borderClass}`} />
+                  <span className="text-xs text-brand-dark/60 text-center leading-tight">{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Color de fondo del logo */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">Color de fondo del logo</label>
+            <p className="text-xs text-brand-dark/40 mb-3">Opcional — aparece detrás del logo en el pie de página.</p>
+            <div className="flex items-center gap-3">
+              <div className="relative w-12 h-12 rounded-xl border-2 border-brand-muted shadow-sm hover:shadow-md cursor-pointer transition-shadow">
+                <div
+                  className="absolute inset-0 rounded-xl border border-brand-muted/50 pointer-events-none"
+                  style={{ backgroundColor: theme.logoBgColor || "#FFFFFF" }}
+                />
+                <input
+                  type="color"
+                  value={theme.logoBgColor || "#FFFFFF"}
+                  onChange={(e) => setTheme((prev) => ({ ...prev, logoBgColor: e.target.value }))}
+                  className="absolute inset-0 w-full h-full cursor-pointer opacity-0 z-10"
+                />
+              </div>
+              {theme.logoBgColor && (
+                <button
+                  type="button"
+                  onClick={() => setTheme((prev) => ({ ...prev, logoBgColor: "" }))}
+                  className="text-xs text-brand-dark/40 hover:text-red-500 transition-colors underline"
+                >
+                  Quitar
+                </button>
+              )}
+              {!theme.logoBgColor && (
+                <span className="text-xs text-brand-dark/40">Sin color de fondo</span>
+              )}
+            </div>
+          </div>
+
+          {/* Imagen de fondo del hero */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">Imagen de fondo del hero</label>
+            <p className="text-xs text-brand-dark/40 mb-3">
+              Se muestra detrás del texto principal con el color de tu marca al 70% de opacidad.
+            </p>
+            <input
+              ref={heroFileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={handleHeroUpload}
+            />
+            {theme.heroImageUrl ? (
+              <div className="flex items-center gap-3">
+                <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-brand-muted shrink-0">
+                  <Image src={theme.heroImageUrl} alt="Hero" fill className="object-cover" sizes="80px" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => heroFileRef.current?.click()}
+                    disabled={uploadingHero}
+                  >
+                    {uploadingHero ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    Cambiar
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveHero}
+                    className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
+                  >
+                    Eliminar imagen
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => heroFileRef.current?.click()}
+                disabled={uploadingHero}
+                className="w-full border-2 border-dashed border-brand-muted rounded-xl p-6 flex flex-col items-center gap-2 hover:border-brand-pink/40 hover:bg-brand-pink/5 transition-all"
+              >
+                {uploadingHero ? (
+                  <Loader2 className="w-6 h-6 animate-spin text-brand-pink" />
+                ) : (
+                  <>
+                    <Upload className="w-6 h-6 text-brand-dark/30" />
+                    <span className="text-sm text-brand-dark/40">Subir imagen de fondo</span>
+                    <span className="text-xs text-brand-dark/30">JPG, PNG, WebP — máx 5 MB</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <Button type="submit" disabled={savingTheme} className="flex-1">
+              {savingTheme ? "Guardando..." : "Guardar apariencia"}
+            </Button>
+            {savedTheme && (
+              <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+                <Check className="w-4 h-4" /> Guardado
+              </span>
+            )}
+          </div>
+        </section>
+      </form>
+
+      {/* ── Hero (texto de portada) ─────────────────────────────────── */}
+      <form onSubmit={handleSaveHero}>
+        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+          <div>
+            <h2 className="font-semibold text-brand-dark text-lg">Texto de portada</h2>
+            <p className="text-sm text-brand-dark/50 mt-0.5">
+              El texto principal que ven tus clientes al entrar a tu tienda.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">
+                Eslogan principal
+              </label>
+              <input
+                type="text"
+                value={hero.tagline}
+                onChange={(e) => setHero((prev) => ({ ...prev, tagline: e.target.value }))}
+                placeholder="Tu tienda en línea, siempre disponible"
+                className="w-full px-3 py-2 text-sm border border-brand-muted rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-pink/30 placeholder:text-brand-dark/25"
+              />
+              <p className="text-xs text-brand-dark/40 mt-1">Frase corta que describe tu negocio.</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">
+                Subtítulo
+              </label>
+              <input
+                type="text"
+                value={hero.subtagline}
+                onChange={(e) => setHero((prev) => ({ ...prev, subtagline: e.target.value }))}
+                placeholder="Pedidos fáciles y rápidos por WhatsApp"
+                className="w-full px-3 py-2 text-sm border border-brand-muted rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-pink/30 placeholder:text-brand-dark/25"
+              />
+              <p className="text-xs text-brand-dark/40 mt-1">Descripción de apoyo debajo del eslogan.</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">
+                Badge / etiqueta
+              </label>
+              <input
+                type="text"
+                value={hero.badge}
+                onChange={(e) => setHero((prev) => ({ ...prev, badge: e.target.value }))}
+                placeholder="📦 Pedidos por encargo"
+                className="w-full px-3 py-2 text-sm border border-brand-muted rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-pink/30 placeholder:text-brand-dark/25"
+              />
+              <p className="text-xs text-brand-dark/40 mt-1">Etiqueta pequeña que aparece sobre el nombre (podés incluir un emoji).</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <Button type="submit" disabled={savingHero} className="flex-1">
+              {savingHero ? "Guardando..." : "Guardar texto de portada"}
+            </Button>
+            {savedHero && (
+              <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+                <Check className="w-4 h-4" /> Guardado
+              </span>
+            )}
+          </div>
+        </section>
+      </form>
 
       {/* ── Redes Sociales ──────────────────────────────────────────── */}
       <form onSubmit={handleSaveSocial}>

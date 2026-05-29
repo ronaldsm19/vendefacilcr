@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ArrowDown, Sparkles } from "lucide-react";
+import { ArrowDown, Sparkles, Store } from "lucide-react";
 import { buildWhatsAppMessage, WhatsAppIcon } from "@/components/WhatsAppButton";
 
 const fadeUp = (delay = 0) => ({
@@ -16,47 +16,51 @@ const fadeUp = (delay = 0) => ({
   },
 });
 
-export default function HeroSection({ whatsappNumber }: { whatsappNumber?: string }) {
+interface HeroSectionProps {
+  whatsappNumber?: string;
+  heroImageUrl?: string;
+  tenantName?: string;
+  logoUrl?: string;
+  tagline?: string;
+  subtagline?: string;
+  badge?: string;
+}
+
+// Split tenant name: first word gets gradient, rest gets brand-dark
+function splitName(name: string): [string, string] {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return [parts[0], ""];
+  return [parts[0], parts.slice(1).join(" ")];
+}
+
+export default function HeroSection({
+  whatsappNumber,
+  heroImageUrl,
+  tenantName,
+  logoUrl,
+  tagline,
+  subtagline,
+  badge,
+}: HeroSectionProps) {
+  const displayName = tenantName || "Mi Tienda";
+  const [namePart1, namePart2] = splitName(displayName);
+
+  const displayTagline    = tagline    || "Tu tienda en línea, siempre disponible";
+  const displaySubtagline = subtagline || "Pedidos fáciles y rápidos por WhatsApp";
+  const displayBadge      = badge      || "📦 Pedidos por encargo";
+
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-white">
-      {/* ── Background product images (blurred, decorative) ── */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* Left */}
-        <motion.div
-          className="absolute bottom-0 left-0 w-64 sm:w-80 h-[55%] hidden sm:block"
-          initial={{ opacity: 0, x: -30 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 1.4, delay: 0.9, ease: "easeOut" }}
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-surface">
+      {/* ── Hero background image (optional) ── */}
+      {heroImageUrl && (
+        <div
+          className="absolute inset-0 z-0"
+          style={{ backgroundImage: `url(${heroImageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/hero-left.png" alt="" className="w-full h-full object-cover object-center opacity-[0.42] blur-[2px] scale-105" />
-          <div className="absolute inset-0" style={{ backgroundImage: "linear-gradient(to right, transparent 40%, white 85%), linear-gradient(to top, transparent 25%, white 65%)" }} />
-        </motion.div>
+          <div className="absolute inset-0" style={{ backgroundColor: "var(--color-brand-pink)", opacity: 0.7 }} />
+        </div>
+      )}
 
-        {/* Center */}
-        <motion.div
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 w-72 h-[42%] hidden lg:block"
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.4, delay: 1.1, ease: "easeOut" }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/hero-center.png" alt="" className="w-full h-full object-cover object-top opacity-[0.32] blur-[2px] scale-105" />
-          <div className="absolute inset-0" style={{ backgroundImage: "linear-gradient(to right, white 5%, transparent 25%, transparent 75%, white 95%), linear-gradient(to top, transparent 20%, white 65%)" }} />
-        </motion.div>
-
-        {/* Right */}
-        <motion.div
-          className="absolute bottom-0 right-0 w-64 sm:w-80 h-[55%] hidden sm:block"
-          initial={{ opacity: 0, x: 30 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 1.4, delay: 0.9, ease: "easeOut" }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/hero-right.png" alt="" className="w-full h-full object-cover object-center opacity-[0.42] blur-[2px] scale-105" />
-          <div className="absolute inset-0" style={{ backgroundImage: "linear-gradient(to left, transparent 40%, white 85%), linear-gradient(to top, transparent 25%, white 65%)" }} />
-        </motion.div>
-      </div>
 
       {/* ── Gradient blobs ── */}
       <motion.div
@@ -77,23 +81,29 @@ export default function HeroSection({ whatsappNumber }: { whatsappNumber?: strin
 
       {/* ── Main content ── */}
       <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
-        {/* Logo */}
+        {/* Logo or icon */}
         <motion.div {...fadeUp(0.05)} className="flex justify-center mb-4">
-          <Image
-            src="/logo.png"
-            alt="Dulce Pecado"
-            width={110}
-            height={110}
-            className="rounded-full drop-shadow-xl"
-            priority
-          />
+          {logoUrl ? (
+            <Image
+              src={logoUrl}
+              alt={displayName}
+              width={110}
+              height={110}
+              className="rounded-full drop-shadow-xl object-cover"
+              priority
+            />
+          ) : (
+            <div className="w-[110px] h-[110px] rounded-full gradient-bg flex items-center justify-center drop-shadow-xl">
+              <Store className="w-12 h-12 text-white/90" />
+            </div>
+          )}
         </motion.div>
 
-        {/* Eyebrow */}
+        {/* Eyebrow badge */}
         <motion.div {...fadeUp(0.1)}>
           <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-muted text-brand-pink text-sm font-semibold mb-6 border border-brand-pink/20">
             <Sparkles className="w-3.5 h-3.5" />
-            Postres deliciosos · Turrialba, Nuevos Horizontes
+            {displayBadge}
           </span>
         </motion.div>
 
@@ -102,9 +112,13 @@ export default function HeroSection({ whatsappNumber }: { whatsappNumber?: strin
           className="font-brand text-7xl md:text-8xl lg:text-9xl font-bold leading-none mb-4"
           {...fadeUp(0.2)}
         >
-          <span className="gradient-text">Dulce</span>
-          <br />
-          <span className="text-brand-dark">Pecado</span>
+          <span className="gradient-text">{namePart1}</span>
+          {namePart2 && (
+            <>
+              <br />
+              <span className="text-brand-dark">{namePart2}</span>
+            </>
+          )}
         </motion.h1>
 
         {/* Tagline */}
@@ -112,44 +126,21 @@ export default function HeroSection({ whatsappNumber }: { whatsappNumber?: strin
           className="text-xl md:text-2xl text-brand-dark/60 font-light mb-3 tracking-wide"
           {...fadeUp(0.35)}
         >
-          El placer en cada cucharada
+          {displayTagline}
         </motion.p>
 
         {/* Sub-tagline */}
         <motion.p
-          className="text-base md:text-lg text-brand-dark/60 mb-5 max-w-lg mx-auto leading-relaxed"
+          className="text-base md:text-lg text-brand-dark/60 mb-8 max-w-lg mx-auto leading-relaxed"
           {...fadeUp(0.45)}
         >
-          Postres caseros en Turrialba 🍓 &nbsp;·&nbsp; Pedidos por encargo 📦 &nbsp;·&nbsp; Ordená fácil por WhatsApp 📲
+          {displaySubtagline}
         </motion.p>
-
-        {/* Urgency badges */}
-        <motion.div
-          className="flex flex-col items-center gap-2 mb-8"
-          {...fadeUp(0.52)}
-        >
-          <div className="flex flex-wrap justify-center gap-2">
-            <span className="px-3 py-1.5 rounded-full bg-brand-pink/10 text-brand-pink border border-brand-pink/20 text-sm font-semibold">
-              📦 Pedidos por encargo
-            </span>
-            <a
-              href="https://www.google.com/maps?q=9.905358,-83.683623"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-semibold hover:bg-emerald-100 transition-colors"
-            >
-              📍 Retiro en Parque Quesada Casal · sin costo
-            </a>
-          </div>
-          <p className="text-xs text-brand-dark/40">
-            * El retiro aplica solo para productos con <span className="font-medium text-brand-dark/50">🚗 envío disponible</span>
-          </p>
-        </motion.div>
 
         {/* CTA buttons */}
         <motion.div
           className="flex flex-col sm:flex-row gap-4 justify-center items-center"
-          {...fadeUp(0.6)}
+          {...fadeUp(0.55)}
         >
           <a
             href={buildWhatsAppMessage(undefined, undefined, undefined, undefined, undefined, whatsappNumber)}
@@ -192,36 +183,6 @@ export default function HeroSection({ whatsappNumber }: { whatsappNumber?: strin
           </motion.div>
         </motion.div>
       </div>
-
-      {/* ── Decorative emoji floaters ── */}
-      <motion.span
-        className="absolute top-[15%] left-[8%] text-4xl select-none hidden md:block"
-        animate={{ y: [0, -12, 0], rotate: [0, 5, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-      >
-        🍮
-      </motion.span>
-      <motion.span
-        className="absolute top-[20%] right-[10%] text-3xl select-none hidden md:block"
-        animate={{ y: [0, -8, 0], rotate: [0, -5, 0] }}
-        transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-      >
-        🍓
-      </motion.span>
-      <motion.span
-        className="absolute bottom-[20%] left-[12%] text-3xl select-none hidden md:block"
-        animate={{ y: [0, -10, 0], rotate: [0, 8, 0] }}
-        transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-      >
-        🍫
-      </motion.span>
-      <motion.span
-        className="absolute bottom-[25%] right-[8%] text-4xl select-none hidden md:block"
-        animate={{ y: [0, -14, 0], rotate: [0, -6, 0] }}
-        transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut", delay: 1.5 }}
-      >
-        ✨
-      </motion.span>
     </section>
   );
 }

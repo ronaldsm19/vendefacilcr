@@ -6,24 +6,24 @@ import { Home, Leaf, Clock } from "lucide-react";
 const TRUST_ITEMS = [
   {
     icon: <Home className="w-7 h-7 text-white" />,
-    title: "Hecho en casa",
-    subtitle: "Con recetas propias y mucho cariño",
+    title: "Atención personalizada",
+    subtitle: "Te acompañamos desde el pedido hasta la entrega",
   },
   {
     icon: <Leaf className="w-7 h-7 text-white" />,
-    title: "Ingredientes de calidad",
-    subtitle: "Seleccionamos los mejores ingredientes frescos",
+    title: "Calidad garantizada",
+    subtitle: "Productos seleccionados con cuidado y dedicación",
   },
   {
     icon: <Clock className="w-7 h-7 text-white" />,
-    title: "Ingredientes frescos",
-    subtitle: "Usamos ingredientes frescos y de calidad en cada postre",
+    title: "Respuesta rápida",
+    subtitle: "Coordinamos tu pedido fácil y rápido por WhatsApp",
   },
 ];
 
 export default function TrustSection() {
   return (
-    <section className="py-20 px-6 bg-brand-muted/20">
+    <section className="py-20 px-6 bg-surface-alt/40">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <motion.span
@@ -42,7 +42,7 @@ export default function TrustSection() {
             className="font-brand text-4xl md:text-5xl font-bold text-brand-dark"
           >
             Calidad que{" "}
-            <span className="gradient-text">se siente</span>
+            <span className="gradient-text">nos distingue</span>
           </motion.h2>
         </div>
 
@@ -54,7 +54,7 @@ export default function TrustSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-40px" }}
               transition={{ delay: i * 0.12, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className="text-center p-8 rounded-2xl bg-white card-shadow hover:card-shadow-hover transition-shadow"
+              className="text-center p-8 rounded-2xl bg-surface card-shadow hover:card-shadow-hover transition-shadow"
             >
               <div className="flex items-center justify-center w-16 h-16 rounded-full gradient-bg mx-auto mb-5 shadow-md">
                 {item.icon}

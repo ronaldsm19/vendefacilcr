@@ -5,11 +5,28 @@ import { usePathname, useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 
+interface TenantBranding {
+  tenantName: string;
+  logoUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+}
+
+const DEFAULT_BRANDING: TenantBranding = {
+  tenantName: "",
+  logoUrl: "",
+  primaryColor: "#6366F1",
+  secondaryColor: "#8B5CF6",
+  accentColor: "#F59E0B",
+};
+
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router   = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [branding, setBranding] = useState<TenantBranding>(DEFAULT_BRANDING);
 
   // Close sidebar on navigation
   useEffect(() => {
@@ -22,11 +39,19 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       setAuthChecked(true);
       return;
     }
-    fetch("/api/admin/auth/me").then((res) => {
+    fetch("/api/admin/auth/me").then(async (res) => {
       if (res.status === 401) {
         const tenant = pathname.split("/")[1];
         router.replace(`/${tenant}/admin/login`);
       } else {
+        const data = await res.json();
+        setBranding({
+          tenantName:     data.tenantName     || pathname.split("/")[1],
+          logoUrl:        data.logoUrl        || "",
+          primaryColor:   data.primaryColor   || "#6366F1",
+          secondaryColor: data.secondaryColor || "#8B5CF6",
+          accentColor:    data.accentColor    || "#F59E0B",
+        });
         setAuthChecked(true);
       }
     }).catch(() => {
@@ -34,6 +59,13 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       router.replace(`/${tenant}/admin/login`);
     });
   }, [pathname, router]);
+
+  const cssVars = {
+    "--color-brand-pink":   branding.primaryColor,
+    "--color-brand-orange": branding.secondaryColor,
+    "--color-brand-yellow": branding.accentColor,
+    "--gradient-brand":     `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 50%, ${branding.accentColor} 100%)`,
+  } as React.CSSProperties;
 
   if (pathname.endsWith("/admin/login")) {
     return <div className="min-h-screen bg-brand-muted/20">{children}</div>;
@@ -48,10 +80,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-muted/20">
-      {/* Desktop sidebar — only on lg+ (≥1024px), so phones in landscape still use drawer */}
+    <div className="flex h-screen overflow-hidden bg-brand-muted/20" style={cssVars}>
+      {/* Desktop sidebar */}
       <div className="hidden lg:flex shrink-0 h-screen overflow-y-auto">
-        <AdminSidebar />
+        <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} />
       </div>
 
       {/* Mobile/tablet sidebar drawer */}
@@ -62,12 +94,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
             onClick={() => setSidebarOpen(false)}
           />
           <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
-            <AdminSidebar onClose={() => setSidebarOpen(false)} />
+            <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} onClose={() => setSidebarOpen(false)} />
           </div>
         </>
       )}
 
-      {/* Content area — scrolls independently of the sidebar */}
+      {/* Content area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile/tablet top bar */}
         <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-brand-dark shrink-0 z-30">
@@ -78,7 +110,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           >
             <Menu className="w-5 h-5" />
           </button>
-          <p className="font-brand text-lg font-bold gradient-text">Dulce Pecado</p>
+          <p className="font-brand text-lg font-bold gradient-text">{branding.tenantName}</p>
         </header>
 
         <main className="flex-1 overflow-y-auto">{children}</main>

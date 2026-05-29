@@ -30,11 +30,18 @@ function buildNavItems(base: string) {
   ];
 }
 
-export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
+export default function AdminSidebar({
+  onClose,
+  tenantName,
+  logoUrl,
+}: {
+  onClose?: () => void;
+  tenantName?: string;
+  logoUrl?: string;
+}) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Derive tenant from URL: /dulcepecado/admin/... → "dulcepecado"
   const tenant = pathname.split("/")[1];
   const base = `/${tenant}/admin`;
   const navItems = buildNavItems(base);
@@ -45,13 +52,21 @@ export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
     router.refresh();
   }
 
+  const displayName = tenantName || tenant;
+
   return (
     <aside className="w-60 h-full min-h-screen bg-brand-dark flex flex-col">
       {/* Brand */}
       <div className="px-6 py-6 border-b border-white/10 flex items-center justify-between">
-        <div>
-          <p className="font-brand text-xl font-bold gradient-text">Dulce Pecado</p>
-          <p className="text-white/40 text-xs mt-0.5">Panel de administración</p>
+        <div className="flex items-center gap-3 min-w-0">
+          {logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt={displayName} className="w-8 h-8 rounded-full object-cover shrink-0" />
+          )}
+          <div className="min-w-0">
+            <p className="font-brand text-xl font-bold gradient-text truncate">{displayName}</p>
+            <p className="text-white/40 text-xs mt-0.5">Panel de administración</p>
+          </div>
         </div>
         {onClose && (
           <button

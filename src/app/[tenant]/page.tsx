@@ -29,7 +29,17 @@ async function getTenant(slug: string) {
       facebook: string;
       tiktok: string;
       youtube: string;
-      theme: { primaryColor: string; secondaryColor: string; accentColor: string };
+      theme: {
+        primaryColor: string;
+        secondaryColor: string;
+        accentColor: string;
+        backgroundColor?: string;
+        logoShape?: string;
+        logoBgColor?: string;
+        heroImageUrl?: string;
+        fontFamily?: string;
+        darkMode?: boolean;
+      };
     };
   } catch {
     return null;
@@ -52,6 +62,7 @@ async function getSettings(tenantId: string) {
     const settings = await SiteSettings.findOne({ tenantId }).lean();
     if (!settings) return null;
     return JSON.parse(JSON.stringify(settings)) as {
+      hero?: { tagline: string; subtagline: string; badge: string };
       about?: { title: string; paragraph1: string; paragraph2: string; images: string[] };
     };
   } catch {
@@ -79,6 +90,20 @@ export default async function TenantStorefront({
 
   const { primaryColor, secondaryColor, accentColor } = tenant.theme;
 
+  const FONT_MAP: Record<string, string> = {
+    default:    "var(--font-inter), system-ui, sans-serif",
+    playfair:   "var(--font-playfair), Georgia, serif",
+    montserrat: "var(--font-montserrat), system-ui, sans-serif",
+    nunito:     "var(--font-nunito), system-ui, sans-serif",
+    lato:       "var(--font-lato), system-ui, sans-serif",
+  };
+  const fontPrimary = FONT_MAP[tenant.theme.fontFamily ?? "default"] ?? FONT_MAP.default;
+
+  const isDark = tenant.theme.darkMode ?? false;
+  const colorSurface    = isDark ? "#0F0F1A" : (tenant.theme.backgroundColor ?? "#FFFFFF");
+  const colorSurfaceAlt = isDark ? "#1A1A2E" : "#F8F0F5";
+  const colorBrandDark  = isDark ? "#E8E8F8" : "#1A1A2E";
+
   const social: SocialLinks = {
     whatsapp:  tenant.whatsappNumber || undefined,
     instagram: tenant.instagram      || undefined,
@@ -89,21 +114,40 @@ export default async function TenantStorefront({
 
   return (
     <div
+      className="font-primary"
       style={
         {
           "--color-brand-pink":   primaryColor,
           "--color-brand-orange": secondaryColor,
           "--color-brand-yellow": accentColor,
-          "--gradient-brand": `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 50%, ${accentColor} 100%)`,
+          "--gradient-brand":     `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 50%, ${accentColor} 100%)`,
+          "--color-surface":      colorSurface,
+          "--color-surface-alt":  colorSurfaceAlt,
+          "--color-brand-dark":   colorBrandDark,
+          "--font-primary":       fontPrimary,
         } as React.CSSProperties
       }
     >
-      <HeroSection whatsappNumber={tenant.whatsappNumber} />
+      <HeroSection
+        whatsappNumber={tenant.whatsappNumber}
+        heroImageUrl={tenant.theme.heroImageUrl || undefined}
+        tenantName={tenant.name}
+        logoUrl={tenant.logoUrl || undefined}
+        tagline={settings?.hero?.tagline || undefined}
+        subtagline={settings?.hero?.subtagline || undefined}
+        badge={settings?.hero?.badge || undefined}
+      />
       <BestSellersSection products={featuredProducts} whatsappNumber={tenant.whatsappNumber} />
       <ProductsSection products={products} whatsappNumber={tenant.whatsappNumber} />
       <TrustSection />
       <AboutSection aboutData={settings?.about} whatsappNumber={tenant.whatsappNumber} />
-      <Footer tenantName={tenant.name} logoUrl={tenant.logoUrl || undefined} social={social} />
+      <Footer
+        tenantName={tenant.name}
+        logoUrl={tenant.logoUrl || undefined}
+        logoShape={(tenant.theme.logoShape as "circle" | "rounded" | "square" | "none") ?? "circle"}
+        logoBgColor={tenant.theme.logoBgColor || undefined}
+        social={social}
+      />
       <WhatsAppButton floating whatsappNumber={tenant.whatsappNumber} />
     </div>
   );
