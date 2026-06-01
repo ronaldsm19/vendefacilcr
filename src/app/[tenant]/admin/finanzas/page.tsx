@@ -9,7 +9,7 @@ import StatsCard from "@/components/admin/StatsCard";
 import { TrendingUp, TrendingDown, DollarSign, Percent } from "lucide-react";
 
 interface FinanceData {
-  summary: { revenue: number; expenses: number; profit: number; margin: number; totalOrders: number };
+  summary: { revenue: number; expenses: number; profit: number; margin: number; totalOrders?: number; totalTransactions?: number };
   revenueByPeriod: { _id: string; revenue: number; orders: number }[];
   expensesByPeriod: { _id: string; expenses: number }[];
   revenueByProduct: { _id: string; revenue: number; orders: number }[];
@@ -143,7 +143,7 @@ export default function AdminFinancesPage() {
               value={`${data?.summary.margin ?? 0}%`}
               icon={Percent}
               color="yellow"
-              sub={`${data?.summary.totalOrders ?? 0} pedidos pagados`}
+              sub={`${(data?.summary.totalTransactions ?? data?.summary.totalOrders ?? 0)} transacciones`}
             />
           </div>
 

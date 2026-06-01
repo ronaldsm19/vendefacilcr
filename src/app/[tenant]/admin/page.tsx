@@ -2,22 +2,25 @@
 
 import { useEffect, useState } from "react";
 import StatsCard from "@/components/admin/StatsCard";
-import { TrendingUp, ShoppingBag, Receipt, Clock, Package } from "lucide-react";
+import { TrendingUp, ShoppingBag, Receipt, Clock, Package, Sun } from "lucide-react";
+
+interface ActivityItem {
+  id: string;
+  source: "pos" | "manual";
+  customerName: string;
+  total: number;
+  paid: boolean;
+  date: string;
+}
 
 interface Analytics {
   topClicksThisWeek: { _id: string; productName: string; clicks: number }[];
-  recentOrders: {
-    _id: string;
-    customerName: string;
-    productName: string;
-    total: number;
-    paid: boolean;
-    orderedAt: string;
-  }[];
+  recentActivity: ActivityItem[];
   monthStats: {
     totalRevenue: number;
-    totalOrders: number;
+    totalTransactions: number;
     pendingOrders: number;
+    todayRevenue: number;
   };
 }
 
@@ -44,9 +47,9 @@ export default function AdminDashboard() {
     );
   }
 
-  const monthStats       = data?.monthStats        ?? { totalRevenue: 0, totalOrders: 0, pendingOrders: 0 };
+  const monthStats        = data?.monthStats        ?? { totalRevenue: 0, totalTransactions: 0, pendingOrders: 0, todayRevenue: 0 };
   const topClicksThisWeek = data?.topClicksThisWeek ?? [];
-  const recentOrders      = data?.recentOrders      ?? [];
+  const recentActivity    = data?.recentActivity    ?? [];
 
   const totalUnitsInStock = productsData.reduce((s, p) => s + (p.stock ?? 0), 0);
   const estimatedRevenue  = productsData.reduce((s, p) => s + (p.stock ?? 0) * p.price, 0);
@@ -61,18 +64,25 @@ export default function AdminDashboard() {
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatsCard
+          label="Ingreso del día"
+          value={`₡${monthStats.todayRevenue.toLocaleString("es-CR")}`}
+          icon={Sun}
+          color="yellow"
+          sub="Pedidos + ventas POS de hoy"
+        />
+        <StatsCard
           label="Ingresos del mes"
           value={`₡${monthStats.totalRevenue.toLocaleString("es-CR")}`}
           icon={TrendingUp}
           color="green"
-          sub="Pedidos pagados"
+          sub="Pedidos pagados + ventas POS"
         />
         <StatsCard
-          label="Pedidos del mes"
-          value={monthStats.totalOrders}
+          label="Ventas del mes"
+          value={monthStats.totalTransactions}
           icon={ShoppingBag}
           color="pink"
-          sub="Total registrados"
+          sub="Pedidos + transacciones POS"
         />
         <StatsCard
           label="Pedidos pendientes"
@@ -80,13 +90,6 @@ export default function AdminDashboard() {
           icon={Clock}
           color="orange"
           sub="Sin confirmar pago"
-        />
-        <StatsCard
-          label="Productos clickeados"
-          value={topClicksThisWeek.reduce((s, p) => s + p.clicks, 0)}
-          icon={Receipt}
-          color="yellow"
-          sub="Esta semana"
         />
       </div>
 
@@ -134,31 +137,33 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        {/* Últimos pedidos */}
+        {/* Actividad reciente */}
         <div className="bg-white rounded-2xl card-shadow p-6">
-          <h2 className="font-semibold text-brand-dark mb-4">📦 Últimos pedidos</h2>
-          {recentOrders.length === 0 ? (
-            <p className="text-brand-dark/40 text-sm">No hay pedidos registrados aún.</p>
+          <h2 className="font-semibold text-brand-dark mb-4">📋 Actividad reciente</h2>
+          {recentActivity.length === 0 ? (
+            <p className="text-brand-dark/40 text-sm">No hay pedidos ni ventas registradas aún.</p>
           ) : (
             <div className="space-y-3">
-              {recentOrders.map((o) => (
-                <div key={o._id} className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-brand-dark truncate">{o.customerName}</p>
-                    <p className="text-xs text-brand-dark/50 truncate">{o.productName}</p>
+              {recentActivity.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                      item.source === "pos"
+                        ? "bg-blue-50 text-blue-600"
+                        : "bg-purple-50 text-purple-600"
+                    }`}>
+                      {item.source === "pos" ? "POS" : "Manual"}
+                    </span>
+                    <p className="text-sm font-medium text-brand-dark truncate">{item.customerName}</p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-semibold text-brand-dark">
-                      ₡{o.total.toLocaleString("es-CR")}
+                      ₡{item.total.toLocaleString("es-CR")}
                     </p>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        o.paid
-                          ? "bg-emerald-50 text-emerald-600"
-                          : "bg-orange-50 text-orange-500"
-                      }`}
-                    >
-                      {o.paid ? "Pagado" : "Pendiente"}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      item.paid ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-500"
+                    }`}>
+                      {item.paid ? "Pagado" : "Pendiente"}
                     </span>
                   </div>
                 </div>
