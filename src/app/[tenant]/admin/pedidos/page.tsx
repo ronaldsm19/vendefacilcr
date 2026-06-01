@@ -1,49 +1,78 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import OrderForm from "@/components/admin/OrderForm";
 import Pagination from "@/components/admin/Pagination";
+import PeriodFilter, { getRange, PeriodMode } from "@/components/admin/PeriodFilter";
 import { IOrder } from "@/models/Order";
-import { Plus, CheckCircle, Trash2, Phone, Pencil, Search } from "lucide-react";
+import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck } from "lucide-react";
 
-function orderProductLabel(o: IOrder): string {
-  if (o.items && o.items.length > 0) {
-    return o.items.map(i => `${i.productName} ×${i.quantity}`).join(", ");
-  }
-  return o.productName ? `${o.productName} ×${o.quantity ?? 1}` : "—";
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface VentaItem {
+  id: string;
+  source: "pos" | "manual";
+  date: string;
+  customerName: string;
+  total: number;
+  paid: boolean;
+  paymentMethod?: string;
+  cashierName?: string;
+  phone?: string;
+  notes?: string;
+  itemCount: number;
 }
 
-function orderToppings(o: IOrder): string[] {
-  if (o.items && o.items.length > 0) {
-    return o.items.flatMap(i => i.itemToppings?.flat() ?? []);
-  }
-  return o.options ?? [];
+interface VentaStats {
+  pagado: number;
+  porCobrar: number;
+  total: number;
 }
 
 type OrderRow = IOrder & { _id: string };
 
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default function AdminOrdersPage() {
-  const [orders, setOrders] = useState<OrderRow[]>([]);
+  // Period filter state
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("dia");
+  const [anchor, setAnchor]         = useState(() => new Date());
+
+  // Unified list state
+  const [items, setItems]   = useState<VentaItem[]>([]);
+  const [stats, setStats]   = useState<VentaStats>({ pagado: 0, porCobrar: 0, total: 0 });
   const [loading, setLoading] = useState(true);
+
+  // Status filter + search (client-side)
   const [filter, setFilter] = useState<"all" | "paid" | "pending">("all");
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [page, setPage]     = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [showForm, setShowForm] = useState(false);
-  const [editOrder, setEditOrder] = useState<OrderRow | null>(null);
-  const [saving, setSaving] = useState(false);
+
+  // Manual order dialogs
+  const [showForm, setShowForm]         = useState(false);
+  const [editOrder, setEditOrder]       = useState<OrderRow | null>(null);
+  const [saving, setSaving]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  async function load() {
-    const r = await fetch("/api/admin/orders");
-    const d = await r.json();
-    setOrders(d.orders ?? []);
-    setLoading(false);
-  }
+  // ── Data fetching ──────────────────────────────────────────────────────────
 
-  useEffect(() => { load(); }, []);
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { from, to } = getRange(periodMode, anchor);
+    const url = `/api/admin/ventas?from=${from.toISOString()}&to=${to.toISOString()}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    setItems(data.items ?? []);
+    setStats(data.stats ?? { pagado: 0, porCobrar: 0, total: 0 });
+    setLoading(false);
+  }, [periodMode, anchor]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // ── Manual order handlers ──────────────────────────────────────────────────
 
   async function handleSave(data: Record<string, unknown>) {
     setSaving(true);
@@ -55,9 +84,7 @@ export default function AdminOrdersPage() {
       });
       setShowForm(false);
       await load();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function handleEditSave(data: Record<string, unknown>) {
@@ -71,9 +98,7 @@ export default function AdminOrdersPage() {
       });
       setEditOrder(null);
       await load();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function togglePaid(id: string, paid: boolean) {
@@ -91,43 +116,38 @@ export default function AdminOrdersPage() {
     await load();
   }
 
-  // ── Stats (always computed from full dataset) ──────────────────
-  const paidTotal    = orders.filter((o) => o.paid).reduce((s, o) => s + o.total, 0);
-  const pendingTotal = orders.filter((o) => !o.paid).reduce((s, o) => s + o.total, 0);
-  const grandTotal   = orders.reduce((s, o) => s + o.total, 0);
-  const paidCount    = orders.filter((o) => o.paid).length;
-  const pendingCount = orders.filter((o) => !o.paid).length;
+  // ── Client-side filtering ──────────────────────────────────────────────────
 
-  // ── Filtered rows ───────────────────────────────────────────────
-  const filteredOrders = orders
-    .filter(o =>
+  const filtered = items
+    .filter((i) =>
       filter === "all"     ? true :
-      filter === "paid"    ? o.paid :
-                             !o.paid
+      filter === "paid"    ? i.paid :
+                             !i.paid
     )
-    .filter(o => {
+    .filter((i) => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
-      const productLabel = orderProductLabel(o).toLowerCase();
       return (
-        o.customerName.toLowerCase().includes(q) ||
-        productLabel.includes(q) ||
-        o.phone.includes(q)
+        i.customerName.toLowerCase().includes(q) ||
+        (i.phone ?? "").includes(q) ||
+        (i.cashierName ?? "").toLowerCase().includes(q)
       );
     });
 
-  const totalPages   = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const totalPages   = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage     = Math.min(page, totalPages);
-  const displayOrders = filteredOrders.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const display      = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
+    <div className="p-4 md:p-8 space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="font-brand text-2xl md:text-3xl font-bold text-brand-dark">Pedidos</h1>
+          <h1 className="font-brand text-2xl md:text-3xl font-bold text-brand-dark">Pedidos y ventas</h1>
           <p className="text-brand-dark/50 text-sm mt-1">
-            {paidCount} pagados · {pendingCount} pendientes
+            {items.filter((i) => i.paid).length} pagados · {items.filter((i) => !i.paid).length} pendientes
           </p>
         </div>
         <Button onClick={() => setShowForm(true)} className="shrink-0">
@@ -135,7 +155,14 @@ export default function AdminOrdersPage() {
         </Button>
       </div>
 
-      {/* Filter tabs + search */}
+      {/* Period filter */}
+      <PeriodFilter
+        mode={periodMode}
+        anchor={anchor}
+        onChange={(m, a) => { setPeriodMode(m); setAnchor(a); setPage(1); }}
+      />
+
+      {/* Status tabs + search */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex gap-2">
           {(["all", "pending", "paid"] as const).map((f) => (
@@ -156,26 +183,22 @@ export default function AdminOrdersPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand-dark/30" />
           <input
             type="text"
-            placeholder="Buscar cliente o producto..."
+            placeholder="Buscar cliente o cajero..."
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="pl-8 pr-3 py-1.5 border border-brand-muted rounded-full text-sm focus:outline-none focus:border-brand-pink w-full sm:w-64"
           />
         </div>
       </div>
 
-      {/* ── Stats row ── */}
+      {/* Stats cards */}
       <div className="flex flex-wrap gap-3">
         {(filter === "all" || filter === "paid") && (
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
             <span className="text-emerald-500 text-lg">✅</span>
             <div>
-              <p className="text-xs text-emerald-600/70 font-medium">
-                {filter === "all" ? "Total pagado" : "Pagados"}
-              </p>
-              <p className="text-base font-bold text-emerald-700">
-                ₡{paidTotal.toLocaleString("es-CR")}
-              </p>
+              <p className="text-xs text-emerald-600/70 font-medium">{filter === "all" ? "Total pagado" : "Pagados"}</p>
+              <p className="text-base font-bold text-emerald-700">₡{stats.pagado.toLocaleString("es-CR")}</p>
             </div>
           </div>
         )}
@@ -183,12 +206,8 @@ export default function AdminOrdersPage() {
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-50 border border-orange-100">
             <span className="text-orange-400 text-lg">⏳</span>
             <div>
-              <p className="text-xs text-orange-500/80 font-medium">
-                {filter === "all" ? "Por cobrar" : "Pendientes"}
-              </p>
-              <p className="text-base font-bold text-orange-600">
-                ₡{pendingTotal.toLocaleString("es-CR")}
-              </p>
+              <p className="text-xs text-orange-500/80 font-medium">{filter === "all" ? "Por cobrar" : "Pendientes"}</p>
+              <p className="text-base font-bold text-orange-600">₡{stats.porCobrar.toLocaleString("es-CR")}</p>
             </div>
           </div>
         )}
@@ -197,9 +216,7 @@ export default function AdminOrdersPage() {
             <span className="text-brand-pink text-lg">📊</span>
             <div>
               <p className="text-xs text-brand-dark/50 font-medium">Total general</p>
-              <p className="text-base font-bold text-brand-dark">
-                ₡{grandTotal.toLocaleString("es-CR")}
-              </p>
+              <p className="text-base font-bold text-brand-dark">₡{stats.total.toLocaleString("es-CR")}</p>
             </div>
           </div>
         )}
@@ -211,103 +228,121 @@ export default function AdminOrdersPage() {
       ) : (
         <div className="bg-white rounded-2xl card-shadow overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[600px]">
-            <thead>
-              <tr className="border-b border-brand-muted text-brand-dark/50 text-xs uppercase tracking-wider">
-                <th className="text-left px-4 py-3">Cliente</th>
-                <th className="text-left px-4 py-3 hidden md:table-cell">Producto</th>
-                <th className="text-left px-4 py-3 hidden lg:table-cell">Opciones</th>
-                <th className="text-left px-4 py-3">Total</th>
-                <th className="text-left px-4 py-3">Estado</th>
-                <th className="text-right px-4 py-3">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayOrders.map((o) => (
-                <tr key={o._id} className="border-b border-brand-muted/50 hover:bg-brand-muted/20">
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-brand-dark">{o.customerName}</p>
-                    <a
-                      href={`https://wa.me/${o.phone.replace(/\D/g, "")}`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-[#25D366] hover:underline"
-                    >
-                      <Phone className="w-3 h-3" /> {o.phone}
-                    </a>
-                  </td>
-                  <td className="px-4 py-3 hidden md:table-cell text-brand-dark/70 max-w-[180px]">
-                    <p className="truncate text-sm" title={orderProductLabel(o)}>{orderProductLabel(o)}</p>
-                  </td>
-                  <td className="px-4 py-3 hidden lg:table-cell">
-                    {(() => {
-                      const tops = orderToppings(o);
-                      return (
-                        <div className="flex flex-wrap gap-1">
-                          {tops.slice(0, 2).map((op) => (
-                            <span key={op} className="text-xs px-2 py-0.5 rounded-full bg-brand-muted text-brand-dark/60">{op}</span>
-                          ))}
-                          {tops.length > 2 && (
-                            <span className="text-xs text-brand-dark/40">+{tops.length - 2}</span>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-brand-dark">
-                    ₡{o.total.toLocaleString("es-CR")}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      o.paid ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-500"
-                    }`}>
-                      {o.paid ? "Pagado" : "Pendiente"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      {!o.paid && (
-                        <button
-                          onClick={() => togglePaid(o._id, true)}
-                          title="Marcar como pagado"
-                          className="p-1.5 rounded-lg hover:bg-emerald-50 text-brand-dark/40 hover:text-emerald-600 transition-colors cursor-pointer"
+            <table className="w-full text-sm min-w-[600px]">
+              <thead>
+                <tr className="border-b border-brand-muted text-brand-dark/50 text-xs uppercase tracking-wider">
+                  <th className="text-left px-4 py-3">Cliente / Origen</th>
+                  <th className="text-left px-4 py-3 hidden md:table-cell">Fecha y hora</th>
+                  <th className="text-left px-4 py-3 hidden lg:table-cell">Detalle</th>
+                  <th className="text-left px-4 py-3">Total</th>
+                  <th className="text-left px-4 py-3">Estado</th>
+                  <th className="text-right px-4 py-3">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {display.map((item) => (
+                  <tr key={item.id} className="border-b border-brand-muted/50 hover:bg-brand-muted/20">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {item.source === "pos" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold shrink-0">
+                            <MonitorCheck className="w-2.5 h-2.5" /> POS
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold shrink-0">
+                            Manual
+                          </span>
+                        )}
+                        <p className="font-medium text-brand-dark">{item.customerName}</p>
+                      </div>
+                      {item.source === "manual" && item.phone && (
+                        <a
+                          href={`https://wa.me/${item.phone.replace(/\D/g, "")}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-xs text-[#25D366] hover:underline mt-0.5"
                         >
-                          <CheckCircle className="w-4 h-4" />
-                        </button>
+                          <Phone className="w-3 h-3" /> {item.phone}
+                        </a>
                       )}
-                      <button
-                        onClick={() => setEditOrder(o)}
-                        title="Editar pedido"
-                        className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-brand-pink transition-colors cursor-pointer"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(o._id)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {displayOrders.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-brand-dark/40">
-                    {search ? "Sin resultados para esa búsqueda." : filter !== "all" ? "No hay pedidos con este filtro." : "No hay pedidos registrados aún."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      {item.source === "pos" && item.cashierName && (
+                        <p className="text-xs text-brand-dark/40 mt-0.5">{item.cashierName}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 hidden md:table-cell text-brand-dark/60 text-xs">
+                      {new Date(item.date).toLocaleDateString("es-CR", { day:"2-digit", month:"short" })}
+                      {" "}
+                      {new Date(item.date).toLocaleTimeString("es-CR", { hour:"2-digit", minute:"2-digit" })}
+                    </td>
+                    <td className="px-4 py-3 hidden lg:table-cell text-brand-dark/60 text-xs">
+                      {item.source === "pos" && item.paymentMethod
+                        ? <span className="px-2 py-0.5 rounded-full bg-brand-muted text-brand-dark/70">{item.paymentMethod}</span>
+                        : item.notes || `${item.itemCount} ítem${item.itemCount !== 1 ? "s" : ""}`
+                      }
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-brand-dark">
+                      ₡{item.total.toLocaleString("es-CR")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        item.paid ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-500"
+                      }`}>
+                        {item.paid ? "Pagado" : "Pendiente"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {item.source === "manual" && (
+                          <>
+                            {!item.paid && (
+                              <button
+                                onClick={() => togglePaid(item.id, true)}
+                                title="Marcar como pagado"
+                                className="p-1.5 rounded-lg hover:bg-emerald-50 text-brand-dark/40 hover:text-emerald-600 transition-colors cursor-pointer"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                // Cast to OrderRow for the edit dialog
+                                setEditOrder({ _id: item.id, customerName: item.customerName, phone: item.phone ?? "", items: [], total: item.total, paid: item.paid, orderedAt: new Date(item.date), notes: item.notes, createdAt: new Date(), updatedAt: new Date(), tenantId: "" } as OrderRow);
+                              }}
+                              title="Editar pedido"
+                              className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-brand-pink transition-colors cursor-pointer"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(item.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {display.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-brand-dark/40">
+                      {search
+                        ? "Sin resultados para esa búsqueda."
+                        : "No hay ventas ni pedidos en este período."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
           <Pagination
             page={safePage}
             totalPages={totalPages}
             onPage={setPage}
             pageSize={pageSize}
-            onPageSize={s => { setPageSize(s); setPage(1); }}
-            totalItems={filteredOrders.length}
+            onPageSize={(s) => { setPageSize(s); setPage(1); }}
+            totalItems={filtered.length}
           />
         </div>
       )}
@@ -315,9 +350,7 @@ export default function AdminOrdersPage() {
       {/* New Order Dialog */}
       <Dialog open={showForm} onOpenChange={(v) => !v && setShowForm(false)}>
         <DialogContent className="max-w-lg">
-          <DialogHeader className="pb-4">
-            <DialogTitle>Registrar pedido</DialogTitle>
-          </DialogHeader>
+          <DialogHeader className="pb-4"><DialogTitle>Registrar pedido</DialogTitle></DialogHeader>
           <div className="px-6 pb-6">
             <OrderForm onSave={handleSave} onCancel={() => setShowForm(false)} saving={saving} />
           </div>
@@ -327,9 +360,7 @@ export default function AdminOrdersPage() {
       {/* Edit Order Dialog */}
       <Dialog open={!!editOrder} onOpenChange={(v) => !v && setEditOrder(null)}>
         <DialogContent className="max-w-lg">
-          <DialogHeader className="pb-4">
-            <DialogTitle>Editar pedido</DialogTitle>
-          </DialogHeader>
+          <DialogHeader className="pb-4"><DialogTitle>Editar pedido</DialogTitle></DialogHeader>
           <div className="px-6 pb-6">
             {editOrder && (
               <OrderForm
@@ -338,15 +369,10 @@ export default function AdminOrdersPage() {
                   customerName: editOrder.customerName,
                   phone:        editOrder.phone,
                   items:        editOrder.items,
-                  // Legacy fallback para órdenes antiguas
-                  productId:    editOrder.productId as unknown as string | undefined,
-                  productName:  editOrder.productName,
-                  quantity:     editOrder.quantity,
                   total:        editOrder.total,
                   paid:         editOrder.paid,
                   orderedAt:    editOrder.orderedAt,
                   notes:        editOrder.notes,
-                  options:      editOrder.options,
                 }}
                 onSave={handleEditSave}
                 onCancel={() => setEditOrder(null)}

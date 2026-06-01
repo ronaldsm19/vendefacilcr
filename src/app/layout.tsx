@@ -54,7 +54,7 @@ export default function RootLayout({
       lang="es"
       className={`${inter.variable} ${playfair.variable} ${montserrat.variable} ${nunito.variable} ${lato.variable} scroll-smooth`}
     >
-      <body className="font-sans antialiased bg-white text-brand-dark">
+      <body className="font-sans antialiased bg-white text-brand-dark" suppressHydrationWarning>
         {children}
       </body>
     </html>

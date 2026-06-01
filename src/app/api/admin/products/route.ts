@@ -19,19 +19,21 @@ export async function POST(request: NextRequest) {
   await connectToDatabase();
   const body = await request.json();
 
-  const { name, description, price, toppings, image, images, category, available, featured, delivery, deliveryNote, stock } = body;
-  if (!name || !description || !price || !image || !category) {
-    return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
+  const { name, description, price, cost, toppings, image, images, category, menuSection, available, featured, delivery, deliveryNote, stock } = body;
+  if (!name || !price || !category) {
+    return NextResponse.json({ error: "Faltan campos requeridos (nombre, precio, categoría)" }, { status: 400 });
   }
 
   const product = await Product.create({
     tenantId: session.tenantId,
     name, description,
     price: Number(price),
+    cost:  cost !== undefined ? Number(cost) : 0,
     toppings: toppings ?? [],
     image,
     images: images ?? [],
     category,
+    menuSection: menuSection ?? "panaderia",
     available: available ?? true,
     featured: featured ?? false,
     delivery: delivery ?? false,

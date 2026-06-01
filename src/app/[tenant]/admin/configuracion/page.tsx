@@ -66,6 +66,34 @@ interface ThemeData {
   heroImageUrl: string;
 }
 
+interface MenuConfigData {
+  columns: 1 | 2 | 3;
+  showImage: boolean;
+  showPrice: boolean;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  bgImageUrl: string;
+  bgBlur: number;
+  title: string;
+  description: string;
+  fontFamily: string;
+}
+
+const MENU_CONFIG_DEFAULTS: MenuConfigData = {
+  columns: 2,
+  showImage: true,
+  showPrice: true,
+  primaryColor: "",
+  secondaryColor: "",
+  accentColor: "",
+  bgImageUrl: "",
+  bgBlur: 0,
+  title: "",
+  description: "",
+  fontFamily: "default",
+};
+
 const THEME_DEFAULTS: ThemeData = {
   primaryColor: "#6366F1",
   secondaryColor: "#8B5CF6",
@@ -160,6 +188,31 @@ export default function ConfiguracionPage() {
   const [savingSocial, setSavingSocial] = useState(false);
   const [savedSocial, setSavedSocial] = useState(false);
 
+  // ── Menu config state ────────────────────────────────────────────
+  const [menuConfig, setMenuConfig] = useState<MenuConfigData>(MENU_CONFIG_DEFAULTS);
+  const [savingMenu, setSavingMenu] = useState(false);
+  const [savedMenu, setSavedMenu] = useState(false);
+  const [uploadingMenuBg, setUploadingMenuBg] = useState(false);
+  const menuBgFileRef = useRef<HTMLInputElement>(null);
+
+  // ── Tab state ────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "caja">("marca");
+
+  // ── Table count state ─────────────────────────────────────────────
+  const [tableCount, setTableCount]       = useState(0);
+  const [savingTables, setSavingTables]   = useState(false);
+  const [savedTables, setSavedTables]     = useState(false);
+
+  // ── Cash users state ─────────────────────────────────────────────
+  interface CashUser { _id: string; name: string; }
+  const [cashUsers, setCashUsers]         = useState<CashUser[]>([]);
+  const [cashUsersLoading, setCashUsersLoading] = useState(true);
+  const [newCashUserName, setNewCashUserName]   = useState("");
+  const [addingCashUser, setAddingCashUser]     = useState(false);
+  const [deletingCashUserId, setDeletingCashUserId] = useState<string | null>(null);
+  const [editingCashUserId, setEditingCashUserId]   = useState<string | null>(null);
+  const [editingCashUserName, setEditingCashUserName] = useState("");
+
   // ── Categories state ─────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
   const [catsLoading, setCatsLoading] = useState(true);
@@ -204,6 +257,22 @@ export default function ConfiguracionPage() {
       .then((r) => r.json())
       .then((data) => setSocial({ ...SOCIAL_DEFAULTS, ...data }))
       .finally(() => setLoadingSocial(false));
+
+    // Menu config
+    fetch("/api/admin/menu-config")
+      .then((r) => r.json())
+      .then((data) => setMenuConfig({ ...MENU_CONFIG_DEFAULTS, ...data }));
+
+    // POS config (table count)
+    fetch("/api/admin/pos-config")
+      .then((r) => r.json())
+      .then((d) => { if (typeof d.tableCount === "number") setTableCount(d.tableCount); });
+
+    // Cash users
+    fetch("/api/admin/cash-users")
+      .then((r) => r.json())
+      .then((d) => setCashUsers(d.users ?? []))
+      .finally(() => setCashUsersLoading(false));
 
     // Categories
     fetch("/api/admin/categories")
@@ -386,6 +455,112 @@ export default function ConfiguracionPage() {
     }
   }
 
+  // ── Handlers: menu background image ─────────────────────────────
+  async function handleMenuBgUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingMenuBg(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (menuConfig.bgImageUrl) formData.append("oldImageUrl", menuConfig.bgImageUrl);
+      const res = await fetch("/api/admin/upload?folder=menu", { method: "POST", body: formData });
+      const data = await res.json();
+      if (res.ok) setMenuConfig((prev) => ({ ...prev, bgImageUrl: data.url }));
+    } finally {
+      setUploadingMenuBg(false);
+      if (menuBgFileRef.current) menuBgFileRef.current.value = "";
+    }
+  }
+
+  async function handleRemoveMenuBg() {
+    if (!menuConfig.bgImageUrl) return;
+    fetch("/api/admin/upload", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: menuConfig.bgImageUrl }),
+    }).catch(console.error);
+    setMenuConfig((prev) => ({ ...prev, bgImageUrl: "" }));
+  }
+
+  // ── Handlers: menu config ────────────────────────────────────────
+  async function handleSaveMenuConfig(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingMenu(true);
+    try {
+      await fetch("/api/admin/menu-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(menuConfig),
+      });
+      setSavedMenu(true);
+      setTimeout(() => setSavedMenu(false), 3000);
+    } finally {
+      setSavingMenu(false);
+    }
+  }
+
+  // ── Handlers: table count ────────────────────────────────────────
+  async function handleSaveTableCount(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingTables(true);
+    try {
+      await fetch("/api/admin/pos-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tableCount }),
+      });
+      setSavedTables(true);
+      setTimeout(() => setSavedTables(false), 3000);
+    } finally {
+      setSavingTables(false);
+    }
+  }
+
+  // ── Handlers: cash users ─────────────────────────────────────────
+  async function handleAddCashUser(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newCashUserName.trim();
+    if (!name) return;
+    setAddingCashUser(true);
+    try {
+      const r = await fetch("/api/admin/cash-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const d = await r.json();
+      if (d.user) {
+        setCashUsers((prev) => [...prev, d.user]);
+        setNewCashUserName("");
+      }
+    } finally {
+      setAddingCashUser(false);
+    }
+  }
+
+  async function handleSaveCashUserName(id: string) {
+    const name = editingCashUserName.trim();
+    if (!name) return;
+    await fetch(`/api/admin/cash-users/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    setCashUsers((prev) => prev.map((u) => (u._id === id ? { ...u, name } : u)));
+    setEditingCashUserId(null);
+  }
+
+  async function handleDeleteCashUser(id: string) {
+    setDeletingCashUserId(id);
+    try {
+      await fetch(`/api/admin/cash-users/${id}`, { method: "DELETE" });
+      setCashUsers((prev) => prev.filter((u) => u._id !== id));
+    } finally {
+      setDeletingCashUserId(null);
+    }
+  }
+
   // ── Handlers: categories ─────────────────────────────────────────
   async function handleAddCategory(e: React.FormEvent) {
     e.preventDefault();
@@ -428,9 +603,48 @@ export default function ConfiguracionPage() {
     );
   }
 
+  const TABS = [
+    { key: "marca",    label: "Marca",    icon: "🎨", title: "Identidad de marca",      desc: "Logo, colores, tipografía y apariencia visual de tu tienda." },
+    { key: "portada",  label: "Portada",  icon: "🏠", title: "Portada y contacto",       desc: "Texto principal de la tienda y redes sociales." },
+    { key: "nosotros", label: "Nosotros", icon: "👥", title: "Sección Nosotros",          desc: "Texto e imágenes de la sección \"Nosotros\" en tu tienda." },
+    { key: "productos",label: "Productos",icon: "📦", title: "Categorías de productos",  desc: "Administrá las categorías para organizar tu catálogo." },
+    { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
+    { key: "caja",     label: "Caja",     icon: "🧑‍💼", title: "Usuarios de caja",          desc: "Personas que pueden atender el punto de venta." },
+  ] as const;
+
+  const currentTab = TABS.find((t) => t.key === activeTab)!;
+
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
-      <h1 className="font-brand text-2xl font-bold text-brand-dark">Configuración del sitio</h1>
+    <div className="max-w-2xl mx-auto py-6 px-4">
+      {/* ── Barra de tabs ── */}
+      <div className="flex overflow-x-auto gap-0.5 -mx-4 px-4 border-b border-brand-muted mb-6 scrollbar-hide">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors shrink-0 ${
+              activeTab === tab.key
+                ? "border-brand-pink text-brand-pink"
+                : "border-transparent text-brand-dark/50 hover:text-brand-dark hover:border-brand-muted"
+            }`}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Título del tab activo ── */}
+      <div className="mb-6">
+        <h1 className="font-brand text-xl font-bold text-brand-dark">{currentTab.title}</h1>
+        <p className="text-sm text-brand-dark/50 mt-0.5">{currentTab.desc}</p>
+      </div>
+
+      <div className="space-y-6">
+
+      {/* ── TAB: MARCA ── Logo + Apariencia ─────────────────────────── */}
+      {activeTab === "marca" && <>
 
       {/* ── Logo ────────────────────────────────────────────────────── */}
       <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
@@ -719,6 +933,11 @@ export default function ConfiguracionPage() {
         </section>
       </form>
 
+      </>}
+
+      {/* ── TAB: PORTADA ── Hero + Redes Sociales ───────────────────── */}
+      {activeTab === "portada" && <>
+
       {/* ── Hero (texto de portada) ─────────────────────────────────── */}
       <form onSubmit={handleSaveHero}>
         <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
@@ -889,6 +1108,11 @@ export default function ConfiguracionPage() {
         </section>
       </form>
 
+      </>}
+
+      {/* ── TAB: NOSOTROS ── Sección About ──────────────────────────── */}
+      {activeTab === "nosotros" && <>
+
       {/* ── Sección Nosotros ────────────────────────────────────────── */}
       <form onSubmit={handleSaveAbout}>
         <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
@@ -999,6 +1223,11 @@ export default function ConfiguracionPage() {
         </section>
       </form>
 
+      </>}
+
+      {/* ── TAB: PRODUCTOS ── Categorías ────────────────────────────── */}
+      {activeTab === "productos" && <>
+
       {/* ── Categorías de productos ─────────────────────────────────── */}
       <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
         <div>
@@ -1053,6 +1282,435 @@ export default function ConfiguracionPage() {
           </Button>
         </form>
       </section>
+
+      </>}
+
+      {/* ── TAB: MENÚ ── Configuración del menú público ─────────────── */}
+      {activeTab === "menu" && <>
+
+      {/* ── Menú público ────────────────────────────────────────────── */}
+      <form onSubmit={handleSaveMenuConfig}>
+        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-6">
+          <div>
+            <h2 className="font-semibold text-brand-dark text-lg">Menú público de productos</h2>
+            <p className="text-sm text-brand-dark/50 mt-0.5">
+              Configurá cómo se ve la página{" "}
+              <span className="font-mono text-brand-pink">/{"{tu-tienda}"}/menu</span> para tus clientes.
+            </p>
+          </div>
+
+          {/* Título */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">
+              Título del menú
+            </label>
+            <input
+              type="text"
+              maxLength={120}
+              placeholder="Ej: Nuestro menú"
+              value={menuConfig.title}
+              onChange={(e) => setMenuConfig((prev) => ({ ...prev, title: e.target.value }))}
+              className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+            />
+          </div>
+
+          {/* Descripción */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">
+              Descripción del menú
+            </label>
+            <textarea
+              maxLength={300}
+              rows={2}
+              placeholder="Ej: Productos frescos preparados con amor cada día."
+              value={menuConfig.description}
+              onChange={(e) => setMenuConfig((prev) => ({ ...prev, description: e.target.value }))}
+              className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink resize-none"
+            />
+          </div>
+
+          {/* Tipografía */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-3">
+              Tipografía del menú
+            </label>
+            <div className="grid grid-cols-1 gap-2">
+              {FONT_OPTIONS.map(({ key, label, css }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMenuConfig((prev) => ({ ...prev, fontFamily: key }))}
+                  className={`flex items-center justify-between px-4 py-2.5 rounded-xl border-2 transition-all text-left ${
+                    menuConfig.fontFamily === key
+                      ? "border-brand-pink bg-brand-pink/10"
+                      : "border-brand-muted hover:border-brand-pink/40"
+                  }`}
+                >
+                  <span
+                    className="text-sm font-medium text-brand-dark"
+                    style={{ fontFamily: css }}
+                  >
+                    {label}
+                  </span>
+                  <span className="text-xs text-brand-dark/40" style={{ fontFamily: css }}>
+                    Aa Bb Cc
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Columnas */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-3">
+              Columnas por fila
+            </label>
+            <div className="flex gap-2">
+              {([1, 2, 3] as const).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMenuConfig((prev) => ({ ...prev, columns: n }))}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                    menuConfig.columns === n
+                      ? "border-brand-pink bg-brand-pink/10 text-brand-pink"
+                      : "border-brand-muted text-brand-dark/50 hover:border-brand-pink/40"
+                  }`}
+                >
+                  {n} {n === 1 ? "columna" : "columnas"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Toggles */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-brand-dark mb-1">
+              Mostrar en cada producto
+            </label>
+            {(
+              [
+                { key: "showImage", label: "Imagen del producto" },
+                { key: "showPrice", label: "Precio" },
+              ] as { key: keyof Pick<MenuConfigData, "showImage" | "showPrice">; label: string }[]
+            ).map(({ key, label }) => (
+              <label
+                key={key}
+                className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-brand-muted cursor-pointer hover:bg-brand-muted/20 transition-colors"
+              >
+                <span className="text-sm text-brand-dark">{label}</span>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={menuConfig[key]}
+                    onChange={(e) => setMenuConfig((prev) => ({ ...prev, [key]: e.target.checked }))}
+                  />
+                  <div
+                    className={`w-10 h-5 rounded-full transition-colors ${
+                      menuConfig[key] ? "bg-brand-pink" : "bg-gray-200"
+                    }`}
+                  />
+                  <div
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                      menuConfig[key] ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {/* Paleta de colores del menú */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">
+              Paleta de colores del menú
+            </label>
+            <p className="text-xs text-brand-dark/40 mb-3">
+              Si dejás un color sin definir, se usa el color del tema principal de tu tienda.
+            </p>
+            <div className="grid grid-cols-3 gap-4">
+              {(
+                [
+                  { key: "primaryColor",   label: "Principal" },
+                  { key: "secondaryColor", label: "Secundario" },
+                  { key: "accentColor",    label: "Acento" },
+                ] as { key: keyof Pick<MenuConfigData, "primaryColor" | "secondaryColor" | "accentColor">; label: string }[]
+              ).map(({ key, label }) => (
+                <div key={key} className="flex flex-col items-center gap-2">
+                  <div
+                    className="relative w-12 h-12 rounded-xl border-2 border-brand-muted shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                    style={{ backgroundColor: menuConfig[key] || "#e5e7eb" }}
+                  >
+                    <input
+                      type="color"
+                      value={menuConfig[key] || "#6366f1"}
+                      onChange={(e) => setMenuConfig((prev) => ({ ...prev, [key]: e.target.value }))}
+                      className="absolute inset-0 w-full h-full cursor-pointer opacity-0 z-10"
+                    />
+                  </div>
+                  <span className="text-xs text-brand-dark/60 font-medium">{label}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-brand-dark/40 font-mono">
+                      {menuConfig[key] || "—"}
+                    </span>
+                    {menuConfig[key] && (
+                      <button
+                        type="button"
+                        onClick={() => setMenuConfig((prev) => ({ ...prev, [key]: "" }))}
+                        className="text-brand-dark/30 hover:text-red-400 transition-colors"
+                        title="Usar color del tema"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Imagen de fondo */}
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-3">
+              Imagen de fondo del menú
+            </label>
+            <input
+              ref={menuBgFileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={handleMenuBgUpload}
+            />
+            {menuConfig.bgImageUrl ? (
+              <div className="flex items-center gap-4">
+                <div className="relative w-20 h-14 rounded-xl overflow-hidden border-2 border-brand-muted shadow-sm shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={menuConfig.bgImageUrl}
+                    alt="Fondo del menú"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => menuBgFileRef.current?.click()}
+                    disabled={uploadingMenuBg}
+                  >
+                    {uploadingMenuBg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    Cambiar imagen
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveMenuBg}
+                    className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
+                  >
+                    Eliminar fondo
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => menuBgFileRef.current?.click()}
+                disabled={uploadingMenuBg}
+                className="w-full border-2 border-dashed border-brand-muted rounded-xl p-5 flex flex-col items-center gap-2 hover:border-brand-pink/40 hover:bg-brand-pink/5 transition-all"
+              >
+                {uploadingMenuBg ? (
+                  <Loader2 className="w-6 h-6 animate-spin text-brand-pink" />
+                ) : (
+                  <>
+                    <Upload className="w-6 h-6 text-brand-dark/30" />
+                    <span className="text-sm text-brand-dark/40">Subir imagen de fondo</span>
+                    <span className="text-xs text-brand-dark/30">JPG, PNG, WebP — máx 5 MB</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          {/* Difuminado del fondo */}
+          <div className={menuConfig.bgImageUrl ? "" : "opacity-40 pointer-events-none"}>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-brand-dark">
+                Difuminado del fondo
+              </label>
+              <span className="text-sm font-semibold text-brand-pink tabular-nums">
+                {menuConfig.bgBlur}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={menuConfig.bgBlur}
+              onChange={(e) =>
+                setMenuConfig((prev) => ({ ...prev, bgBlur: Number(e.target.value) }))
+              }
+              className="w-full h-2 rounded-full appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, var(--color-brand-pink) 0%, var(--color-brand-pink) ${menuConfig.bgBlur}%, #e5e7eb ${menuConfig.bgBlur}%, #e5e7eb 100%)`,
+              }}
+            />
+            <div className="flex justify-between text-xs text-brand-dark/30 mt-1">
+              <span>Sin difuminar</span>
+              <span>Muy difuminado</span>
+            </div>
+          </div>
+
+          <Button type="submit" disabled={savingMenu} className="w-full sm:w-auto">
+            {savingMenu ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : savedMenu ? (
+              <Check className="w-4 h-4" />
+            ) : null}
+            {savedMenu ? "¡Guardado!" : "Guardar configuración del menú"}
+          </Button>
+        </section>
+      </form>
+
+      </>}
+
+      {/* ── TAB: CAJA ── Usuarios de caja ───────────────────────────── */}
+      {activeTab === "caja" && <>
+
+      <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+        <div>
+          <h2 className="font-semibold text-brand-dark text-lg">Usuarios de caja</h2>
+          <p className="text-sm text-brand-dark/50 mt-0.5">
+            Estos nombres aparecen en el Punto de venta para identificar quién atendió cada venta.
+          </p>
+        </div>
+
+        {cashUsersLoading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin text-brand-pink" />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {cashUsers.length === 0 && (
+              <p className="text-sm text-brand-dark/40 italic">No hay usuarios de caja aún.</p>
+            )}
+            {cashUsers.map((u) => (
+              <div
+                key={u._id}
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-brand-muted bg-brand-muted/10"
+              >
+                {editingCashUserId === u._id ? (
+                  <input
+                    autoFocus
+                    type="text"
+                    value={editingCashUserName}
+                    onChange={(e) => setEditingCashUserName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveCashUserName(u._id);
+                      if (e.key === "Escape") setEditingCashUserId(null);
+                    }}
+                    className="flex-1 border border-brand-pink rounded-lg px-2 py-1 text-sm focus:outline-none"
+                  />
+                ) : (
+                  <span className="text-sm text-brand-dark flex-1">{u.name}</span>
+                )}
+                <div className="flex items-center gap-1">
+                  {editingCashUserId === u._id ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveCashUserName(u._id)}
+                        className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCashUserId(null)}
+                        className="p-1.5 rounded-lg text-brand-dark/30 hover:bg-gray-100 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setEditingCashUserId(u._id); setEditingCashUserName(u.name); }}
+                      className="p-1.5 rounded-lg text-brand-dark/30 hover:text-brand-dark hover:bg-brand-muted/30 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteCashUser(u._id)}
+                    disabled={deletingCashUserId === u._id}
+                    className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors disabled:opacity-50"
+                  >
+                    {deletingCashUserId === u._id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={handleAddCashUser} className="flex gap-2">
+          <input
+            type="text"
+            value={newCashUserName}
+            onChange={(e) => setNewCashUserName(e.target.value)}
+            placeholder="Nombre del usuario..."
+            className="flex-1 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+          />
+          <Button type="submit" disabled={addingCashUser || !newCashUserName.trim()} size="sm">
+            {addingCashUser ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+          </Button>
+        </form>
+      </section>
+
+      {/* Configuración de mesas */}
+      <form onSubmit={handleSaveTableCount}>
+        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+          <div>
+            <h2 className="font-semibold text-brand-dark text-lg">Configuración de mesas</h2>
+            <p className="text-sm text-brand-dark/50 mt-0.5">
+              Definí cuántas mesas tiene tu local. El Punto de venta mostrará un selector "Mesa 1", "Mesa 2"…
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-brand-dark mb-1">
+                Número de mesas disponibles
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={tableCount}
+                onChange={(e) => setTableCount(Math.max(0, Math.round(Number(e.target.value))))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+                placeholder="0 = sin mesas"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={savingTables} size="sm">
+              {savingTables ? <Loader2 className="w-4 h-4 animate-spin" /> : savedTables ? <Check className="w-4 h-4" /> : null}
+              {savedTables ? "¡Guardado!" : "Guardar mesas"}
+            </Button>
+          </div>
+        </section>
+      </form>
+
+      </>}
+
+      </div>
     </div>
   );
 }

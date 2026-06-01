@@ -21,9 +21,11 @@ export default function ProductForm({ initial, onSave, onCancel, saving }: Produ
     name:         initial?.name         ?? "",
     description:  initial?.description  ?? "",
     price:        initial?.price?.toString() ?? "",
+    cost:         initial?.cost?.toString()  ?? "",
     stock:        initial?.stock?.toString() ?? "0",
     image:        initial?.image        ?? "",
     category:     initial?.category     ?? "",
+    menuSection:  initial?.menuSection  ?? "panaderia",
     available:    initial?.available    ?? true,
     featured:     initial?.featured     ?? false,
     delivery:     initial?.delivery     ?? false,
@@ -135,18 +137,16 @@ export default function ProductForm({ initial, onSave, onCancel, saving }: Produ
       setUploadError("Debes seleccionar o crear una categoría");
       return;
     }
-    if (!form.image) {
-      setUploadError("Debes subir una imagen para el producto");
-      return;
-    }
     await onSave({
       ...form,
       price: Number(form.price),
+      cost:  form.cost !== "" ? Number(form.cost) : 0,
       stock: Number(form.stock),
       toppings,
       images: extraImages,
       delivery: form.delivery,
       deliveryNote: form.deliveryNote,
+      menuSection: form.menuSection as "panaderia" | "bebidas" | "",
       offers: offers
         .filter(o => o.qty && o.price)
         .map(o => ({ qty: Number(o.qty), price: Number(o.price) }))
@@ -169,19 +169,19 @@ export default function ProductForm({ initial, onSave, onCancel, saving }: Produ
 
       {/* Descripción */}
       <div>
-        <label className="block text-sm font-medium text-brand-dark mb-1">Descripción *</label>
+        <label className="block text-sm font-medium text-brand-dark mb-1">Descripción</label>
         <textarea
-          required rows={3}
+          rows={3}
           value={form.description}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
           className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink resize-none"
         />
       </div>
 
-      {/* Precio + Categoría */}
+      {/* Precios */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-brand-dark mb-1">Precio (₡) *</label>
+          <label className="block text-sm font-medium text-brand-dark mb-1">Precio de venta (₡) *</label>
           <input
             type="number" required min={0}
             value={form.price}
@@ -190,11 +190,44 @@ export default function ProductForm({ initial, onSave, onCancel, saving }: Produ
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-brand-dark mb-1">Categoría *</label>
-          <CategoryCombobox
-            value={form.category}
-            onChange={(val) => setForm({ ...form, category: val })}
+          <label className="block text-sm font-medium text-brand-dark mb-1">Precio de costo (₡)</label>
+          <input
+            type="number" min={0}
+            value={form.cost}
+            onChange={(e) => setForm({ ...form, cost: e.target.value })}
+            placeholder="0"
+            className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
           />
+        </div>
+      </div>
+
+      {/* Categoría */}
+      <div>
+        <label className="block text-sm font-medium text-brand-dark mb-1">Categoría *</label>
+        <CategoryCombobox
+          value={form.category}
+          onChange={(val) => setForm({ ...form, category: val })}
+        />
+      </div>
+
+      {/* Sección del menú */}
+      <div>
+        <label className="block text-sm font-medium text-brand-dark mb-2">Sección del menú público</label>
+        <div className="flex gap-2">
+          {(["panaderia", "bebidas"] as const).map((sec) => (
+            <button
+              key={sec}
+              type="button"
+              onClick={() => setForm({ ...form, menuSection: sec })}
+              className={`flex-1 py-2 rounded-xl text-sm font-semibold border-2 transition-all capitalize ${
+                form.menuSection === sec
+                  ? "border-brand-pink bg-brand-pink/10 text-brand-pink"
+                  : "border-brand-muted text-brand-dark/50 hover:border-brand-pink/40"
+              }`}
+            >
+              {sec === "panaderia" ? "🥐 Panadería" : "☕ Bebidas"}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -212,7 +245,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving }: Produ
       {/* ── Imagen principal ── */}
       <div>
         <label className="block text-sm font-medium text-brand-dark mb-2">
-          Imagen principal *
+          Imagen principal <span className="text-brand-dark/40 font-normal">(opcional)</span>
         </label>
 
         {form.image ? (

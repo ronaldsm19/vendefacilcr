@@ -12,6 +12,20 @@ export interface ITenantTheme {
   darkMode?: boolean;
 }
 
+export interface IMenuConfig {
+  columns: 1 | 2 | 3;
+  showImage: boolean;
+  showPrice: boolean;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  bgImageUrl: string;
+  bgBlur: number;
+  title: string;
+  description: string;
+  fontFamily: "default" | "playfair" | "montserrat" | "nunito" | "lato";
+}
+
 export interface ITenant {
   _id: string;
   slug: string;
@@ -23,6 +37,8 @@ export interface ITenant {
   plan: "emprende" | "pro" | "premium";
   status: "active" | "inactive" | "suspended";
   theme: ITenantTheme;
+  menuConfig: IMenuConfig;
+  posConfig: { ivaEnabled: boolean; ivaRate: number; tipEnabled: boolean; serviceRate: number; tableCount: number };
   instagram: string;
   facebook: string;
   tiktok: string;
@@ -51,6 +67,26 @@ const TenantSchema = new Schema(
       heroImageUrl:    { type: String, default: "" },
       fontFamily:      { type: String, enum: ["default", "playfair", "montserrat", "nunito", "lato"], default: "default" },
       darkMode:        { type: Boolean, default: false },
+    },
+    menuConfig: {
+      columns:        { type: Number, enum: [1, 2, 3], default: 2 },
+      showImage:      { type: Boolean, default: true },
+      showPrice:      { type: Boolean, default: true },
+      primaryColor:   { type: String, default: "" },
+      secondaryColor: { type: String, default: "" },
+      accentColor:    { type: String, default: "" },
+      bgImageUrl:     { type: String, default: "" },
+      bgBlur:         { type: Number, default: 0, min: 0, max: 100 },
+      title:          { type: String, default: "" },
+      description:    { type: String, default: "" },
+      fontFamily:     { type: String, enum: ["default", "playfair", "montserrat", "nunito", "lato"], default: "default" },
+    },
+    posConfig: {
+      ivaEnabled:  { type: Boolean, default: false },
+      ivaRate:     { type: Number,  default: 13 },
+      tipEnabled:  { type: Boolean, default: false },
+      serviceRate: { type: Number,  default: 10 },
+      tableCount:  { type: Number,  default: 0 },
     },
     instagram: { type: String, default: "" },
     facebook:  { type: String, default: "" },

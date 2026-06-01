@@ -9,7 +9,8 @@ import {
 import ProductForm from "@/components/admin/ProductForm";
 import Pagination from "@/components/admin/Pagination";
 import { IProduct } from "@/models/Product";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Upload } from "lucide-react";
+import ImportProductsModal from "@/components/admin/ImportProductsModal";
 
 type ProductRow = IProduct & { _id: string };
 
@@ -29,6 +30,7 @@ export default function AdminProductsPage() {
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
 
   async function load() {
     const r = await fetch("/api/admin/products");
@@ -90,6 +92,9 @@ export default function AdminProductsPage() {
               className="pl-8 pr-3 py-1.5 border border-brand-muted rounded-full text-sm focus:outline-none focus:border-brand-pink w-48"
             />
           </div>
+          <Button variant="secondary" size="sm" onClick={() => setShowImport(true)} className="shrink-0">
+            <Upload className="w-4 h-4" /> Importar
+          </Button>
           <Button onClick={openCreate} className="shrink-0">
             <Plus className="w-4 h-4 mr-1" /> Nuevo
           </Button>
@@ -128,13 +133,17 @@ export default function AdminProductsPage() {
                 <tr key={p._id} className="border-b border-brand-muted/50 hover:bg-brand-muted/20 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-brand-muted">
-                        <Image
-                          src={p.image}
-                          alt={p.name}
-                          width={40} height={40}
-                          className="w-full h-full object-cover"
-                        />
+                      <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-brand-muted flex items-center justify-center">
+                        {p.image ? (
+                          <Image
+                            src={p.image}
+                            alt={p.name}
+                            width={40} height={40}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-lg">🍽️</span>
+                        )}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
@@ -251,6 +260,21 @@ export default function AdminProductsPage() {
                 Cancelar
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import dialog */}
+      <Dialog open={showImport} onOpenChange={(v) => { if (!v) setShowImport(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Importar productos</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            <ImportProductsModal
+              onSuccess={() => { setShowImport(false); load(); }}
+              onCancel={() => setShowImport(false)}
+            />
           </div>
         </DialogContent>
       </Dialog>

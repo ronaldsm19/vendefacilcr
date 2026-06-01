@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     // Carpeta destino (solo valores permitidos)
     const folderParam = request.nextUrl.searchParams.get("folder") ?? "products";
-    const folder = ["products", "billing", "about", "hero", "logo"].includes(folderParam) ? folderParam : "products";
+    const folder = ["products", "billing", "about", "hero", "logo", "menu"].includes(folderParam) ? folderParam : "products";
 
     // Generar nombre único
     const ext = file.name.split(".").pop() ?? "jpg";

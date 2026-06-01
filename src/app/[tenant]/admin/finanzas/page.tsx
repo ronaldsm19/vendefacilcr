@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
@@ -16,7 +16,7 @@ interface FinanceData {
   expensesByCategory: { _id: string; total: number; count: number }[];
 }
 
-const PIE_COLORS = ["#FF6B9D", "#FF8C42", "#FFD166", "#6B8CFF", "#7ED4AD"];
+const EXTRA_COLORS = ["#6B8CFF", "#7ED4AD"];
 
 const catLabel: Record<string, string> = {
   materia_prima: "Materia prima",
@@ -50,6 +50,19 @@ export default function AdminFinancesPage() {
   const [data, setData] = useState<FinanceData | null>(null);
   const [period, setPeriod] = useState<"week" | "month" | "year">("month");
   const [loading, setLoading] = useState(true);
+  const [brandColors, setBrandColors] = useState({ primary: "#6366F1", secondary: "#8B5CF6", accent: "#F59E0B" });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const s = getComputedStyle(containerRef.current);
+    const primary   = s.getPropertyValue("--color-brand-pink").trim();
+    const secondary = s.getPropertyValue("--color-brand-orange").trim();
+    const accent    = s.getPropertyValue("--color-brand-yellow").trim();
+    if (primary) setBrandColors({ primary, secondary, accent });
+  }, []);
+
+  const PIE_COLORS = [brandColors.primary, brandColors.secondary, brandColors.accent, ...EXTRA_COLORS];
 
   useEffect(() => {
     setLoading(true);
@@ -78,7 +91,7 @@ export default function AdminFinancesPage() {
   })) ?? [];
 
   return (
-    <div className="p-4 md:p-8 space-y-8">
+    <div ref={containerRef} className="p-4 md:p-8 space-y-8">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-brand text-2xl md:text-3xl font-bold text-brand-dark">Finanzas</h1>
@@ -148,7 +161,7 @@ export default function AdminFinancesPage() {
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="Ingresos" fill="#25D366" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="Gastos" fill="#FF6B9D" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="Gastos" fill={brandColors.primary} radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -235,7 +248,7 @@ export default function AdminFinancesPage() {
                   <YAxis tickFormatter={(v) => `₡${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: "#1A1A2E80" }} />
                   <Tooltip content={<CustomTooltip />} />
                   <Line type="monotone" dataKey="Ingresos" stroke="#25D366" strokeWidth={2.5} dot={{ fill: "#25D366", r: 4 }} />
-                  <Line type="monotone" dataKey="Gastos" stroke="#FF6B9D" strokeWidth={2.5} strokeDasharray="5 4" dot={{ fill: "#FF6B9D", r: 4 }} />
+                  <Line type="monotone" dataKey="Gastos" stroke={brandColors.primary} strokeWidth={2.5} strokeDasharray="5 4" dot={{ fill: brandColors.primary, r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

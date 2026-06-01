@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, UtensilsCrossed } from "lucide-react";
 
 interface ProductImageCarouselProps {
   images: string[];
@@ -16,7 +16,7 @@ interface ProductImageCarouselProps {
 }
 
 export default function ProductImageCarousel({
-  images,
+  images: rawImages,
   alt,
   className = "object-cover",
   sizes,
@@ -24,6 +24,7 @@ export default function ProductImageCarousel({
   showArrows = false,
   onCurrentChange,
 }: ProductImageCarouselProps) {
+  const images = rawImages.filter(Boolean);
   const [current, setCurrent] = useState(0);
   const count = images.length;
 
@@ -58,7 +59,13 @@ export default function ProductImageCarousel({
     goTo((current + delta + count) % count);
   }
 
-  if (count === 0) return null;
+  if (count === 0) {
+    return (
+      <div className="relative w-full h-full bg-brand-muted/50 flex items-center justify-center">
+        <UtensilsCrossed className="w-14 h-14 text-brand-dark/15" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-full">

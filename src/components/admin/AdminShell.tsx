@@ -60,12 +60,22 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     });
   }, [pathname, router]);
 
-  const cssVars = {
-    "--color-brand-pink":   branding.primaryColor,
-    "--color-brand-orange": branding.secondaryColor,
-    "--color-brand-yellow": branding.accentColor,
-    "--gradient-brand":     `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 50%, ${branding.accentColor} 100%)`,
-  } as React.CSSProperties;
+  // Inject tenant CSS vars on <html> so Radix portals (modals, dropdowns)
+  // also inherit the right colors — they render outside this component's div.
+  useEffect(() => {
+    const root = document.documentElement;
+    const gradient = `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 50%, ${branding.accentColor} 100%)`;
+    root.style.setProperty("--color-brand-pink",   branding.primaryColor);
+    root.style.setProperty("--color-brand-orange",  branding.secondaryColor);
+    root.style.setProperty("--color-brand-yellow",  branding.accentColor);
+    root.style.setProperty("--gradient-brand",      gradient);
+    return () => {
+      root.style.removeProperty("--color-brand-pink");
+      root.style.removeProperty("--color-brand-orange");
+      root.style.removeProperty("--color-brand-yellow");
+      root.style.removeProperty("--gradient-brand");
+    };
+  }, [branding]);
 
   if (pathname.endsWith("/admin/login")) {
     return <div className="min-h-screen bg-brand-muted/20">{children}</div>;
@@ -80,7 +90,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-muted/20" style={cssVars}>
+    <div className="flex h-screen overflow-hidden bg-brand-muted/20">
       {/* Desktop sidebar */}
       <div className="hidden lg:flex shrink-0 h-screen overflow-y-auto">
         <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} />

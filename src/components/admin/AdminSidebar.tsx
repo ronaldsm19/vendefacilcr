@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -14,6 +15,8 @@ import {
   Warehouse,
   FlaskConical,
   BookOpen,
+  MonitorCheck,
+  BookCheck,
 } from "lucide-react";
 
 function buildNavItems(base: string) {
@@ -24,9 +27,11 @@ function buildNavItems(base: string) {
     { href: `${base}/materiales`,       label: "Materiales",    icon: FlaskConical },
     { href: `${base}/recetas`,          label: "Recetas",       icon: BookOpen },
     { href: `${base}/pedidos`,          label: "Pedidos",       icon: ShoppingBag },
-    { href: `${base}/gastos`,           label: "Gastos",        icon: Receipt },
-    { href: `${base}/finanzas`,         label: "Finanzas",      icon: TrendingUp },
-    { href: `${base}/configuracion`,    label: "Configuración", icon: Settings },
+    { href: `${base}/gastos`,           label: "Gastos",         icon: Receipt },
+    { href: `${base}/finanzas`,         label: "Finanzas",       icon: TrendingUp },
+    { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck },
+    { href: `${base}/cierre-de-caja`,   label: "Cierre de caja", icon: BookCheck },
+    { href: `${base}/configuracion`,    label: "Configuración",  icon: Settings },
   ];
 }
 
@@ -45,6 +50,24 @@ export default function AdminSidebar({
   const tenant = pathname.split("/")[1];
   const base = `/${tenant}/admin`;
   const navItems = buildNavItems(base);
+
+  const [posCartCount, setPosCartCount] = useState(0);
+
+  useEffect(() => {
+    function readCount() {
+      try {
+        const raw = localStorage.getItem(`pos_cart_${tenant}`);
+        if (!raw) { setPosCartCount(0); return; }
+        const draft = JSON.parse(raw);
+        setPosCartCount(Array.isArray(draft.cart) ? draft.cart.length : 0);
+      } catch {
+        setPosCartCount(0);
+      }
+    }
+    readCount();
+    window.addEventListener("pos-cart-update", readCount);
+    return () => window.removeEventListener("pos-cart-update", readCount);
+  }, [tenant]);
 
   async function handleLogout() {
     await fetch("/api/admin/auth/logout", { method: "POST" });
@@ -99,7 +122,12 @@ export default function AdminSidebar({
               }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.label === "Punto de venta" && posCartCount > 0 && (
+                <span className="text-xs font-bold bg-white/20 text-white rounded-full w-5 h-5 flex items-center justify-center shrink-0">
+                  {posCartCount}
+                </span>
+              )}
             </Link>
           );
         })}

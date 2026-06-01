@@ -7,6 +7,7 @@ export interface IProduct {
   name: string;
   description: string;
   price: number;
+  cost: number;
   toppings: string[];
   image: string;
   images: string[];        // imágenes adicionales (carrusel)
@@ -16,6 +17,7 @@ export interface IProduct {
   delivery: boolean;       // si tiene envío disponible
   deliveryNote: string;    // nota de horarios/costo de envío
   offers: { qty: number; price: number }[];  // ofertas por volumen
+  menuSection: "panaderia" | "bebidas" | "";
   stock: number;
   sold: number;            // unidades vendidas acumuladas
   createdAt: Date;
@@ -32,12 +34,17 @@ const ProductSchema = new Schema(
     },
     description: {
       type: String,
-      required: [true, "La descripción es requerida"],
+      default: "",
     },
     price: {
       type: Number,
       required: [true, "El precio es requerido"],
       min: [0, "El precio no puede ser negativo"],
+    },
+    cost: {
+      type: Number,
+      default: 0,
+      min: [0, "El costo no puede ser negativo"],
     },
     toppings: {
       type: [String],
@@ -45,7 +52,7 @@ const ProductSchema = new Schema(
     },
     image: {
       type: String,
-      required: [true, "La imagen es requerida"],
+      default: "",
     },
     images: {
       type: [String],
@@ -55,6 +62,11 @@ const ProductSchema = new Schema(
       type: String,
       required: [true, "La categoría es requerida"],
       trim: true,
+    },
+    menuSection: {
+      type: String,
+      enum: ["panaderia", "bebidas", ""],
+      default: "panaderia",
     },
     available: {
       type: Boolean,
