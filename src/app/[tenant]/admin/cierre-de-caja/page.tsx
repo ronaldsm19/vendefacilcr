@@ -167,9 +167,9 @@ export default function CierreDeCajaPage() {
 
       <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between gap-4 no-print">
-          <h1 className="font-brand text-2xl font-bold text-brand-dark">Cierre de caja</h1>
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 no-print">
+          <h1 className="font-brand text-xl sm:text-2xl font-bold text-brand-dark">Cierre de caja</h1>
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
               onClick={loadData}
@@ -178,17 +178,17 @@ export default function CierreDeCajaPage() {
             >
               <RefreshCw className="w-4 h-4" />
             </button>
-            <Button variant="secondary" onClick={handlePrint} className="gap-2">
+            <Button variant="secondary" onClick={handlePrint} className="gap-2 text-sm">
               <Printer className="w-4 h-4" />
-              Imprimir / PDF
+              <span className="hidden sm:inline">Imprimir / </span>PDF
             </Button>
             <Button
               onClick={handleClose}
               disabled={closing || closedToday || !today?.sales.length}
-              className="gap-2"
+              className="gap-2 text-sm"
             >
               {closing ? <Loader2 className="w-4 h-4 animate-spin" /> : closedToday ? <Check className="w-4 h-4" /> : null}
-              {closedToday ? "Caja cerrada hoy" : "Cerrar el día"}
+              {closedToday ? "Caja cerrada" : "Cerrar el día"}
             </Button>
           </div>
         </div>

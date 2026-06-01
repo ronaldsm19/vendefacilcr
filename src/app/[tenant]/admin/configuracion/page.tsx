@@ -647,7 +647,7 @@ export default function ConfiguracionPage() {
       {activeTab === "marca" && <>
 
       {/* ── Logo ────────────────────────────────────────────────────── */}
-      <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+      <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
         <div>
           <h2 className="font-semibold text-brand-dark text-lg">Logo de tu tienda</h2>
           <p className="text-sm text-brand-dark/50 mt-0.5">
@@ -710,7 +710,7 @@ export default function ConfiguracionPage() {
 
       {/* ── Apariencia ──────────────────────────────────────────────── */}
       <form onSubmit={handleSaveTheme}>
-        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-6">
+        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
           <div className="flex items-center gap-2">
             <Palette className="w-5 h-5 text-brand-pink" />
             <div>
@@ -940,7 +940,7 @@ export default function ConfiguracionPage() {
 
       {/* ── Hero (texto de portada) ─────────────────────────────────── */}
       <form onSubmit={handleSaveHero}>
-        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
           <div>
             <h2 className="font-semibold text-brand-dark text-lg">Texto de portada</h2>
             <p className="text-sm text-brand-dark/50 mt-0.5">
@@ -1007,7 +1007,7 @@ export default function ConfiguracionPage() {
 
       {/* ── Redes Sociales ──────────────────────────────────────────── */}
       <form onSubmit={handleSaveSocial}>
-        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
           <div>
             <h2 className="font-semibold text-brand-dark text-lg">Redes sociales y contacto</h2>
             <p className="text-sm text-brand-dark/50 mt-0.5">
@@ -1115,7 +1115,7 @@ export default function ConfiguracionPage() {
 
       {/* ── Sección Nosotros ────────────────────────────────────────── */}
       <form onSubmit={handleSaveAbout}>
-        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
           <h2 className="font-semibold text-brand-dark text-lg">Sección &quot;Nosotros&quot;</h2>
 
           <div>
@@ -1229,7 +1229,7 @@ export default function ConfiguracionPage() {
       {activeTab === "productos" && <>
 
       {/* ── Categorías de productos ─────────────────────────────────── */}
-      <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+      <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
         <div>
           <h2 className="font-semibold text-brand-dark text-lg">Categorías de productos</h2>
           <p className="text-sm text-brand-dark/50 mt-0.5">
@@ -1290,7 +1290,7 @@ export default function ConfiguracionPage() {
 
       {/* ── Menú público ────────────────────────────────────────────── */}
       <form onSubmit={handleSaveMenuConfig}>
-        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-6">
+        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
           <div>
             <h2 className="font-semibold text-brand-dark text-lg">Menú público de productos</h2>
             <p className="text-sm text-brand-dark/50 mt-0.5">
@@ -1578,7 +1578,7 @@ export default function ConfiguracionPage() {
       {/* ── TAB: CAJA ── Usuarios de caja ───────────────────────────── */}
       {activeTab === "caja" && <>
 
-      <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+      <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
         <div>
           <h2 className="font-semibold text-brand-dark text-lg">Usuarios de caja</h2>
           <p className="text-sm text-brand-dark/50 mt-0.5">
@@ -1676,7 +1676,7 @@ export default function ConfiguracionPage() {
 
       {/* Configuración de mesas */}
       <form onSubmit={handleSaveTableCount}>
-        <section className="bg-white rounded-2xl border border-brand-muted p-6 space-y-4">
+        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
           <div>
             <h2 className="font-semibold text-brand-dark text-lg">Configuración de mesas</h2>
             <p className="text-sm text-brand-dark/50 mt-0.5">
