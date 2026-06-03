@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, Mail } from "lucide-react";
 
 interface Tenant {
   _id: string;
@@ -11,6 +11,7 @@ interface Tenant {
   email: string;
   plan: string;
   status: string;
+  passwordChanged?: boolean;
   createdAt: string;
 }
 
@@ -33,19 +34,23 @@ export default function TenantsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState("");
   const [status, setStatus]   = useState("");
+  const [pwFilter, setPwFilter] = useState("");
   const [page, setPage]       = useState(1);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [notice, setNotice]   = useState<{ type: "ok" | "error"; text: string } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     const q = new URLSearchParams({ page: String(page) });
     if (search) q.set("search", search);
     if (status) q.set("status", status);
+    if (pwFilter) q.set("passwordChanged", pwFilter);
     fetch(`/api/superadmin/tenants?${q}`)
       .then((r) => r.json())
       .then((d) => { setTenants(d.tenants ?? []); setTotal(d.total ?? 0); })
       .finally(() => setLoading(false));
-  }, [search, status, page]);
+  }, [search, status, pwFilter, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -60,6 +65,33 @@ export default function TenantsPage() {
     });
     setToggling(null);
     load();
+  }
+
+  async function resendInvite(tenant: Tenant) {
+    if (!confirm(
+      `¿Reenviar la invitación a ${tenant.name} (${tenant.email})?\n\n` +
+      `Se generará una contraseña temporal NUEVA y la anterior dejará de funcionar.`
+    )) return;
+    setResendingId(tenant._id);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/superadmin/tenants/${tenant._id}/resend-invite`, { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNotice({ type: "error", text: d.error ?? "No se pudo reenviar la invitación" });
+        return;
+      }
+      if (d.emailSent) {
+        setNotice({ type: "ok", text: `Invitación reenviada a ${d.email} con una nueva contraseña temporal.` });
+      } else {
+        setNotice({ type: "error", text: `No se pudo enviar el correo a ${d.email}. Contraseña temporal nueva: ${d.tempPassword}` });
+      }
+      load();
+    } catch {
+      setNotice({ type: "error", text: "Error de red al reenviar la invitación" });
+    } finally {
+      setResendingId(null);
+    }
   }
 
   const totalPages = Math.ceil(total / 20);
@@ -104,7 +136,36 @@ export default function TenantsPage() {
           <option value="inactive">Inactivos</option>
           <option value="suspended">Suspendidos</option>
         </select>
+        <select
+          value={pwFilter}
+          onChange={(e) => { setPwFilter(e.target.value); setPage(1); }}
+          className="rounded-xl px-3 py-2 text-sm text-white/70 bg-transparent focus:outline-none cursor-pointer"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+        >
+          <option value="">Contraseña: todas</option>
+          <option value="true">Contraseña cambiada</option>
+          <option value="false">Pendiente de cambio</option>
+        </select>
       </div>
+
+      {/* Notice */}
+      {notice && (
+        <div
+          className={`flex items-start justify-between gap-3 rounded-xl px-4 py-3 text-sm ${
+            notice.type === "ok"
+              ? "bg-emerald-500/10 border border-emerald-500/25 text-emerald-300"
+              : "bg-red-500/10 border border-red-500/25 text-red-300"
+          }`}
+        >
+          <span className="break-all">{notice.text}</span>
+          <button
+            onClick={() => setNotice(null)}
+            className="shrink-0 text-white/40 hover:text-white transition-colors cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div
@@ -112,12 +173,13 @@ export default function TenantsPage() {
         style={{ border: "1px solid rgba(255,255,255,0.07)" }}
       >
         <div
-          className="grid grid-cols-[1fr_120px_100px_100px_120px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
+          className="grid grid-cols-[1fr_100px_90px_140px_90px_160px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
           style={{ background: "rgba(255,255,255,0.04)" }}
         >
           <span>Tenant</span>
           <span>Plan</span>
           <span>Estado</span>
+          <span>Contraseña</span>
           <span>Creado</span>
           <span>Acciones</span>
         </div>
@@ -130,7 +192,7 @@ export default function TenantsPage() {
           tenants.map((t, i) => (
             <div
               key={t._id}
-              className="grid grid-cols-[1fr_120px_100px_100px_120px] px-5 py-3.5 items-center text-sm"
+              className="grid grid-cols-[1fr_100px_90px_140px_90px_160px] px-5 py-3.5 items-center text-sm"
               style={{ borderTop: i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
             >
               <div>
@@ -143,10 +205,17 @@ export default function TenantsPage() {
               <span className={`text-xs font-semibold px-2.5 py-1 rounded-full w-fit ${STATUS_COLORS[t.status] ?? "bg-gray-500/20 text-gray-400"}`}>
                 {STATUS_LABELS[t.status] ?? t.status}
               </span>
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full w-fit ${
+                t.passwordChanged
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : "bg-amber-500/20 text-amber-400"
+              }`}>
+                {t.passwordChanged ? "Cambiada" : "Pendiente"}
+              </span>
               <span className="text-white/35 text-xs">
                 {new Date(t.createdAt).toLocaleDateString("es-CR")}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Link
                   href={`/superadmin/tenants/${t._id}`}
                   className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
@@ -159,6 +228,15 @@ export default function TenantsPage() {
                   className={`text-xs transition-colors cursor-pointer ${t.status === "active" ? "text-red-400 hover:text-red-300" : "text-emerald-400 hover:text-emerald-300"}`}
                 >
                   {toggling === t._id ? "..." : t.status === "active" ? "Suspender" : "Activar"}
+                </button>
+                <button
+                  onClick={() => resendInvite(t)}
+                  disabled={resendingId === t._id}
+                  title="Reenviar invitación (nueva contraseña temporal)"
+                  className="inline-flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  {resendingId === t._id ? "..." : "Reenviar"}
                 </button>
               </div>
             </div>

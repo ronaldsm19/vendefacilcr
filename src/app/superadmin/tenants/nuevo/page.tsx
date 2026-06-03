@@ -272,14 +272,14 @@ export default function NuevoTenantPage() {
               ] as { key: keyof typeof form; label: string }[]
             ).map(({ key, label }) => (
               <div key={key} className="flex flex-col items-center gap-2">
-                <div className="relative w-12 h-12 rounded-xl overflow-hidden border-2 border-white/15 cursor-pointer hover:border-white/30 transition-colors">
+                <div className="relative w-12 h-12 rounded-xl border-2 border-white/15 cursor-pointer hover:border-white/30 transition-colors shadow-sm hover:shadow-md">
+                  <div className="absolute inset-0 rounded-xl pointer-events-none" style={{ backgroundColor: form[key] }} />
                   <input
                     type="color"
                     value={form[key]}
                     onChange={(e) => set(key, e.target.value)}
-                    className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
+                    className="absolute inset-0 w-full h-full cursor-pointer opacity-0 z-10"
                   />
-                  <div className="absolute inset-0 rounded-xl" style={{ backgroundColor: form[key] }} />
                 </div>
                 <span className="text-xs text-white/50">{label}</span>
                 <span className="text-[10px] text-white/30 font-mono">{form[key]}</span>

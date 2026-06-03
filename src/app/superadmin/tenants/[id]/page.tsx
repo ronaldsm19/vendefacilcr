@@ -63,6 +63,11 @@ export default function TenantDetailPage() {
   const [saveMsg, setSaveMsg] = useState("");
   const [form, setForm]       = useState<Partial<Tenant>>({});
 
+  const [showDelete, setShowDelete]     = useState(false);
+  const [confirmSlug, setConfirmSlug]   = useState("");
+  const [deleting, setDeleting]         = useState(false);
+  const [deleteError, setDeleteError]   = useState("");
+
   const load = useCallback(() => {
     setLoading(true);
     fetch(`/api/superadmin/tenants/${id}`)
@@ -98,6 +103,26 @@ export default function TenantDetailPage() {
     } else {
       const d = await res.json();
       setSaveMsg(d.error ?? "Error al guardar");
+    }
+  }
+
+  async function handleDelete() {
+    if (!data) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(`/api/superadmin/tenants/${id}`, { method: "DELETE" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError(d.error ?? "No se pudo eliminar el tenant");
+        return;
+      }
+      router.push("/superadmin/tenants");
+      router.refresh();
+    } catch {
+      setDeleteError("Error de red al eliminar el tenant");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -372,6 +397,78 @@ export default function TenantDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Danger zone */}
+      <div
+        className="rounded-2xl p-6"
+        style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.25)" }}
+      >
+        <div className="flex items-start gap-3 flex-wrap">
+          <div className="flex-1 min-w-[240px]">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertTriangle className="w-4 h-4 text-red-400" />
+              <h2 className="text-red-400 font-semibold text-sm uppercase tracking-wide">Zona de peligro</h2>
+            </div>
+            <p className="text-white/50 text-sm">
+              Eliminar este tenant borra <strong className="text-white/80">permanentemente</strong> todos sus datos:
+              usuarios, productos, ventas, pedidos, gastos, finanzas, recetas, inventario, cierres de caja, imágenes y
+              configuración. Esta acción no se puede deshacer.
+            </p>
+          </div>
+          <button
+            onClick={() => { setShowDelete(true); setConfirmSlug(""); setDeleteError(""); }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors cursor-pointer"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            Eliminar tenant
+          </button>
+        </div>
+      </div>
+
+      {/* Delete confirmation modal */}
+      {showDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => !deleting && setShowDelete(false)}>
+          <div
+            className="w-full max-w-md rounded-2xl p-6 space-y-4"
+            style={{ background: "#0E0E14", border: "1px solid rgba(239,68,68,0.3)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+              <h3 className="text-white font-bold">Eliminar {tenant.name}</h3>
+            </div>
+            <p className="text-white/60 text-sm">
+              Se borrarán de forma permanente todos los datos de este tenant. Para confirmar, escribí su slug{" "}
+              <code className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono text-xs">{tenant.slug}</code>{" "}
+              abajo.
+            </p>
+            <input
+              autoFocus
+              value={confirmSlug}
+              onChange={(e) => setConfirmSlug(e.target.value)}
+              placeholder={tenant.slug}
+              className="saas-input"
+            />
+            {deleteError && <p className="text-red-400 text-sm">{deleteError}</p>}
+            <div className="flex justify-end gap-3 pt-1">
+              <button
+                onClick={() => setShowDelete(false)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-xl text-sm text-white/60 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting || confirmSlug !== tenant.slug}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {deleting ? "Eliminando..." : "Eliminar definitivamente"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

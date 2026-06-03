@@ -43,6 +43,7 @@ export interface ITenant {
   facebook: string;
   tiktok: string;
   youtube: string;
+  passwordChanged: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +93,7 @@ const TenantSchema = new Schema(
     facebook:  { type: String, default: "" },
     tiktok:    { type: String, default: "" },
     youtube:   { type: String, default: "" },
+    passwordChanged: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

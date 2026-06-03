@@ -37,11 +37,14 @@ export default function LoginForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, tenantSlug: slug }),
       });
+      const data = await res.json();
       if (res.ok) {
+        if (data.passwordChanged === false) {
+          try { sessionStorage.setItem("vf_pw_reminder", "1"); } catch {}
+        }
         router.push(`/${slug}/admin`);
         router.refresh();
       } else {
-        const data = await res.json();
         setError(data.error ?? "Error al iniciar sesión");
       }
     } finally {

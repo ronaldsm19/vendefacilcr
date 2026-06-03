@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import AdminSidebar from "@/components/admin/AdminSidebar";
+import ReminderToast from "@/components/admin/ReminderToast";
 
 interface TenantBranding {
   tenantName: string;
@@ -125,6 +126,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
+
+      <ReminderToast />
     </div>
   );
 }

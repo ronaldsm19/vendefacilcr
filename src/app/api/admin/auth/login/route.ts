@@ -48,6 +48,7 @@ interface ITenantLean {
   _id: { toString(): string };
   slug: string;
   status: string;
+  passwordChanged?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -126,7 +127,12 @@ export async function POST(request: NextRequest) {
       tenantSlug: tenant.slug,
     });
 
-    const response = NextResponse.json({ ok: true, email: user.email, tenantSlug: tenant.slug });
+    const response = NextResponse.json({
+      ok: true,
+      email: user.email,
+      tenantSlug: tenant.slug,
+      passwordChanged: tenant.passwordChanged ?? false,
+    });
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
