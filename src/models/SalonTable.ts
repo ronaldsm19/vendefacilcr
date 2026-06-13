@@ -1,7 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 
 export type TableStatus = "libre" | "ocupada" | "reservada";
-export type TableShape  = "round" | "square" | "rectangle";
+export type TableShape  = "round" | "square" | "rectangle" | "barstool";
 
 export interface ISalonTable {
   _id: string;
@@ -20,7 +20,7 @@ const SalonTableSchema = new Schema(
   {
     tenantId:   { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
     areaId:     { type: Schema.Types.ObjectId, ref: "TableArea", required: true },
-    shape:      { type: String, enum: ["round", "square", "rectangle"], default: "round" },
+    shape:      { type: String, enum: ["round", "square", "rectangle", "barstool"], default: "round" },
     x:          { type: Number, default: 50 },
     y:          { type: Number, default: 50 },
     seats:      { type: Number, default: 4 },

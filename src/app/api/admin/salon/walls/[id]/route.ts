@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
-import { TableArea } from "@/models/TableArea";
-import { SalonTable } from "@/models/SalonTable";
 import { SalonWall } from "@/models/SalonWall";
 import { getSession } from "@/lib/auth";
 
@@ -11,15 +9,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   const { id } = await params;
   await connectToDatabase();
-  const { name, color } = await request.json();
+  const body = await request.json();
 
-  const area = await TableArea.findOneAndUpdate(
+  const allowed = ["x", "y", "length", "orientation", "wallType"];
+  const $set: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (body[key] !== undefined) $set[key] = body[key];
+  }
+
+  const wall = await SalonWall.findOneAndUpdate(
     { _id: id, tenantId: session.tenantId },
-    { $set: { ...(name ? { name } : {}), ...(color ? { color } : {}) } },
+    { $set },
     { new: true }
   ).lean();
-  if (!area) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-  return NextResponse.json({ area });
+  if (!wall) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  return NextResponse.json({ wall });
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -28,13 +32,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   const { id } = await params;
   await connectToDatabase();
-
-  // Check no occupied tables in this area
-  const busy = await SalonTable.findOne({ areaId: id, status: { $in: ["ocupada", "reservada"] } });
-  if (busy) return NextResponse.json({ error: "Hay mesas ocupadas o reservadas en esta zona" }, { status: 409 });
-
-  await SalonTable.deleteMany({ areaId: id, tenantId: session.tenantId });
-  await SalonWall.deleteMany({ areaId: id, tenantId: session.tenantId });
-  await TableArea.deleteOne({ _id: id, tenantId: session.tenantId });
+  await SalonWall.deleteOne({ _id: id, tenantId: session.tenantId });
   return NextResponse.json({ ok: true });
 }
