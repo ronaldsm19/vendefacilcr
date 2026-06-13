@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useState, useEffect, useRef, useCallback,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   DndContext, useDraggable, PointerSensor, useSensor, useSensors,
   type DragEndEvent,
@@ -126,23 +129,18 @@ function TableVisual({ table, selected }: { table: SalonTable; selected?: boolea
 // ── Wall Visual ───────────────────────────────────────────────────────────────
 
 function WallVisual({ wall, selected }: { wall: SalonWall; selected?: boolean }) {
-  const isH       = wall.orientation === "horizontal";
   const isCounter = wall.wallType === "counter";
-  const thickness = isCounter ? "28px" : "10px";
-  const bg        = isCounter ? "#92400e" : "#1e293b";
-  const outline   = isCounter ? "#78350f" : "#0f172a";
+  const bg      = isCounter ? "#92400e" : "#1e293b";
+  const outline = isCounter ? "#78350f" : "#0f172a";
 
   return (
     <div style={{
-      width:     isH ? `${wall.length}%` : thickness,
-      height:    isH ? thickness : `${wall.length}%`,
-      minWidth:  isH ? "40px" : thickness,
-      minHeight: isH ? thickness : "40px",
+      width: "100%", height: "100%",
       background: bg,
-      border:     `1px solid ${outline}`,
+      border: `1px solid ${outline}`,
       borderRadius: isCounter ? "6px" : "4px",
       boxShadow: selected
-        ? `0 0 0 2px white, 0 0 0 4px ${bg}`
+        ? `0 0 0 2px white, 0 0 0 3px ${bg}`
         : "0 2px 4px rgba(0,0,0,0.35)",
     }} />
   );
@@ -182,23 +180,77 @@ function DraggableTable({ table, isDesignMode, isSelected, onClick }: {
 
 // ── Draggable Wall ────────────────────────────────────────────────────────────
 
-function DraggableWall({ wall, isDesignMode, isSelected, onClick }: {
+function DraggableWall({ wall, isDesignMode, isSelected, onClick, onResizeLive, onResizeCommit, canvasRef }: {
   wall: SalonWall;
   isDesignMode: boolean;
   isSelected: boolean;
   onClick: () => void;
+  onResizeLive: (id: string, vals: { x: number; y: number; length: number }) => void;
+  onResizeCommit: (id: string, vals: { x: number; y: number; length: number }) => void;
+  canvasRef: { current: HTMLDivElement | null };
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `w-${wall._id}`,
     disabled: !isDesignMode,
   });
   const dragOffset = transform ? ` translate(${transform.x}px, ${transform.y}px)` : "";
+  const isH       = wall.orientation === "horizontal";
+  const isCounter = wall.wallType === "counter";
+  const thickness = isCounter ? 28 : 10;
+
+  const resize = useRef<{
+    sign: number; pointerStart: number; startLength: number;
+    startX: number; startY: number; canvasSize: number;
+    last: { x: number; y: number; length: number };
+  } | null>(null);
+
+  function startResize(e: ReactPointerEvent<HTMLDivElement>, sign: number) {
+    e.stopPropagation();
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const r = canvas.getBoundingClientRect();
+    resize.current = {
+      sign,
+      pointerStart: isH ? e.clientX : e.clientY,
+      startLength: wall.length, startX: wall.x, startY: wall.y,
+      canvasSize: isH ? r.width : r.height,
+      last: { x: wall.x, y: wall.y, length: wall.length },
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+  function moveResize(e: ReactPointerEvent<HTMLDivElement>) {
+    const s = resize.current;
+    if (!s) return;
+    const pos     = isH ? e.clientX : e.clientY;
+    const dPct    = ((pos - s.pointerStart) / s.canvasSize) * 100;
+    const len     = Math.max(5, Math.min(95, s.startLength + s.sign * dPct));
+    const applied = len - s.startLength;
+    const shift   = (s.sign * applied) / 2;
+    const vals = {
+      length: len,
+      x: isH ? Math.max(0, Math.min(100, s.startX + shift)) : s.startX,
+      y: isH ? s.startY : Math.max(0, Math.min(100, s.startY + shift)),
+    };
+    s.last = vals;
+    onResizeLive(wall._id, vals);
+  }
+  function endResize(e: ReactPointerEvent<HTMLDivElement>) {
+    const s = resize.current;
+    if (!s) return;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    resize.current = null;
+    onResizeCommit(wall._id, { ...s.last, length: Math.round(s.last.length) });
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={{
         position: "absolute",
         left: `${wall.x}%`, top: `${wall.y}%`,
+        width:  isH ? `${wall.length}%` : `${thickness}px`,
+        height: isH ? `${thickness}px` : `${wall.length}%`,
         transform: `translate(-50%, -50%)${dragOffset}`,
         zIndex: isDragging ? 50 : isSelected ? 12 : 2,
         cursor: isDesignMode ? (isDragging ? "grabbing" : "grab") : "default",
@@ -208,6 +260,27 @@ function DraggableWall({ wall, isDesignMode, isSelected, onClick }: {
       onClick={(e) => { e.stopPropagation(); if (isDesignMode) onClick(); }}
     >
       <WallVisual wall={wall} selected={isSelected} />
+
+      {isDesignMode && isSelected && [-1, 1].map(sign => (
+        <div key={sign}
+          onPointerDown={(e) => startResize(e, sign)}
+          onPointerMove={moveResize}
+          onPointerUp={endResize}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute",
+            width: 15, height: 15, borderRadius: 4,
+            background: "white", border: "2px solid #ec4899",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.35)",
+            cursor: isH ? "ew-resize" : "ns-resize",
+            touchAction: "none",
+            zIndex: 60,
+            ...(isH
+              ? { top: "50%", transform: "translateY(-50%)", ...(sign === 1 ? { right: -8 } : { left: -8 }) }
+              : { left: "50%", transform: "translateX(-50%)", ...(sign === 1 ? { bottom: -8 } : { top: -8 }) }),
+          }}
+        />
+      ))}
     </div>
   );
 }
@@ -403,6 +476,19 @@ export default function SalonPage() {
     setSelectedWallId(w._id);
     setSelectedId(null);
     setWallForm({ orientation: w.orientation, length: w.length, wallType: w.wallType });
+  }
+
+  function resizeWallLive(id: string, vals: { x: number; y: number; length: number }) {
+    setWalls(prev => prev.map(w => w._id === id ? { ...w, ...vals } : w));
+  }
+
+  function resizeWallCommit(id: string, vals: { x: number; y: number; length: number }) {
+    setWalls(prev => prev.map(w => w._id === id ? { ...w, ...vals } : w));
+    setWallForm(f => ({ ...f, length: vals.length }));
+    fetch(`/api/admin/salon/walls/${id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(vals),
+    }).catch(() => {});
   }
 
   // ── Area CRUD ─────────────────────────────────────────────────────────────
@@ -607,6 +693,9 @@ export default function SalonPage() {
                     isDesignMode={mode === "design"}
                     isSelected={selectedWallId === w._id}
                     onClick={() => selectWall(w)}
+                    onResizeLive={resizeWallLive}
+                    onResizeCommit={resizeWallCommit}
+                    canvasRef={canvasRef}
                   />
                 ))}
 
@@ -742,15 +831,19 @@ export default function SalonPage() {
 
                   <div>
                     <label className="block text-xs font-medium text-brand-dark/60 mb-1">
-                      Largo: <span className="font-bold text-brand-dark">{wallForm.length}%</span>
+                      Largo: <span className="font-bold text-brand-dark">{Math.round(wallForm.length)}%</span>
                     </label>
-                    <input type="range" min={5} max={80} value={wallForm.length}
+                    <input type="range" min={5} max={95} value={wallForm.length}
                       onChange={e => setWallForm(f => ({ ...f, length: Number(e.target.value) }))}
                       className="w-full accent-brand-pink" />
                     <div className="flex justify-between text-[10px] text-brand-dark/30 mt-0.5">
                       <span>Corta</span><span>Larga</span>
                     </div>
                   </div>
+
+                  <p className="text-xs text-brand-dark/50 leading-relaxed bg-pink-50 border border-pink-200 rounded-xl px-3 py-2">
+                    💡 También puedes arrastrar los <span className="font-semibold text-brand-pink">puntos rosados</span> en los extremos sobre el plano para estirar el largo directamente.
+                  </p>
 
                   <Button className="w-full" disabled={saving} onClick={saveWallEdit}>
                     {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}Guardar
@@ -885,11 +978,11 @@ export default function SalonPage() {
                           Largo: <span className="font-bold text-brand-dark">{wallForm.length}%</span>
                           <span className="text-brand-dark/30 font-normal ml-1">del canvas</span>
                         </label>
-                        <input type="range" min={5} max={80} value={wallForm.length}
+                        <input type="range" min={5} max={95} value={wallForm.length}
                           onChange={e => setWallForm(f => ({ ...f, length: Number(e.target.value) }))}
                           className="w-full accent-brand-pink" />
                         <div className="flex justify-between text-[10px] text-brand-dark/30 mt-0.5">
-                          <span>Corta (5%)</span><span>Larga (80%)</span>
+                          <span>Corta (5%)</span><span>Larga (95%)</span>
                         </div>
                       </div>
                       <Button className="w-full" disabled={saving || !activeAreaId} onClick={addWall}>
