@@ -53,5 +53,6 @@ export async function POST(
     email: user.email,
     tempPassword,
     emailSent: result.ok,
+    emailError: result.error,
   });
 }

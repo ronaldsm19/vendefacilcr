@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { Loader2, Plus, Minus, X, ChevronDown, Check, ShoppingCart } from "lucide-react";
+import { Loader2, Plus, Minus, X, ChevronDown, Check, ShoppingCart, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import {
   Dialog,
   DialogContent,
@@ -95,6 +96,8 @@ export default function PosPage() {
   const [cashUsers, setCashUsers]     = useState<CashUser[]>([]);
   const [products, setProducts]       = useState<ProductRow[]>([]);
   const [posConfig, setPosConfig]     = useState<PosConfig>({ ivaEnabled: false, ivaRate: 13, tipEnabled: false, serviceRate: 10, tableCount: 0 });
+  const [businessName, setBusinessName] = useState("");
+  const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
   const [loading, setLoading]         = useState(true);
 
   // ── Session state ────────────────────────────────────────────────
@@ -120,6 +123,7 @@ export default function PosPage() {
   // ── Sale state ───────────────────────────────────────────────────
   const [saving, setSaving]           = useState(false);
   const [lastSaleNum, setLastSaleNum] = useState<string | null>(null);
+  const [lastSaleTicket, setLastSaleTicket] = useState<SaleTicketData | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
   // ── IVA / Servicio / Propina (siempre off al abrir) ──────────────
@@ -143,13 +147,16 @@ export default function PosPage() {
   // ── Load data ────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const [usersRes, productsRes, configRes] = await Promise.all([
+      const [usersRes, productsRes, configRes, meRes] = await Promise.all([
         fetch("/api/admin/cash-users").then((r) => r.json()),
         fetch("/api/admin/products").then((r) => r.json()),
         fetch("/api/admin/pos-config").then((r) => r.json()),
+        fetch("/api/admin/auth/me").then((r) => r.json()).catch(() => ({})),
       ]);
       setCashUsers(usersRes.users ?? []);
       setProducts((productsRes.products ?? []).filter((p: ProductRow) => p.available));
+      setBusinessName(meRes.tenantName ?? tenantSlug);
+      if (meRes.ticketConfig) setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...meRes.ticketConfig });
       const cfg: PosConfig = configRes;
       setPosConfig(cfg);
       // Tomar solo las TASAS del config (los toggles siempre arrancan off)
@@ -302,7 +309,26 @@ export default function PosPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setLastSaleNum(data.sale._id.slice(-6).toUpperCase());
+        const s = data.sale;
+        const saleNumber = String(s._id).slice(-6).toUpperCase();
+        setLastSaleNum(saleNumber);
+        setLastSaleTicket({
+          businessName,
+          ticketNumber: s.ticketNumber,
+          saleNumber,
+          date: s.saleDate ?? new Date().toISOString(),
+          cashUserName: s.cashUserName,
+          customerName: s.customerName,
+          tableNumber: s.tableNumber,
+          items: s.items,
+          subtotal: s.subtotal,
+          ivaEnabled: s.ivaEnabled, ivaRate: s.ivaRate, ivaAmount: s.ivaAmount,
+          serviceEnabled: s.serviceEnabled, serviceRate: s.serviceRate, serviceAmount: s.serviceAmount,
+          tipEnabled: s.tipEnabled, tipAmount: s.tipAmount,
+          total: s.total,
+          paymentMethod: s.paymentMethod,
+          mixedPayment: s.mixedPayment,
+        });
         setShowSuccess(true);
         setCart([]);
         setTipAmount(0);
@@ -311,7 +337,7 @@ export default function PosPage() {
         setMixedAmounts({ efectivo: 0, sinpe: 0, tarjeta: 0 });
         localStorage.removeItem(DRAFT_KEY);
         window.dispatchEvent(new CustomEvent("pos-cart-update"));
-        setTimeout(() => setShowSuccess(false), 4000);
+        setTimeout(() => setShowSuccess(false), 10000);
       }
     } finally {
       setSaving(false);
@@ -647,8 +673,20 @@ export default function PosPage() {
             {showSuccess && (
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-emerald-700">
                 <Check className="w-4 h-4 shrink-0" />
-                <span>¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span></span>
+                ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>
               </div>
+            )}
+
+            {/* Imprimir / Descargar PDF (persistente) */}
+            {lastSaleTicket && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full gap-2"
+                onClick={() => saleTicket(lastSaleTicket, ticketConfig)}
+              >
+                <Printer className="w-4 h-4" /> Imprimir / Descargar PDF
+              </Button>
             )}
           </div>
         </div>
@@ -849,8 +887,20 @@ export default function PosPage() {
             {showSuccess && (
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-emerald-700">
                 <Check className="w-4 h-4 shrink-0" />
-                <span>¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span></span>
+                ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>
               </div>
+            )}
+
+            {/* Imprimir / Descargar PDF (persistente) */}
+            {lastSaleTicket && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full gap-2"
+                onClick={() => saleTicket(lastSaleTicket, ticketConfig)}
+              >
+                <Printer className="w-4 h-4" /> Imprimir / Descargar PDF
+              </Button>
             )}
           </div>
         </div>

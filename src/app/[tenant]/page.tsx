@@ -8,10 +8,12 @@ import TrustSection from "@/components/TrustSection";
 import AboutSection from "@/components/AboutSection";
 import Footer, { type SocialLinks } from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import { headers } from "next/headers";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { SiteSettings } from "@/models/SiteSettings";
 import { Tenant } from "@/models/Tenant";
+import { AccessLog } from "@/models/AccessLog";
 import { SeedProduct } from "@/data/seed";
 
 async function getTenant(slug: string) {
@@ -78,6 +80,10 @@ export default async function TenantStorefront({
   const { tenant: slug } = await params;
   const tenant = await getTenant(slug);
   if (!tenant) notFound();
+
+  const hdrs = await headers();
+  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  AccessLog.create({ tenantId: tenant._id, tenantSlug: slug, ip, userAgent: hdrs.get("user-agent") ?? "", success: true, event: "visit", path: `/${slug}` }).catch(() => {});
 
   const [products, settings] = await Promise.all([
     getProducts(tenant._id),

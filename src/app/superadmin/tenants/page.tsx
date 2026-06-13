@@ -84,7 +84,8 @@ export default function TenantsPage() {
       if (d.emailSent) {
         setNotice({ type: "ok", text: `Invitación reenviada a ${d.email} con una nueva contraseña temporal.` });
       } else {
-        setNotice({ type: "error", text: `No se pudo enviar el correo a ${d.email}. Contraseña temporal nueva: ${d.tempPassword}` });
+        const reason = d.emailError ? ` (${d.emailError})` : "";
+        setNotice({ type: "error", text: `No se pudo enviar el correo a ${d.email}${reason}. Contraseña temporal nueva: ${d.tempPassword}` });
       }
       load();
     } catch {

@@ -26,6 +26,21 @@ export interface IMenuConfig {
   fontFamily: "default" | "playfair" | "montserrat" | "nunito" | "lato";
 }
 
+export interface ITicketConfig {
+  businessName: string;
+  location: string;
+  address: string;
+  phone: string;
+  email: string;
+  ownerName: string;
+  taxId: string;
+  taxRegime: string;
+  footerMessage: string;
+  terminalNumber: string;
+  ticketPrefix: string;
+  ticketNextNumber: number;
+}
+
 export interface ITenant {
   _id: string;
   slug: string;
@@ -39,6 +54,7 @@ export interface ITenant {
   theme: ITenantTheme;
   menuConfig: IMenuConfig;
   posConfig: { ivaEnabled: boolean; ivaRate: number; tipEnabled: boolean; serviceRate: number; tableCount: number };
+  ticketConfig: ITicketConfig;
   instagram: string;
   facebook: string;
   tiktok: string;
@@ -88,6 +104,20 @@ const TenantSchema = new Schema(
       tipEnabled:  { type: Boolean, default: false },
       serviceRate: { type: Number,  default: 10 },
       tableCount:  { type: Number,  default: 0 },
+    },
+    ticketConfig: {
+      businessName:     { type: String, default: "" },
+      location:         { type: String, default: "" },
+      address:          { type: String, default: "" },
+      phone:            { type: String, default: "" },
+      email:            { type: String, default: "" },
+      ownerName:        { type: String, default: "" },
+      taxId:            { type: String, default: "" },
+      taxRegime:        { type: String, default: "Régimen Simplificado" },
+      footerMessage:    { type: String, default: "¡Gracias por su compra!" },
+      terminalNumber:   { type: String, default: "1" },
+      ticketPrefix:     { type: String, default: "" },
+      ticketNextNumber: { type: Number, default: 1, min: 1 },
     },
     instagram: { type: String, default: "" },
     facebook:  { type: String, default: "" },

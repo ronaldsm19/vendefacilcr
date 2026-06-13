@@ -11,6 +11,7 @@ export interface ISaleItem {
 export interface ISale {
   _id: string;
   tenantId: string;
+  ticketNumber: number;
   cashUserId: string;
   cashUserName: string;
   customerName: string;
@@ -47,6 +48,7 @@ const SaleItemSchema = new Schema(
 const SaleSchema = new Schema(
   {
     tenantId:      { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    ticketNumber:  { type: Number, default: 0 },
     cashUserId:    { type: String, default: "" },
     cashUserName:  { type: String, default: "" },
     customerName:  { type: String, default: "" },

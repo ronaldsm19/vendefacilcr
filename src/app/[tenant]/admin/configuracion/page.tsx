@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import {
   Upload, X, Loader2, Check, Plus, Trash2, Phone, Palette,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import TicketPreview from "@/components/admin/TicketPreview";
+import {
+  buildSaleRows, buildCashCloseRows, DEFAULT_TICKET_CONFIG,
+  type TicketConfigData, type SaleTicketData, type CashCloseTicketData,
+} from "@/lib/ticket";
 
 interface Category {
   _id: string;
@@ -92,6 +97,54 @@ const MENU_CONFIG_DEFAULTS: MenuConfigData = {
   title: "",
   description: "",
   fontFamily: "default",
+};
+
+// ── Datos de ejemplo para las previas del Ticket electrónico ──────
+const MOCK_SALE: SaleTicketData = {
+  businessName: "Mi Negocio",
+  ticketNumber: 1024,
+  saleNumber: "ABC123",
+  date: new Date(),
+  cashUserName: "María Pérez",
+  customerName: "Cliente",
+  items: [
+    { productName: "Café americano", quantity: 2, unitPrice: 1500, lineTotal: 3000 },
+    { productName: "Croissant",       quantity: 1, unitPrice: 1800, lineTotal: 1800 },
+  ],
+  subtotal: 4800,
+  ivaEnabled: true,
+  ivaRate: 13,
+  ivaAmount: 624,
+  serviceEnabled: true,
+  serviceRate: 10,
+  serviceAmount: 480,
+  total: 5904,
+  paymentMethod: "efectivo",
+};
+
+const MOCK_CASH_CLOSE: CashCloseTicketData = {
+  businessName: "Mi Negocio",
+  closeNumber: 12,
+  date: new Date(),
+  closedBy: "María Pérez",
+  paymentBreakdown: { efectivo: 25000, sinpe: 8000, tarjeta: 12000 },
+  salesTotal: 45000,
+  expensesTotal: 2000,
+  profit: 30000,
+  arqueo: { totalContado: 29800, totalEsperado: 30000, diferencia: -200 },
+  productsSummary: [
+    { productName: "Café americano", unitsSold: 12 },
+    { productName: "Croissant",       unitsSold: 6 },
+  ],
+  openingAmount: 25000,
+  withdrawals: [{ amount: 20000, leftAmount: 25000, note: "Depósito banco", date: new Date() }],
+  withdrawalsTotal: 20000,
+  cashLeft: 25000,
+  salesList: [
+    { ticketNumber: 1023, total: 5904 },
+    { ticketNumber: 1024, total: 5904 },
+  ],
+  notes: "",
 };
 
 const THEME_DEFAULTS: ThemeData = {
@@ -195,8 +248,13 @@ export default function ConfiguracionPage() {
   const [uploadingMenuBg, setUploadingMenuBg] = useState(false);
   const menuBgFileRef = useRef<HTMLInputElement>(null);
 
+  // ── Ticket config state ──────────────────────────────────────────
+  const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
+  const [savingTicket, setSavingTicket] = useState(false);
+  const [savedTicket, setSavedTicket] = useState(false);
+
   // ── Tab state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "caja">("marca");
+  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "caja" | "ticket">("marca");
 
   // ── Table count state ─────────────────────────────────────────────
   const [tableCount, setTableCount]       = useState(0);
@@ -279,6 +337,11 @@ export default function ConfiguracionPage() {
       .then((r) => r.json())
       .then((d) => setCategories(d.categories ?? []))
       .finally(() => setCatsLoading(false));
+
+    // Ticket config
+    fetch("/api/admin/ticket-config")
+      .then((r) => r.json())
+      .then((d) => setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...(d.ticketConfig ?? {}) }));
   }, []);
 
   // ── Handlers: logo ───────────────────────────────────────────────
@@ -500,6 +563,23 @@ export default function ConfiguracionPage() {
     }
   }
 
+  // ── Handlers: ticket config ──────────────────────────────────────
+  async function handleSaveTicketConfig(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingTicket(true);
+    try {
+      await fetch("/api/admin/ticket-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ticketConfig),
+      });
+      setSavedTicket(true);
+      setTimeout(() => setSavedTicket(false), 3000);
+    } finally {
+      setSavingTicket(false);
+    }
+  }
+
   // ── Handlers: table count ────────────────────────────────────────
   async function handleSaveTableCount(e: React.FormEvent) {
     e.preventDefault();
@@ -595,6 +675,9 @@ export default function ConfiguracionPage() {
     }
   }
 
+  const saleTicketRows = useMemo(() => buildSaleRows(MOCK_SALE, ticketConfig), [ticketConfig]);
+  const cashCloseTicketRows = useMemo(() => buildCashCloseRows(MOCK_CASH_CLOSE, ticketConfig), [ticketConfig]);
+
   if (loadingAbout || loadingSocial || loadingTheme) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -610,6 +693,7 @@ export default function ConfiguracionPage() {
     { key: "productos",label: "Productos",icon: "📦", title: "Categorías de productos",  desc: "Administrá las categorías para organizar tu catálogo." },
     { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
     { key: "caja",     label: "Caja",     icon: "🧑‍💼", title: "Usuarios de caja",          desc: "Personas que pueden atender el punto de venta." },
+    { key: "ticket",   label: "Ticket",   icon: "🧾", title: "Ticket electrónico",        desc: "Datos que aparecen en tus tickets impresos." },
   ] as const;
 
   const currentTab = TABS.find((t) => t.key === activeTab)!;
@@ -1707,6 +1791,174 @@ export default function ConfiguracionPage() {
           </div>
         </section>
       </form>
+
+      </>}
+
+      {/* ── TAB: TICKET ── Ticket electrónico ───────────────────────── */}
+      {activeTab === "ticket" && <>
+
+      <form onSubmit={handleSaveTicketConfig}>
+        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
+          <div>
+            <h2 className="font-semibold text-brand-dark text-lg">Datos del ticket impreso</h2>
+            <p className="text-sm text-brand-dark/50 mt-0.5">
+              Esta información aparece en el encabezado y pie de los tickets de venta y de cierre de caja.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-brand-dark mb-1">Nombre del negocio</label>
+              <input
+                type="text"
+                placeholder="Ej: Cafetería Kahve-Tanna"
+                value={ticketConfig.businessName}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, businessName: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Ubicación / Sucursal</label>
+              <input
+                type="text"
+                placeholder="Ej: Sucursal Centro"
+                value={ticketConfig.location}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, location: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Dirección</label>
+              <input
+                type="text"
+                placeholder="Ej: 100m sur de la iglesia"
+                value={ticketConfig.address}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, address: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Teléfono(s)</label>
+              <input
+                type="text"
+                placeholder="Ej: 2222-3333 / 8888-9999"
+                value={ticketConfig.phone}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, phone: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Correo electrónico</label>
+              <input
+                type="email"
+                placeholder="Ej: contacto@minegocio.com"
+                value={ticketConfig.email}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, email: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Propietario / Representante</label>
+              <input
+                type="text"
+                placeholder="Ej: Juan Pérez Rodríguez"
+                value={ticketConfig.ownerName}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, ownerName: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Cédula</label>
+              <input
+                type="text"
+                placeholder="Ej: 1-2345-6789"
+                value={ticketConfig.taxId}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, taxId: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Régimen tributario</label>
+              <input
+                type="text"
+                placeholder="Ej: Régimen Simplificado"
+                value={ticketConfig.taxRegime}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, taxRegime: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Número de terminal/caja</label>
+              <input
+                type="text"
+                placeholder="Ej: 1"
+                value={ticketConfig.terminalNumber}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, terminalNumber: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-brand-dark mb-1">Prefijo de ticket</label>
+              <input
+                type="text"
+                placeholder="Ej: A-"
+                value={ticketConfig.ticketPrefix}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, ticketPrefix: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-brand-dark mb-1">Mensaje de pie</label>
+              <input
+                type="text"
+                placeholder="Ej: ¡Gracias por su compra!"
+                value={ticketConfig.footerMessage}
+                onChange={(e) => setTicketConfig((prev) => ({ ...prev, footerMessage: e.target.value }))}
+                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+              />
+            </div>
+          </div>
+
+          <Button type="submit" disabled={savingTicket} className="w-full sm:w-auto">
+            {savingTicket ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : savedTicket ? (
+              <Check className="w-4 h-4" />
+            ) : null}
+            {savedTicket ? "¡Guardado!" : "Guardar configuración del ticket"}
+          </Button>
+        </section>
+      </form>
+
+      {/* Previas en vivo */}
+      <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
+        <div>
+          <h2 className="font-semibold text-brand-dark text-lg">Previa en vivo</h2>
+          <p className="text-sm text-brand-dark/50 mt-0.5">
+            Así se verán tus tickets impresos con datos de ejemplo.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div>
+            <p className="text-sm font-medium text-brand-dark mb-2 text-center">Ticket de venta</p>
+            <TicketPreview rows={saleTicketRows} />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-brand-dark mb-2 text-center">Ticket de cierre de caja</p>
+            <TicketPreview rows={cashCloseTicketRows} />
+          </div>
+        </div>
+      </section>
 
       </>}
 

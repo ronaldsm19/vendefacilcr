@@ -19,17 +19,36 @@ export interface IArqueo {
   diferencia: number;
 }
 
+export interface ICashWithdrawal {
+  amount: number;
+  leftAmount: number;
+  note?: string;
+  date: Date;
+}
+
+export interface ISaleListItem {
+  ticketNumber: number;
+  total: number;
+}
+
 export interface ICashClose {
   _id: string;
   tenantId: string;
   closeDate: Date;
   closedBy: string;
+  closeNumber?: number;
   salesTotal: number;
   paymentBreakdown: { efectivo: number; sinpe: number; tarjeta: number };
   expensesTotal: number;
   profit: number;
   productsSummary: IProductSummary[];
   arqueo?: IArqueo;
+  openingAmount: number;
+  withdrawals: ICashWithdrawal[];
+  withdrawalsTotal: number;
+  cashLeft: number;
+  salesList: ISaleListItem[];
+  notes?: string;
   createdAt: Date;
 }
 
@@ -47,6 +66,7 @@ const CashCloseSchema = new Schema(
     tenantId:  { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
     closeDate: { type: Date, required: true },
     closedBy:  { type: String, default: "" },
+    closeNumber: { type: Number },
     salesTotal: { type: Number, required: true },
     paymentBreakdown: {
       efectivo: { type: Number, default: 0 },
@@ -70,6 +90,26 @@ const CashCloseSchema = new Schema(
       required: false,
       default: undefined,
     },
+    openingAmount: { type: Number, default: 0 },
+    withdrawals: {
+      type: [{
+        amount:     { type: Number, required: true },
+        leftAmount: { type: Number, required: true },
+        note:       { type: String, default: "" },
+        date:       { type: Date, required: true },
+      }],
+      default: [],
+    },
+    withdrawalsTotal: { type: Number, default: 0 },
+    cashLeft:         { type: Number, default: 0 },
+    salesList: {
+      type: [{
+        ticketNumber: { type: Number, default: 0 },
+        total:        { type: Number, required: true },
+      }],
+      default: [],
+    },
+    notes: { type: String, default: "" },
   },
   { timestamps: true }
 );

@@ -11,6 +11,8 @@ interface LogItem {
   ip: string;
   userAgent: string;
   success: boolean;
+  event?: "login" | "visit";
+  path?: string;
   createdAt: string;
 }
 
@@ -27,7 +29,7 @@ export default function ActividadPage() {
   const load = useCallback(() => {
     setLoading(true);
     const q = new URLSearchParams({ page: String(page) });
-    if (tenant)  q.set("tenantSlug", tenant);
+    if (tenant)  q.set("tenantSlug", tenant.trim());
     if (success) q.set("success", success);
     if (from)    q.set("from", from);
     if (to)      q.set("to", to);
@@ -109,12 +111,13 @@ export default function ActividadPage() {
         style={{ border: "1px solid rgba(255,255,255,0.07)" }}
       >
         <div
-          className="grid grid-cols-[90px_1fr_140px_100px_160px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
+          className="grid grid-cols-[110px_1fr_140px_120px_100px_160px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
           style={{ background: "rgba(255,255,255,0.04)" }}
         >
-          <span>Resultado</span>
-          <span>Usuario</span>
+          <span>Evento</span>
+          <span>Usuario / Ruta</span>
           <span>Tenant</span>
+          <span>Ruta</span>
           <span>IP</span>
           <span>Fecha</span>
         </div>
@@ -129,36 +132,54 @@ export default function ActividadPage() {
             <p className="text-white/30 text-sm">Sin registros</p>
           </div>
         ) : (
-          logs.map((log, i) => (
-            <div
-              key={log._id}
-              className="grid grid-cols-[90px_1fr_140px_100px_160px] px-5 py-3 items-center text-sm"
-              style={{ borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : "none" }}
-            >
-              <div className="flex items-center gap-2">
-                {log.success
-                  ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  : <XCircle className="w-4 h-4 text-red-400 shrink-0" />}
-                <span className={`text-xs font-semibold ${log.success ? "text-emerald-400" : "text-red-400"}`}>
-                  {log.success ? "OK" : "Falló"}
+          logs.map((log, i) => {
+            const isVisit = log.event === "visit";
+            return (
+              <div
+                key={log._id}
+                className="grid grid-cols-[110px_1fr_140px_120px_100px_160px] px-5 py-3 items-center text-sm"
+                style={{ borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : "none" }}
+              >
+                {/* Evento */}
+                <div className="flex items-center gap-2">
+                  {isVisit ? (
+                    <Activity className="w-4 h-4 text-blue-400 shrink-0" />
+                  ) : log.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  )}
+                  <span className={`text-xs font-semibold ${isVisit ? "text-blue-400" : log.success ? "text-emerald-400" : "text-red-400"}`}>
+                    {isVisit ? "Visita" : log.success ? "Login OK" : "Login Falló"}
+                  </span>
+                </div>
+                {/* Usuario o ruta */}
+                <span className="text-white/70 text-xs font-mono truncate pr-3">
+                  {log.userEmail || "—"}
+                </span>
+                {/* Tenant */}
+                <span
+                  className="text-xs font-mono px-2 py-0.5 rounded-md w-fit"
+                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)" }}
+                >
+                  /{log.tenantSlug}
+                </span>
+                {/* Path */}
+                <span className="text-white/40 text-xs font-mono truncate">
+                  {log.path ?? "—"}
+                </span>
+                {/* IP */}
+                <span className="text-white/35 text-xs font-mono">{log.ip}</span>
+                {/* Fecha */}
+                <span className="text-white/35 text-xs">
+                  {new Date(log.createdAt).toLocaleString("es-CR", {
+                    day: "2-digit", month: "2-digit", year: "2-digit",
+                    hour: "2-digit", minute: "2-digit",
+                  })}
                 </span>
               </div>
-              <span className="text-white/70 text-xs font-mono truncate pr-3">{log.userEmail || "—"}</span>
-              <span
-                className="text-xs font-mono px-2 py-0.5 rounded-md w-fit"
-                style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)" }}
-              >
-                /{log.tenantSlug}
-              </span>
-              <span className="text-white/35 text-xs font-mono">{log.ip}</span>
-              <span className="text-white/35 text-xs">
-                {new Date(log.createdAt).toLocaleString("es-CR", {
-                  day: "2-digit", month: "2-digit", year: "2-digit",
-                  hour: "2-digit", minute: "2-digit",
-                })}
-              </span>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 

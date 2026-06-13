@@ -73,10 +73,17 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
 
+    const ua = request.headers.get("user-agent") ?? "";
+
     const user = await User.findOne({ email: email.toLowerCase().trim() }).lean() as IUserLean | null;
 
     if (!user) {
       recordFail(ip);
+      if (tenantSlug) {
+        Tenant.findOne({ slug: tenantSlug }).lean().then((t) => {
+          if (t) AccessLog.create({ tenantId: (t as ITenantLean)._id.toString(), tenantSlug, userEmail: email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
+        }).catch(() => {});
+      }
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
@@ -84,6 +91,11 @@ export async function POST(request: NextRequest) {
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
       recordFail(ip);
+      if (user.tenantId) {
+        Tenant.findById(user.tenantId).lean().then((t) => {
+          if (t) AccessLog.create({ tenantId: (t as ITenantLean)._id.toString(), tenantSlug: (t as ITenantLean).slug, userEmail: user.email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
+        }).catch(() => {});
+      }
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
@@ -104,6 +116,7 @@ export async function POST(request: NextRequest) {
     // Validate that the URL tenant matches the user's tenant
     if (tenantSlug && tenantSlug !== tenant.slug) {
       recordFail(ip);
+      AccessLog.create({ tenantId: tenant._id.toString(), tenantSlug: tenant.slug, userEmail: user.email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
@@ -116,8 +129,9 @@ export async function POST(request: NextRequest) {
       tenantSlug: tenant.slug,
       userEmail:  user.email,
       ip,
-      userAgent:  request.headers.get("user-agent") ?? "",
+      userAgent:  ua,
       success:    true,
+      event:      "login",
     }).catch(() => {});
 
     const token = await signJwt({

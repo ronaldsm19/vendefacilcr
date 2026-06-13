@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Sale } from "@/models/Sale";
 import { Product } from "@/models/Product";
+import { Tenant } from "@/models/Tenant";
 import { getSession } from "@/lib/auth";
 import mongoose from "mongoose";
 
@@ -44,8 +45,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Faltan campos requeridos (items, paymentMethod)" }, { status: 400 });
   }
 
+  // Consecutivo de ticket: contador atómico por tenant
+  const tenantDoc = await Tenant.findByIdAndUpdate(
+    session.tenantId,
+    { $inc: { "ticketConfig.ticketNextNumber": 1 } },
+    { new: false }
+  ).select("ticketConfig.ticketNextNumber").lean() as { ticketConfig?: { ticketNextNumber?: number } } | null;
+  const ticketNumber = tenantDoc?.ticketConfig?.ticketNextNumber ?? 1;
+
   const sale = await Sale.create({
     tenantId:     session.tenantId,
+    ticketNumber,
     cashUserId:   cashUserId   ?? "",
     cashUserName: cashUserName ?? "",
     customerName: customerName ?? "",

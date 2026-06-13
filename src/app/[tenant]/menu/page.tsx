@@ -3,9 +3,11 @@ export const dynamic = "force-dynamic";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { Tenant } from "@/models/Tenant";
+import { AccessLog } from "@/models/AccessLog";
 
 async function getTenantWithMenu(slug: string) {
   try {
@@ -245,6 +247,10 @@ export default async function MenuPage({
 
   const tenant = await getTenantWithMenu(slug);
   if (!tenant) notFound();
+
+  const hdrs = await headers();
+  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  AccessLog.create({ tenantId: tenant._id, tenantSlug: slug, ip, userAgent: hdrs.get("user-agent") ?? "", success: true, event: "visit", path: `/${slug}/menu` }).catch(() => {});
 
   const allProducts = await getAvailableProducts(tenant._id);
 

@@ -11,7 +11,9 @@ export async function GET(request: NextRequest) {
   await connectToDatabase();
   const { searchParams } = new URL(request.url);
   const tenantId   = searchParams.get("tenantId");
+  const tenantSlug = searchParams.get("tenantSlug");
   const success    = searchParams.get("success");
+  const event      = searchParams.get("event");
   const from       = searchParams.get("from");
   const to         = searchParams.get("to");
   const page       = Math.max(1, Number(searchParams.get("page") ?? 1));
@@ -20,7 +22,10 @@ export async function GET(request: NextRequest) {
   const query: Record<string, unknown> = {};
   if (tenantId && mongoose.Types.ObjectId.isValid(tenantId))
     query.tenantId = new mongoose.Types.ObjectId(tenantId);
-  if (success !== null && success !== undefined) query.success = success === "true";
+  else if (tenantSlug)
+    query.tenantSlug = { $regex: tenantSlug, $options: "i" };
+  if (success !== null && success !== undefined && success !== "") query.success = success === "true";
+  if (event) query.event = event;
   if (from || to) {
     query.createdAt = {};
     if (from) (query.createdAt as Record<string, Date>).$gte = new Date(from);

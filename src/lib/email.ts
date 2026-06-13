@@ -38,11 +38,11 @@ export async function sendMail({
   to: string;
   subject: string;
   html: string;
-}): Promise<{ ok: boolean }> {
+}): Promise<{ ok: boolean; error?: string }> {
   const tx = getTransporter();
   if (!tx) {
     console.warn("[email] SMTP no configurado (faltan SMTP_HOST/SMTP_USER/SMTP_PASS); correo no enviado:", subject);
-    return { ok: false };
+    return { ok: false, error: "SMTP no configurado (faltan variables SMTP_*)" };
   }
   try {
     const from = process.env.SMTP_USER!;
@@ -64,7 +64,7 @@ export async function sendMail({
     return { ok: true };
   } catch (error) {
     console.error("[email] Error enviando correo:", subject, error);
-    return { ok: false };
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
