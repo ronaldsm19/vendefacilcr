@@ -1111,7 +1111,7 @@ export default function PosPage() {
           <DialogHeader>
             <DialogTitle className="text-base">Cobrar venta</DialogTitle>
           </DialogHeader>
-          <div className="space-y-5 px-1 py-2">
+          <div className="space-y-5 px-6 pb-6 pt-2">
             {/* Total destacado */}
             <div className="text-center py-4 bg-gray-50 rounded-2xl">
               <p className="text-xs text-gray-500 mb-1">Total a pagar</p>
@@ -1213,7 +1213,7 @@ export default function PosPage() {
           <DialogHeader>
             <DialogTitle className="text-base">Repartir pago</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-1 py-2">
+          <div className="space-y-4 px-6 pb-6 pt-2">
             <p className="text-sm text-gray-500">Total a repartir: <span className="font-bold text-gray-900">{fmt(total)}</span></p>
             {(["efectivo", "sinpe", "tarjeta"] as const).map((m) => (
               <div key={m} className="flex items-center gap-4">
@@ -1257,7 +1257,7 @@ export default function PosPage() {
           <DialogHeader>
             <DialogTitle className="text-base">{qtyModal?.name}</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col items-center gap-4 py-2">
+          <div className="flex flex-col items-center gap-4 px-6 pb-6 pt-2">
             <p className="text-brand-pink font-bold text-lg">{qtyModal ? fmt(qtyModal.price) : ""}</p>
             <div className="flex items-center gap-4">
               <button

@@ -1067,7 +1067,7 @@ export default function SalonPage() {
       <Dialog open={showAddArea} onOpenChange={(v) => { if (!v) { setShowAddArea(false); setNewAreaName(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Nueva zona</DialogTitle></DialogHeader>
-          <div className="space-y-4 px-1 py-2">
+          <div className="space-y-4 px-6 pb-6 pt-2">
             <input type="text" value={newAreaName} onChange={e => setNewAreaName(e.target.value)}
               placeholder="Ej: Terraza, Salón, Barra, Balcón..."
               className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
@@ -1110,7 +1110,7 @@ export default function SalonPage() {
                   </span>
                 </DialogTitle>
               </DialogHeader>
-              <div className="px-1 pb-2 space-y-4">
+              <div className="px-6 pb-6 space-y-4">
                 <div className="flex items-center gap-3 text-sm text-brand-dark/60">
                   <Users className="w-4 h-4 shrink-0" />
                   <span>
