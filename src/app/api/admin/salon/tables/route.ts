@@ -26,16 +26,24 @@ export async function POST(request: NextRequest) {
   const { areaId, shape, seats, label, x, y } = await request.json();
   if (!areaId) return NextResponse.json({ error: "areaId requerido" }, { status: 400 });
 
-  const count = await SalonTable.countDocuments({ tenantId: session.tenantId, areaId });
-  const table = await SalonTable.create({
-    tenantId: session.tenantId,
-    areaId,
-    shape:  shape  ?? "round",
-    seats:  seats  ?? 4,
-    label:  label  ?? String(count + 1),
-    x:      x      ?? 50,
-    y:      y      ?? 50,
-    status: "libre",
-  });
-  return NextResponse.json({ table }, { status: 201 });
+  try {
+    const count = await SalonTable.countDocuments({ tenantId: session.tenantId, areaId });
+    const table = await SalonTable.create({
+      tenantId: session.tenantId,
+      areaId,
+      shape:  shape  ?? "round",
+      seats:  seats  ?? 4,
+      label:  label  ?? String(count + 1),
+      x:      x      ?? 50,
+      y:      y      ?? 50,
+      status: "libre",
+    });
+    return NextResponse.json({ table }, { status: 201 });
+  } catch (e) {
+    console.error("Error creando mesa:", e);
+    return NextResponse.json(
+      { error: "No se pudo crear la mesa. Si acabas de agregar el tipo 'banqueta', reinicia el servidor de desarrollo." },
+      { status: 500 }
+    );
+  }
 }

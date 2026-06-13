@@ -387,13 +387,16 @@ export default function SalonPage() {
     const shape      = isBarstool ? "barstool" : editForm.shape;
     const stoolCount = tables.filter(t => t.areaId === activeAreaId && t.shape === "barstool").length;
     const tableCount = tables.filter(t => t.areaId === activeAreaId && t.shape !== "barstool").length;
+    const n = tables.filter(t => t.areaId === activeAreaId).length;
+    const x = 28 + (n % 6) * 9;
+    const y = 26 + (Math.floor(n / 6) % 5) * 12;
     setSaving(true);
     try {
       const res = await fetch("/api/admin/salon/tables", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           areaId: activeAreaId,
-          shape,
+          shape, x, y,
           seats: isBarstool ? 1 : editForm.seats,
           label: editForm.label || (isBarstool ? String(stoolCount + 1) : String(tableCount + 1)),
         }),
@@ -404,6 +407,8 @@ export default function SalonPage() {
         setSelectedId(data.table._id);
         setSelectedWallId(null);
         setEditForm({ shape: data.table.shape, seats: data.table.seats, label: data.table.label });
+      } else {
+        alert(data.error || "No se pudo crear el elemento.");
       }
     } finally { setSaving(false); }
   }
@@ -438,17 +443,22 @@ export default function SalonPage() {
 
   async function addWall() {
     if (!activeAreaId) return;
+    const n = walls.filter(w => w.areaId === activeAreaId).length;
+    const x = 30 + (n % 5) * 10;
+    const y = 30 + (Math.floor(n / 5) % 4) * 13;
     setSaving(true);
     try {
       const res  = await fetch("/api/admin/salon/walls", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ areaId: activeAreaId, ...wallForm }),
+        body: JSON.stringify({ areaId: activeAreaId, ...wallForm, x, y }),
       });
       const data = await res.json();
       if (data.wall) {
         setWalls(prev => [...prev, data.wall]);
         setSelectedWallId(data.wall._id);
         setSelectedId(null);
+      } else {
+        alert(data.error || "No se pudo crear la pared.");
       }
     } finally { setSaving(false); }
   }
