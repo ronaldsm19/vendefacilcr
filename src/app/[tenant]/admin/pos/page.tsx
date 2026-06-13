@@ -15,6 +15,8 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type OrderType = "LOCAL" | "PICKUP" | "EXPRESS";
+
 interface CashUser { _id: string; name: string; }
 
 interface ProductRow {
@@ -85,6 +87,35 @@ function ProductCard({
   );
 }
 
+// ── Shared order-type segmented control ───────────────────────────────────────
+
+function OrderTypeSelector({
+  value,
+  onChange,
+}: {
+  value: OrderType;
+  onChange: (t: OrderType) => void;
+}) {
+  return (
+    <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+      {(["LOCAL", "PICKUP", "EXPRESS"] as const).map((type) => (
+        <button
+          key={type}
+          type="button"
+          onClick={() => onChange(type)}
+          className={`flex-1 py-1.5 text-xs font-semibold transition-colors ${
+            value === type
+              ? "bg-brand-pink text-white"
+              : "text-brand-dark/50 hover:bg-brand-pink/5 bg-white"
+          }`}
+        >
+          {type === "LOCAL" ? "🍽 Local" : type === "PICKUP" ? "🥡 Pickup" : "🛵 Express"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PosPage() {
@@ -121,11 +152,23 @@ export default function PosPage() {
   const [mixedAmounts, setMixedAmounts]     = useState({ efectivo: 0, sinpe: 0, tarjeta: 0 });
   const [showCartPanel, setShowCartPanel]   = useState(false);
 
+  // ── Order type state ─────────────────────────────────────────────
+  const [orderType, setOrderType]           = useState<OrderType>("LOCAL");
+  const [pickupTime, setPickupTime]         = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryPhone, setDeliveryPhone]   = useState("");
+  const [deliveryFee, setDeliveryFee]       = useState(0);
+
   // ── Sale state ───────────────────────────────────────────────────
   const [saving, setSaving]           = useState(false);
   const [lastSaleNum, setLastSaleNum] = useState<string | null>(null);
   const [lastSaleTicket, setLastSaleTicket] = useState<SaleTicketData | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+
+  // ── Payment modal state ──────────────────────────────────────────
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [amountPaid, setAmountPaid]             = useState(0);
+  const payAmountRef = useRef<HTMLInputElement>(null);
 
   // ── IVA / Servicio / Propina (siempre off al abrir) ──────────────
   const [ivaEnabled, setIvaEnabled]         = useState(false);
@@ -140,10 +183,10 @@ export default function PosPage() {
   // ── Persist draft cart (solo rates y carrito, NO los enabled flags) ─
   useEffect(() => {
     if (!draftLoaded || !tenantSlug) return;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ cart, paymentMethod, ivaRate, serviceRate, tipAmount }));
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType }));
     window.dispatchEvent(new CustomEvent("pos-cart-update"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, paymentMethod, ivaRate, serviceRate, tipAmount, draftLoaded]);
+  }, [cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType, draftLoaded]);
 
   // ── Load data ────────────────────────────────────────────────────
   useEffect(() => {
@@ -174,6 +217,7 @@ export default function PosPage() {
             if (typeof draft.ivaRate     === "number") setIvaRate(draft.ivaRate);
             if (typeof draft.serviceRate === "number") setServiceRate(draft.serviceRate);
             if (typeof draft.tipAmount   === "number") setTipAmount(draft.tipAmount);
+            if (draft.orderType) setOrderType(draft.orderType);
           }
         }
       } catch { /* ignore */ }
@@ -207,6 +251,14 @@ export default function PosPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Focus payment input when modal opens
+  useEffect(() => {
+    if (showPaymentModal) {
+      const timer = setTimeout(() => payAmountRef.current?.focus(), 150);
+      return () => clearTimeout(timer);
+    }
+  }, [showPaymentModal]);
+
   // ── Derived ──────────────────────────────────────────────────────
   const categories = ["todos", ...Array.from(new Set(products.map((p) => p.category).filter(Boolean)))];
   const visibleProducts = activeCategory === "todos"
@@ -217,15 +269,25 @@ export default function PosPage() {
   const ivaAmt       = ivaEnabled     ? Math.round(subtotal * ivaRate     / 100) : 0;
   const serviceAmt   = serviceEnabled ? Math.round(subtotal * serviceRate / 100) : 0;
   const tipAmt       = tipEnabled     ? tipAmount : 0;
-  const total        = subtotal + ivaAmt + serviceAmt + tipAmt;
+  const deliveryFeeAmt = orderType === "EXPRESS" ? deliveryFee : 0;
+  const total        = subtotal + ivaAmt + serviceAmt + tipAmt + deliveryFeeAmt;
   const mixedSum     = mixedAmounts.efectivo + mixedAmounts.sinpe + mixedAmounts.tarjeta;
   const mixedRemainder = total - mixedSum;
+  const cashPortion    = paymentMethod === "efectivo" ? total : mixedAmounts.efectivo;
+  const needsChangeCalc = paymentMethod === "efectivo" || (paymentMethod === "mixto" && mixedAmounts.efectivo > 0);
+  const change         = amountPaid - cashPortion;
 
   // ── Handlers ─────────────────────────────────────────────────────
   function selectCashUser(u: CashUser) {
     setCashUser(u);
     localStorage.setItem("pos_cashUser", JSON.stringify(u));
     setShowUserPicker(false);
+  }
+
+  function changeOrderType(type: OrderType) {
+    setOrderType(type);
+    if (type !== "PICKUP")  setPickupTime("");
+    if (type !== "EXPRESS") { setDeliveryAddress(""); setDeliveryPhone(""); setDeliveryFee(0); }
   }
 
   function openQtyModal(product: ProductRow) {
@@ -274,6 +336,17 @@ export default function PosPage() {
     });
   }
 
+  function openPaymentModal() {
+    if (cart.length === 0) return;
+    setAmountPaid(0);
+    setShowPaymentModal(true);
+  }
+
+  async function confirmPayment() {
+    setShowPaymentModal(false);
+    await registerSale();
+  }
+
   async function registerSale() {
     if (cart.length === 0) return;
     setSaving(true);
@@ -307,6 +380,11 @@ export default function PosPage() {
           total,
           paymentMethod,
           mixedPayment:   paymentMethod === "mixto" ? mixedAmounts : undefined,
+          orderType,
+          pickupTime:     orderType === "PICKUP"  ? pickupTime  : undefined,
+          deliveryAddress: orderType === "EXPRESS" ? deliveryAddress : undefined,
+          deliveryPhone:  orderType === "EXPRESS" ? deliveryPhone  : undefined,
+          deliveryFee:    orderType === "EXPRESS" ? deliveryFeeAmt : undefined,
         }),
       });
       const data = await res.json();
@@ -331,6 +409,13 @@ export default function PosPage() {
           paymentMethod: s.paymentMethod,
           mixedPayment: s.mixedPayment,
           notes: s.notes,
+          orderType: s.orderType,
+          pickupTime: s.pickupTime,
+          deliveryAddress: s.deliveryAddress,
+          deliveryPhone: s.deliveryPhone,
+          deliveryFee: s.deliveryFee,
+          amountPaid: needsChangeCalc && amountPaid > 0 ? amountPaid : undefined,
+          changeGiven: needsChangeCalc && amountPaid > 0 ? Math.max(0, amountPaid - cashPortion) : undefined,
         });
         setShowSuccess(true);
         setCart([]);
@@ -338,7 +423,13 @@ export default function PosPage() {
         setCustomerName("");
         setTableNumber("");
         setObservaciones("");
+        setPickupTime("");
+        setDeliveryAddress("");
+        setDeliveryPhone("");
+        setDeliveryFee(0);
+        setAmountPaid(0);
         setMixedAmounts({ efectivo: 0, sinpe: 0, tarjeta: 0 });
+        setShowCartPanel(false);
         localStorage.removeItem(DRAFT_KEY);
         window.dispatchEvent(new CustomEvent("pos-cart-update"));
         setTimeout(() => setShowSuccess(false), 10000);
@@ -452,8 +543,9 @@ export default function PosPage() {
             </span>
           </div>
 
-          {/* Cliente y mesa */}
+          {/* Tipo de pedido + Cliente + campos condicionales */}
           <div className="px-3 pt-2 pb-1 space-y-2 shrink-0">
+            <OrderTypeSelector value={orderType} onChange={changeOrderType} />
             <input
               type="text"
               value={customerName}
@@ -461,7 +553,7 @@ export default function PosPage() {
               placeholder="Nombre del cliente (opcional)"
               className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-pink bg-white"
             />
-            {posConfig.tableCount > 0 && (
+            {orderType === "LOCAL" && posConfig.tableCount > 0 && (
               <select
                 value={tableNumber}
                 onChange={(e) => setTableNumber(e.target.value)}
@@ -473,6 +565,44 @@ export default function PosPage() {
                 ))}
               </select>
             )}
+            {orderType === "PICKUP" && (
+              <input
+                type="text"
+                value={pickupTime}
+                onChange={(e) => setPickupTime(e.target.value)}
+                placeholder="Hora de recogida (ej: 2:30 pm)"
+                className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-pink bg-white"
+              />
+            )}
+            {orderType === "EXPRESS" && (<>
+              <input
+                type="text"
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                placeholder="Dirección de entrega"
+                className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-pink bg-white"
+              />
+              <div className="flex gap-2">
+                <input
+                  type="tel"
+                  value={deliveryPhone}
+                  onChange={(e) => setDeliveryPhone(e.target.value)}
+                  placeholder="Teléfono"
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-pink bg-white"
+                />
+                <div className="flex items-center gap-1 border border-gray-200 rounded-xl px-2 py-1.5 bg-white">
+                  <span className="text-xs text-gray-400 whitespace-nowrap">₡ Envío</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={deliveryFee || ""}
+                    onChange={(e) => setDeliveryFee(Math.max(0, Number(e.target.value)))}
+                    placeholder="0"
+                    className="w-14 text-right text-sm font-semibold focus:outline-none"
+                  />
+                </div>
+              </div>
+            </>)}
             <textarea
               value={observaciones}
               onChange={(e) => setObservaciones(e.target.value)}
@@ -540,10 +670,17 @@ export default function PosPage() {
               <span className="font-semibold">{fmt(subtotal)}</span>
             </div>
 
+            {/* Envío (Express) */}
+            {orderType === "EXPRESS" && deliveryFee > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-brand-dark/60">🛵 Envío</span>
+                <span className="font-semibold">{fmt(deliveryFee)}</span>
+              </div>
+            )}
+
             {/* IVA */}
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                {/* Toggle track */}
                 <button
                   type="button"
                   onClick={() => { setIvaEnabled((v) => !v); }}
@@ -551,7 +688,6 @@ export default function PosPage() {
                   style={{ background: ivaEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
                   className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none"
                 >
-                  {/* Toggle thumb */}
                   <div
                     className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
                     style={{ left: ivaEnabled ? "22px" : "2px" }}
@@ -654,7 +790,6 @@ export default function PosPage() {
                   onClick={() => {
                     setPaymentMethod(m);
                     if (m === "mixto") {
-                      // Reset amounts con el total actual pre-cargado en efectivo
                       setMixedAmounts({ efectivo: total, sinpe: 0, tarjeta: 0 });
                       setShowMixedModal(true);
                     }
@@ -674,7 +809,7 @@ export default function PosPage() {
             <Button
               className="w-full"
               disabled={cart.length === 0 || saving}
-              onClick={registerSale}
+              onClick={openPaymentModal}
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {saving ? "Registrando..." : "Registrar venta"}
@@ -759,8 +894,9 @@ export default function PosPage() {
             </button>
           </div>
 
-          {/* Cliente y mesa */}
+          {/* Tipo de pedido + Cliente + campos condicionales */}
           <div className="px-3 pt-2 pb-1 space-y-2 shrink-0">
+            <OrderTypeSelector value={orderType} onChange={changeOrderType} />
             <input
               type="text"
               value={customerName}
@@ -768,7 +904,7 @@ export default function PosPage() {
               placeholder="Nombre del cliente (opcional)"
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
             />
-            {posConfig.tableCount > 0 && (
+            {orderType === "LOCAL" && posConfig.tableCount > 0 && (
               <select
                 value={tableNumber}
                 onChange={(e) => setTableNumber(e.target.value)}
@@ -780,6 +916,44 @@ export default function PosPage() {
                 ))}
               </select>
             )}
+            {orderType === "PICKUP" && (
+              <input
+                type="text"
+                value={pickupTime}
+                onChange={(e) => setPickupTime(e.target.value)}
+                placeholder="Hora de recogida (ej: 2:30 pm)"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
+              />
+            )}
+            {orderType === "EXPRESS" && (<>
+              <input
+                type="text"
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                placeholder="Dirección de entrega"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
+              />
+              <div className="flex gap-2">
+                <input
+                  type="tel"
+                  value={deliveryPhone}
+                  onChange={(e) => setDeliveryPhone(e.target.value)}
+                  placeholder="Teléfono"
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
+                />
+                <div className="flex items-center gap-1 border border-gray-200 rounded-xl px-2 py-2 bg-white">
+                  <span className="text-xs text-gray-400 whitespace-nowrap">₡ Envío</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={deliveryFee || ""}
+                    onChange={(e) => setDeliveryFee(Math.max(0, Number(e.target.value)))}
+                    placeholder="0"
+                    className="w-14 text-right text-sm font-semibold focus:outline-none"
+                  />
+                </div>
+              </div>
+            </>)}
             <textarea
               value={observaciones}
               onChange={(e) => setObservaciones(e.target.value)}
@@ -829,6 +1003,13 @@ export default function PosPage() {
               <span className="text-brand-dark/60">Subtotal</span>
               <span className="font-semibold">{fmt(subtotal)}</span>
             </div>
+            {/* Envío (Express) */}
+            {orderType === "EXPRESS" && deliveryFee > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-brand-dark/60">🛵 Envío</span>
+                <span className="font-semibold">{fmt(deliveryFee)}</span>
+              </div>
+            )}
             {/* IVA */}
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -898,7 +1079,7 @@ export default function PosPage() {
                 </button>
               ))}
             </div>
-            <Button className="w-full py-3 text-base" disabled={cart.length === 0 || saving} onClick={() => { registerSale(); setShowCartPanel(false); }}>
+            <Button className="w-full py-3 text-base" disabled={cart.length === 0 || saving} onClick={openPaymentModal}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {saving ? "Registrando..." : "Registrar venta"}
             </Button>
@@ -923,6 +1104,108 @@ export default function PosPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal de cobro ── */}
+      <Dialog open={showPaymentModal} onOpenChange={(open) => { if (!open) setShowPaymentModal(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Cobrar venta</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 px-1 py-2">
+            {/* Total destacado */}
+            <div className="text-center py-4 bg-gray-50 rounded-2xl">
+              <p className="text-xs text-gray-500 mb-1">Total a pagar</p>
+              <p className="text-4xl font-bold text-brand-pink">{fmt(total)}</p>
+              {paymentMethod !== "efectivo" && (
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {paymentMethod === "sinpe" ? "📱 SINPE" : paymentMethod === "tarjeta" ? "💳 Tarjeta" : "🔀 Mixto"}
+                  {paymentMethod === "mixto" && mixedAmounts.efectivo > 0 && (
+                    <span className="ml-1">· efectivo {fmt(mixedAmounts.efectivo)}</span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {needsChangeCalc ? (<>
+              {/* Campo "Paga con" */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1.5 block">
+                  {paymentMethod === "mixto" ? "Paga con (porción efectivo)" : "Paga con"}
+                </label>
+                <div className="flex items-center gap-2 border-2 border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-brand-pink bg-white transition-colors">
+                  <span className="text-sm text-gray-400 font-medium">₡</span>
+                  <input
+                    ref={payAmountRef}
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    value={amountPaid || ""}
+                    onChange={(e) => setAmountPaid(Math.max(0, Number(e.target.value)))}
+                    placeholder="0"
+                    className="flex-1 text-right text-2xl font-bold focus:outline-none bg-transparent"
+                  />
+                </div>
+              </div>
+
+              {/* Montos rápidos */}
+              <div className="grid grid-cols-3 gap-2">
+                {[1000, 2000, 5000, 10000, 20000].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setAmountPaid((v) => v + amt)}
+                    className="py-2 rounded-xl border border-brand-muted text-xs font-semibold hover:border-brand-pink hover:bg-brand-pink/5 transition-colors"
+                  >
+                    +{fmt(amt)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setAmountPaid(cashPortion)}
+                  className="py-2 rounded-xl border-2 border-brand-pink/40 bg-brand-pink/5 text-brand-pink text-xs font-bold hover:bg-brand-pink/10 transition-colors"
+                >
+                  Exacto
+                </button>
+              </div>
+
+              {/* Vuelto / Faltante */}
+              <div className={`rounded-2xl py-4 text-center ${change >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+                <p className={`text-xs font-semibold mb-1 ${change >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                  {change >= 0 ? "Vuelto" : "Faltante"}
+                </p>
+                <p className={`text-3xl font-bold ${change >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                  {fmt(Math.abs(change))}
+                </p>
+              </div>
+            </>) : (
+              <div className="text-center py-5 bg-gray-50 rounded-2xl">
+                <p className="text-sm font-semibold text-gray-600">Pago exacto</p>
+                <p className="text-xs text-gray-400 mt-1">No se requiere vuelto</p>
+              </div>
+            )}
+
+            {/* Acciones */}
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowPaymentModal(false)}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={saving || (needsChangeCalc && amountPaid < cashPortion && amountPaid > 0)}
+                onClick={confirmPayment}
+                className="flex-1 py-3 rounded-xl gradient-bg text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Confirmar venta
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Modal pago mixto ── */}
       <Dialog open={showMixedModal} onOpenChange={(open) => { if (!open) setShowMixedModal(false); }}>

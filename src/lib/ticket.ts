@@ -139,6 +139,11 @@ export interface SaleTicketData {
   cashUserName?: string;
   customerName?: string;
   tableNumber?: string;
+  orderType?: "LOCAL" | "PICKUP" | "EXPRESS";
+  pickupTime?: string;
+  deliveryAddress?: string;
+  deliveryPhone?: string;
+  deliveryFee?: number;
   items: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
   subtotal: number;
   ivaEnabled?: boolean; ivaRate?: number; ivaAmount?: number;
@@ -147,6 +152,8 @@ export interface SaleTicketData {
   total: number;
   paymentMethod: "efectivo" | "sinpe" | "tarjeta" | "mixto" | string;
   mixedPayment?: { efectivo: number; sinpe: number; tarjeta: number };
+  amountPaid?: number;
+  changeGiven?: number;
   notes?: string;
 }
 
@@ -172,6 +179,15 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
   if (d.cashUserName) rows.push({ t: "lr", left: "Encargado:", right: clip(d.cashUserName, 20) });
   if (d.customerName) rows.push({ t: "lr", left: "Cliente:", right: clip(d.customerName, 20) });
   if (d.tableNumber)  rows.push({ t: "lr", left: "Mesa:", right: clip(d.tableNumber, 20) });
+  if (d.orderType === "PICKUP") {
+    rows.push({ t: "lr", left: "Tipo:", right: "Para llevar" });
+    if (d.pickupTime) rows.push({ t: "lr", left: "Recogida:", right: d.pickupTime });
+  }
+  if (d.orderType === "EXPRESS") {
+    rows.push({ t: "lr", left: "Tipo:", right: "Express" });
+    if (d.deliveryAddress) rows.push({ t: "left", text: clip(`Dir: ${d.deliveryAddress}`, 36), size: 8 });
+    if (d.deliveryPhone)   rows.push({ t: "lr", left: "Tel:", right: d.deliveryPhone });
+  }
   rows.push({ t: "divider" });
 
   // Tabla de productos: Uds | Descripción | P.U. | Total
@@ -201,6 +217,8 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
   rows.push({ t: "divider" });
 
   rows.push({ t: "lr", left: "SubTotal", right: money(d.subtotal) });
+  if ((d.deliveryFee ?? 0) > 0)
+    rows.push({ t: "lr", left: "Envio", right: money(d.deliveryFee ?? 0) });
   if (d.ivaEnabled && (d.ivaAmount ?? 0) > 0)
     rows.push({ t: "lr", left: `IVA (${d.ivaRate ?? 0}%)`, right: money(d.ivaAmount ?? 0) });
   if (d.serviceEnabled && (d.serviceAmount ?? 0) > 0)
@@ -252,6 +270,11 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
     rows.push({ t: "gap" });
   }
 
+  if ((d.amountPaid ?? 0) > 0 && d.paymentMethod === "efectivo") {
+    rows.push({ t: "gap" });
+    rows.push({ t: "lr", left: "Recibido", right: money(d.amountPaid ?? 0) });
+    rows.push({ t: "lr", left: "Vuelto", right: money(d.changeGiven ?? 0), bold: true });
+  }
   rows.push({ t: "center", text: `Forma de pago: ${METHOD_LABEL[d.paymentMethod] ?? d.paymentMethod}` });
   if (d.paymentMethod === "mixto" && d.mixedPayment) {
     for (const m of ["efectivo", "sinpe", "tarjeta"] as const) {

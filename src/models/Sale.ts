@@ -16,6 +16,11 @@ export interface ISale {
   cashUserName: string;
   customerName: string;
   tableNumber: string;
+  orderType: "LOCAL" | "PICKUP" | "EXPRESS";
+  pickupTime?: string;
+  deliveryAddress?: string;
+  deliveryPhone?: string;
+  deliveryFee?: number;
   items: ISaleItem[];
   subtotal: number;
   ivaEnabled: boolean;
@@ -54,6 +59,11 @@ const SaleSchema = new Schema(
     cashUserName:  { type: String, default: "" },
     customerName:  { type: String, default: "" },
     tableNumber:   { type: String, default: "" },
+    orderType:     { type: String, enum: ["LOCAL", "PICKUP", "EXPRESS"], default: "LOCAL" },
+    pickupTime:    { type: String, default: "" },
+    deliveryAddress: { type: String, default: "" },
+    deliveryPhone: { type: String, default: "" },
+    deliveryFee:   { type: Number, default: 0 },
     items:         { type: [SaleItemSchema], required: true },
     subtotal:      { type: Number, required: true },
     ivaEnabled:    { type: Boolean, default: false },

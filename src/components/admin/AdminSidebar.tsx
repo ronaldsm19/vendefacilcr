@@ -18,6 +18,7 @@ import {
   MonitorCheck,
   BookCheck,
   UserCircle,
+  LayoutGrid,
 } from "lucide-react";
 
 function buildNavItems(base: string) {
@@ -32,6 +33,7 @@ function buildNavItems(base: string) {
     { href: `${base}/finanzas`,         label: "Finanzas",       icon: TrendingUp },
     { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck },
     { href: `${base}/cierre-de-caja`,   label: "Cierre de caja", icon: BookCheck },
+    { href: `${base}/salon`,            label: "Salón",           icon: LayoutGrid },
     { href: `${base}/configuracion`,    label: "Configuración",  icon: Settings },
     { href: `${base}/perfil`,           label: "Perfil",         icon: UserCircle },
   ];
