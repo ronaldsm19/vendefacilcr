@@ -699,33 +699,62 @@ export default function ConfiguracionPage() {
   const currentTab = TABS.find((t) => t.key === activeTab)!;
 
   return (
-    <div className="max-w-2xl mx-auto py-6 px-4">
-      {/* ── Barra de tabs ── */}
-      <div className="flex overflow-x-auto gap-0.5 -mx-4 px-4 border-b border-brand-muted mb-6 scrollbar-hide">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors shrink-0 ${
-              activeTab === tab.key
-                ? "border-brand-pink text-brand-pink"
-                : "border-transparent text-brand-dark/50 hover:text-brand-dark hover:border-brand-muted"
-            }`}
-          >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
+    <div className="flex min-h-full">
+
+      {/* ── Sidebar tabs — desktop ── */}
+      <div className="hidden lg:flex flex-col w-56 shrink-0 border-r border-brand-muted bg-white sticky top-0 self-start h-screen">
+        <div className="px-4 py-5 border-b border-brand-muted">
+          <p className="text-xs font-semibold text-brand-dark/40 uppercase tracking-widest">Configuración</p>
+        </div>
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-all ${
+                activeTab === tab.key
+                  ? "gradient-bg text-white shadow-sm"
+                  : "text-brand-dark/60 hover:text-brand-dark hover:bg-brand-muted/40"
+              }`}
+            >
+              <span className="text-base leading-none">{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </nav>
       </div>
 
-      {/* ── Título del tab activo ── */}
-      <div className="mb-6">
-        <h1 className="font-brand text-xl font-bold text-brand-dark">{currentTab.title}</h1>
-        <p className="text-sm text-brand-dark/50 mt-0.5">{currentTab.desc}</p>
-      </div>
+      {/* ── Content area ── */}
+      <div className="flex-1 min-w-0">
+        {/* Mobile tab bar */}
+        <div className="lg:hidden flex overflow-x-auto gap-0 border-b border-brand-muted sticky top-0 bg-white z-10 scrollbar-hide">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors shrink-0 ${
+                activeTab === tab.key
+                  ? "border-brand-pink text-brand-pink"
+                  : "border-transparent text-brand-dark/50 hover:text-brand-dark hover:border-brand-muted"
+              }`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
 
-      <div className="space-y-6">
+        {/* Content */}
+        <div className="px-4 lg:px-8 py-6">
+          {/* ── Título del tab activo ── */}
+          <div className="mb-6">
+            <h1 className="font-brand text-xl font-bold text-brand-dark">{currentTab.title}</h1>
+            <p className="text-sm text-brand-dark/50 mt-0.5">{currentTab.desc}</p>
+          </div>
+
+          <div className="space-y-6 max-w-5xl">
 
       {/* ── TAB: MARCA ── Logo + Apariencia ─────────────────────────── */}
       {activeTab === "marca" && <>
@@ -873,7 +902,7 @@ export default function ConfiguracionPage() {
           {/* Tipografía */}
           <div>
             <label className="block text-sm font-medium text-brand-dark mb-3">Tipografía</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
               {FONT_OPTIONS.map((opt) => (
                 <button
                   key={opt.key}
@@ -895,7 +924,7 @@ export default function ConfiguracionPage() {
           {/* Forma del logo */}
           <div>
             <label className="block text-sm font-medium text-brand-dark mb-3">Forma del logo</label>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3 xl:grid xl:grid-cols-4 xl:gap-3">
               {SHAPE_OPTIONS.map((opt) => (
                 <button
                   key={opt.key}
@@ -1020,7 +1049,7 @@ export default function ConfiguracionPage() {
       </>}
 
       {/* ── TAB: PORTADA ── Hero + Redes Sociales ───────────────────── */}
-      {activeTab === "portada" && <>
+      {activeTab === "portada" && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
 
       {/* ── Hero (texto de portada) ─────────────────────────────────── */}
       <form onSubmit={handleSaveHero}>
@@ -1192,7 +1221,7 @@ export default function ConfiguracionPage() {
         </section>
       </form>
 
-      </>}
+      </div>}
 
       {/* ── TAB: NOSOTROS ── Sección About ──────────────────────────── */}
       {activeTab === "nosotros" && <>
@@ -1660,7 +1689,7 @@ export default function ConfiguracionPage() {
       </>}
 
       {/* ── TAB: CAJA ── Usuarios de caja ───────────────────────────── */}
-      {activeTab === "caja" && <>
+      {activeTab === "caja" && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
 
       <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
         <div>
@@ -1792,11 +1821,12 @@ export default function ConfiguracionPage() {
         </section>
       </form>
 
-      </>}
+      </div>}
 
       {/* ── TAB: TICKET ── Ticket electrónico ───────────────────────── */}
-      {activeTab === "ticket" && <>
+      {activeTab === "ticket" && <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
 
+      <div className="xl:col-span-3">
       <form onSubmit={handleSaveTicketConfig}>
         <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
           <div>
@@ -1940,28 +1970,32 @@ export default function ConfiguracionPage() {
         </section>
       </form>
 
+      </div>
+      <div className="xl:col-span-2 xl:sticky xl:top-6 space-y-4">
+
       {/* Previas en vivo */}
       <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
         <div>
-          <h2 className="font-semibold text-brand-dark text-lg">Previa en vivo</h2>
+          <h2 className="font-semibold text-brand-dark text-base">Previa en vivo</h2>
           <p className="text-sm text-brand-dark/50 mt-0.5">
-            Así se verán tus tickets impresos con datos de ejemplo.
+            Así se verán tus tickets con datos de ejemplo.
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div>
-            <p className="text-sm font-medium text-brand-dark mb-2 text-center">Ticket de venta</p>
-            <TicketPreview rows={saleTicketRows} />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-brand-dark mb-2 text-center">Ticket de cierre de caja</p>
-            <TicketPreview rows={cashCloseTicketRows} />
-          </div>
+        <div>
+          <p className="text-xs font-medium text-brand-dark/60 mb-2 text-center uppercase tracking-wide">Ticket de venta</p>
+          <TicketPreview rows={saleTicketRows} />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-brand-dark/60 mb-2 text-center uppercase tracking-wide">Ticket de cierre</p>
+          <TicketPreview rows={cashCloseTicketRows} />
         </div>
       </section>
 
-      </>}
+      </div>
+      </div>}
 
+          </div>
+        </div>
       </div>
     </div>
   );
