@@ -53,7 +53,7 @@ export interface ITenant {
   status: "active" | "inactive" | "suspended";
   theme: ITenantTheme;
   menuConfig: IMenuConfig;
-  posConfig: { ivaEnabled: boolean; ivaRate: number; tipEnabled: boolean; serviceRate: number; tableCount: number };
+  posConfig: { ivaEnabled: boolean; ivaRate: number; tipEnabled: boolean; serviceRate: number };
   ticketConfig: ITicketConfig;
   instagram: string;
   facebook: string;
@@ -103,7 +103,6 @@ const TenantSchema = new Schema(
       ivaRate:     { type: Number,  default: 13 },
       tipEnabled:  { type: Boolean, default: false },
       serviceRate: { type: Number,  default: 10 },
-      tableCount:  { type: Number,  default: 0 },
     },
     ticketConfig: {
       businessName:     { type: String, default: "" },

@@ -19,7 +19,6 @@ export async function GET(request: NextRequest) {
     ivaRate:     (tenant.posConfig?.ivaRate      as number)  ?? 13,
     tipEnabled:  (tenant.posConfig?.tipEnabled   as boolean) ?? false,
     serviceRate: (tenant.posConfig?.serviceRate  as number)  ?? 10,
-    tableCount:  (tenant.posConfig?.tableCount   as number)  ?? 0,
   });
 }
 
@@ -47,12 +46,6 @@ export async function PUT(request: NextRequest) {
     }
     update["posConfig.serviceRate"] = rate;
   }
-  if (body.tableCount !== undefined) {
-    const count = Math.max(0, Math.round(Number(body.tableCount)));
-    if (isNaN(count)) return NextResponse.json({ error: "tableCount inválido" }, { status: 400 });
-    update["posConfig.tableCount"] = count;
-  }
-
   await Tenant.findByIdAndUpdate(session.tenantId, { $set: update });
   return NextResponse.json({ ok: true });
 }

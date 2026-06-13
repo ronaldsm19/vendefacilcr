@@ -40,7 +40,33 @@ interface PosConfig {
   ivaRate: number;
   tipEnabled: boolean;
   serviceRate: number;
-  tableCount: number;
+}
+
+interface TableGroup {
+  area: string;
+  tables: { value: string; label: string }[];
+}
+
+// Dropdown of the real Salón tables, grouped by zone. Source of truth = Salón (not a manual count).
+function TableSelect({ tableGroups, value, onChange, className }: {
+  tableGroups: TableGroup[];
+  value: string;
+  onChange: (v: string) => void;
+  className: string;
+}) {
+  if (tableGroups.length === 0) return null;
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={className}>
+      <option value="">Sin mesa</option>
+      {tableGroups.map((g) => (
+        <optgroup key={g.area} label={g.area}>
+          {g.tables.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -126,7 +152,7 @@ export default function PosPage() {
   // ── Data state ──────────────────────────────────────────────────
   const [cashUsers, setCashUsers]     = useState<CashUser[]>([]);
   const [products, setProducts]       = useState<ProductRow[]>([]);
-  const [posConfig, setPosConfig]     = useState<PosConfig>({ ivaEnabled: false, ivaRate: 13, tipEnabled: false, serviceRate: 10, tableCount: 0 });
+  const [tableGroups, setTableGroups] = useState<TableGroup[]>([]);
   const [businessName, setBusinessName] = useState("");
   const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
   const [loading, setLoading]         = useState(true);
@@ -191,18 +217,42 @@ export default function PosPage() {
   // ── Load data ────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const [usersRes, productsRes, configRes, meRes] = await Promise.all([
+      const [usersRes, productsRes, configRes, meRes, areasRes, salonTablesRes] = await Promise.all([
         fetch("/api/admin/cash-users").then((r) => r.json()),
         fetch("/api/admin/products").then((r) => r.json()),
         fetch("/api/admin/pos-config").then((r) => r.json()),
         fetch("/api/admin/auth/me").then((r) => r.json()).catch(() => ({})),
+        fetch("/api/admin/salon/areas").then((r) => r.json()).catch(() => ({})),
+        fetch("/api/admin/salon/tables").then((r) => r.json()).catch(() => ({})),
       ]);
       setCashUsers(usersRes.users ?? []);
       setProducts((productsRes.products ?? []).filter((p: ProductRow) => p.available));
       setBusinessName(meRes.tenantName ?? tenantSlug);
       if (meRes.ticketConfig) setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...meRes.ticketConfig });
       const cfg: PosConfig = configRes;
-      setPosConfig(cfg);
+
+      // Mesas reales del Salón → dropdown del POS, agrupadas por zona
+      const salonAreas: { _id: string; name: string; order?: number }[] = areasRes.areas ?? [];
+      const salonTables: { _id: string; areaId: string; label: string; shape: string }[] = salonTablesRes.tables ?? [];
+      const multiArea = salonAreas.length > 1;
+      const groups: TableGroup[] = [...salonAreas]
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((a) => ({
+          area: a.name,
+          tables: salonTables
+            .filter((t) => String(t.areaId) === String(a._id))
+            .sort((t1, t2) => {
+              const n1 = Number(t1.label), n2 = Number(t2.label);
+              if (!isNaN(n1) && !isNaN(n2)) return n1 - n2;
+              return String(t1.label).localeCompare(String(t2.label));
+            })
+            .map((t) => {
+              const display = `${t.shape === "barstool" ? "Banqueta" : "Mesa"} ${t.label}`;
+              return { value: multiArea ? `${a.name} · ${display}` : display, label: display };
+            }),
+        }))
+        .filter((g) => g.tables.length > 0);
+      setTableGroups(groups);
       // Tomar solo las TASAS del config (los toggles siempre arrancan off)
       if (typeof cfg.ivaRate     === "number") setIvaRate(cfg.ivaRate);
       if (typeof cfg.serviceRate === "number") setServiceRate(cfg.serviceRate);
@@ -553,17 +603,13 @@ export default function PosPage() {
               placeholder="Nombre del cliente (opcional)"
               className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-pink bg-white"
             />
-            {orderType === "LOCAL" && posConfig.tableCount > 0 && (
-              <select
+            {orderType === "LOCAL" && (
+              <TableSelect
+                tableGroups={tableGroups}
                 value={tableNumber}
-                onChange={(e) => setTableNumber(e.target.value)}
+                onChange={setTableNumber}
                 className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-pink bg-white"
-              >
-                <option value="">Sin mesa</option>
-                {Array.from({ length: posConfig.tableCount }, (_, i) => (
-                  <option key={i + 1} value={`Mesa ${i + 1}`}>Mesa {i + 1}</option>
-                ))}
-              </select>
+              />
             )}
             {orderType === "PICKUP" && (
               <input
@@ -904,17 +950,13 @@ export default function PosPage() {
               placeholder="Nombre del cliente (opcional)"
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
             />
-            {orderType === "LOCAL" && posConfig.tableCount > 0 && (
-              <select
+            {orderType === "LOCAL" && (
+              <TableSelect
+                tableGroups={tableGroups}
                 value={tableNumber}
-                onChange={(e) => setTableNumber(e.target.value)}
+                onChange={setTableNumber}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
-              >
-                <option value="">Sin mesa</option>
-                {Array.from({ length: posConfig.tableCount }, (_, i) => (
-                  <option key={i + 1} value={`Mesa ${i + 1}`}>Mesa {i + 1}</option>
-                ))}
-              </select>
+              />
             )}
             {orderType === "PICKUP" && (
               <input
@@ -1111,13 +1153,13 @@ export default function PosPage() {
           <DialogHeader>
             <DialogTitle className="text-base">Cobrar venta</DialogTitle>
           </DialogHeader>
-          <div className="space-y-5 px-6 pb-6 pt-2">
+          <div className="space-y-3 px-6 pb-6 pt-2">
             {/* Total destacado */}
-            <div className="text-center py-4 bg-gray-50 rounded-2xl">
-              <p className="text-xs text-gray-500 mb-1">Total a pagar</p>
-              <p className="text-4xl font-bold text-brand-pink">{fmt(total)}</p>
+            <div className="text-center py-2.5 bg-gray-50 rounded-2xl">
+              <p className="text-xs text-gray-500 mb-0.5">Total a pagar</p>
+              <p className="text-3xl font-bold text-brand-pink">{fmt(total)}</p>
               {paymentMethod !== "efectivo" && (
-                <p className="text-xs text-gray-400 mt-1.5">
+                <p className="text-xs text-gray-400 mt-1">
                   {paymentMethod === "sinpe" ? "📱 SINPE" : paymentMethod === "tarjeta" ? "💳 Tarjeta" : "🔀 Mixto"}
                   {paymentMethod === "mixto" && mixedAmounts.efectivo > 0 && (
                     <span className="ml-1">· efectivo {fmt(mixedAmounts.efectivo)}</span>
@@ -1129,32 +1171,34 @@ export default function PosPage() {
             {needsChangeCalc ? (<>
               {/* Campo "Paga con" */}
               <div>
-                <label className="text-xs text-gray-500 mb-1.5 block">
+                <label className="text-xs text-gray-500 mb-1 block">
                   {paymentMethod === "mixto" ? "Paga con (porción efectivo)" : "Paga con"}
                 </label>
-                <div className="flex items-center gap-2 border-2 border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-brand-pink bg-white transition-colors">
-                  <span className="text-sm text-gray-400 font-medium">₡</span>
+                <div className="flex items-center gap-2 border-2 border-gray-200 rounded-xl px-3 py-2 focus-within:border-brand-pink bg-white transition-colors">
+                  <span className="text-sm text-gray-400 font-medium shrink-0">₡</span>
                   <input
                     ref={payAmountRef}
-                    type="number"
-                    min={0}
+                    type="text"
                     inputMode="numeric"
                     value={amountPaid || ""}
-                    onChange={(e) => setAmountPaid(Math.max(0, Number(e.target.value)))}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/\D/g, "");
+                      setAmountPaid(raw === "" ? 0 : Number(raw));
+                    }}
                     placeholder="0"
-                    className="flex-1 text-right text-2xl font-bold focus:outline-none bg-transparent"
+                    className="flex-1 min-w-0 text-right text-2xl font-bold focus:outline-none bg-transparent"
                   />
                 </div>
               </div>
 
               {/* Montos rápidos */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-1.5">
                 {[1000, 2000, 5000, 10000, 20000].map((amt) => (
                   <button
                     key={amt}
                     type="button"
                     onClick={() => setAmountPaid((v) => v + amt)}
-                    className="py-2 rounded-xl border border-brand-muted text-xs font-semibold hover:border-brand-pink hover:bg-brand-pink/5 transition-colors"
+                    className="py-1.5 rounded-xl border border-brand-muted text-xs font-semibold hover:border-brand-pink hover:bg-brand-pink/5 transition-colors"
                   >
                     +{fmt(amt)}
                   </button>
@@ -1162,34 +1206,34 @@ export default function PosPage() {
                 <button
                   type="button"
                   onClick={() => setAmountPaid(cashPortion)}
-                  className="py-2 rounded-xl border-2 border-brand-pink/40 bg-brand-pink/5 text-brand-pink text-xs font-bold hover:bg-brand-pink/10 transition-colors"
+                  className="py-1.5 rounded-xl border-2 border-brand-pink/40 bg-brand-pink/5 text-brand-pink text-xs font-bold hover:bg-brand-pink/10 transition-colors"
                 >
                   Exacto
                 </button>
               </div>
 
               {/* Vuelto / Faltante */}
-              <div className={`rounded-2xl py-4 text-center ${change >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
-                <p className={`text-xs font-semibold mb-1 ${change >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+              <div className={`rounded-2xl py-3 text-center ${change >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+                <p className={`text-xs font-semibold mb-0.5 ${change >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                   {change >= 0 ? "Vuelto" : "Faltante"}
                 </p>
-                <p className={`text-3xl font-bold ${change >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                <p className={`text-2xl font-bold ${change >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                   {fmt(Math.abs(change))}
                 </p>
               </div>
             </>) : (
-              <div className="text-center py-5 bg-gray-50 rounded-2xl">
+              <div className="text-center py-4 bg-gray-50 rounded-2xl">
                 <p className="text-sm font-semibold text-gray-600">Pago exacto</p>
                 <p className="text-xs text-gray-400 mt-1">No se requiere vuelto</p>
               </div>
             )}
 
             {/* Acciones */}
-            <div className="flex gap-3 pt-1">
+            <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setShowPaymentModal(false)}
-                className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 Cancelar
               </button>
@@ -1197,7 +1241,7 @@ export default function PosPage() {
                 type="button"
                 disabled={saving || (needsChangeCalc && amountPaid < cashPortion && amountPaid > 0)}
                 onClick={confirmPayment}
-                className="flex-1 py-3 rounded-xl gradient-bg text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 py-2.5 rounded-xl gradient-bg text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 Confirmar venta

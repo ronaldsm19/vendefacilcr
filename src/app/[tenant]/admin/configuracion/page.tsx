@@ -256,11 +256,6 @@ export default function ConfiguracionPage() {
   // ── Tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "caja" | "ticket">("marca");
 
-  // ── Table count state ─────────────────────────────────────────────
-  const [tableCount, setTableCount]       = useState(0);
-  const [savingTables, setSavingTables]   = useState(false);
-  const [savedTables, setSavedTables]     = useState(false);
-
   // ── Cash users state ─────────────────────────────────────────────
   interface CashUser { _id: string; name: string; }
   const [cashUsers, setCashUsers]         = useState<CashUser[]>([]);
@@ -320,11 +315,6 @@ export default function ConfiguracionPage() {
     fetch("/api/admin/menu-config")
       .then((r) => r.json())
       .then((data) => setMenuConfig({ ...MENU_CONFIG_DEFAULTS, ...data }));
-
-    // POS config (table count)
-    fetch("/api/admin/pos-config")
-      .then((r) => r.json())
-      .then((d) => { if (typeof d.tableCount === "number") setTableCount(d.tableCount); });
 
     // Cash users
     fetch("/api/admin/cash-users")
@@ -580,22 +570,6 @@ export default function ConfiguracionPage() {
     }
   }
 
-  // ── Handlers: table count ────────────────────────────────────────
-  async function handleSaveTableCount(e: React.FormEvent) {
-    e.preventDefault();
-    setSavingTables(true);
-    try {
-      await fetch("/api/admin/pos-config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tableCount }),
-      });
-      setSavedTables(true);
-      setTimeout(() => setSavedTables(false), 3000);
-    } finally {
-      setSavingTables(false);
-    }
-  }
 
   // ── Handlers: cash users ─────────────────────────────────────────
   async function handleAddCashUser(e: React.FormEvent) {
@@ -1689,7 +1663,7 @@ export default function ConfiguracionPage() {
       </>}
 
       {/* ── TAB: CAJA ── Usuarios de caja ───────────────────────────── */}
-      {activeTab === "caja" && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      {activeTab === "caja" && <div className="max-w-xl">
 
       <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
         <div>
@@ -1786,41 +1760,6 @@ export default function ConfiguracionPage() {
           </Button>
         </form>
       </section>
-
-      {/* Configuración de mesas */}
-      <form onSubmit={handleSaveTableCount}>
-        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
-          <div>
-            <h2 className="font-semibold text-brand-dark text-lg">Configuración de mesas</h2>
-            <p className="text-sm text-brand-dark/50 mt-0.5">
-              Definí cuántas mesas tiene tu local. El Punto de venta mostrará un selector "Mesa 1", "Mesa 2"…
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-brand-dark mb-1">
-                Número de mesas disponibles
-              </label>
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={tableCount}
-                onChange={(e) => setTableCount(Math.max(0, Math.round(Number(e.target.value))))}
-                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-                placeholder="0 = sin mesas"
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button type="submit" disabled={savingTables} size="sm">
-              {savingTables ? <Loader2 className="w-4 h-4 animate-spin" /> : savedTables ? <Check className="w-4 h-4" /> : null}
-              {savedTables ? "¡Guardado!" : "Guardar mesas"}
-            </Button>
-          </div>
-        </section>
-      </form>
-
       </div>}
 
       {/* ── TAB: TICKET ── Ticket electrónico ───────────────────────── */}
