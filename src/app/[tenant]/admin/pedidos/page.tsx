@@ -521,8 +521,8 @@ export default function AdminOrdersPage() {
 
       {/* ── Edit POS Sale Dialog ── */}
       <Dialog open={!!editSale} onOpenChange={(v) => !v && setEditSale(null)}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="pb-2">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto px-6">
+          <DialogHeader className="pb-3">
             <DialogTitle>Editar venta POS</DialogTitle>
           </DialogHeader>
           {editSale && (() => {
@@ -536,7 +536,7 @@ export default function AdminOrdersPage() {
               .slice(0, 8);
 
             return (
-              <div className="space-y-4 pb-2">
+              <div className="space-y-4 px-3 pb-4">
                 {/* Cliente y encargado */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
