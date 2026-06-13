@@ -7,7 +7,8 @@ import OrderForm from "@/components/admin/OrderForm";
 import Pagination from "@/components/admin/Pagination";
 import PeriodFilter, { getRange, PeriodMode } from "@/components/admin/PeriodFilter";
 import { IOrder } from "@/models/Order";
-import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X } from "lucide-react";
+import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer } from "lucide-react";
+import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -40,6 +41,7 @@ type OrderRow = IOrder & { _id: string };
 interface SaleItem { productId: string; productName: string; unitPrice: number; quantity: number; }
 interface FullSale {
   _id: string;
+  ticketNumber?: number;
   customerName: string;
   tableNumber: string;
   cashUserId: string;
@@ -51,6 +53,8 @@ interface FullSale {
   serviceEnabled: boolean; serviceRate: number; serviceAmount: number;
   tipEnabled: boolean; tipAmount: number;
   subtotal: number; total: number;
+  notes?: string;
+  saleDate?: string;
 }
 interface ProductOption { _id: string; name: string; price: number; }
 
@@ -78,6 +82,10 @@ export default function AdminOrdersPage() {
   const [saving, setSaving]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  // Ticket config for reprints
+  const [businessName, setBusinessName] = useState("");
+  const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
+
   // POS sale edit
   const [editSale, setEditSale]         = useState<FullSale | null>(null);
   const [savingSale, setSavingSale]     = useState(false);
@@ -101,6 +109,13 @@ export default function AdminOrdersPage() {
   }, [periodMode, anchor]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    fetch("/api/admin/auth/me").then((r) => r.json()).then((d) => {
+      if (d.tenantName) setBusinessName(d.tenantName);
+      if (d.ticketConfig) setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...d.ticketConfig });
+    }).catch(() => {});
+  }, []);
 
   // ── Manual order handlers ──────────────────────────────────────────────────
 
@@ -144,6 +159,32 @@ export default function AdminOrdersPage() {
     await fetch(`/api/admin/orders/${id}`, { method: "DELETE" });
     setConfirmDelete(null);
     await load();
+  }
+
+  async function handleReprint(item: VentaItem) {
+    const saleRes = await fetch(`/api/admin/sales/${item.id}`).then((r) => r.json());
+    const s = saleRes.sale;
+    if (!s) return;
+    const saleNumber = String(s._id).slice(-6).toUpperCase();
+    const ticketData: SaleTicketData = {
+      businessName,
+      ticketNumber: s.ticketNumber,
+      saleNumber,
+      date: s.saleDate ?? s.createdAt,
+      cashUserName: s.cashUserName,
+      customerName: s.customerName,
+      tableNumber: s.tableNumber,
+      items: s.items,
+      subtotal: s.subtotal,
+      ivaEnabled: s.ivaEnabled, ivaRate: s.ivaRate, ivaAmount: s.ivaAmount,
+      serviceEnabled: s.serviceEnabled, serviceRate: s.serviceRate, serviceAmount: s.serviceAmount,
+      tipEnabled: s.tipEnabled, tipAmount: s.tipAmount,
+      total: s.total,
+      paymentMethod: s.paymentMethod,
+      mixedPayment: s.mixedPayment,
+      notes: s.notes,
+    };
+    await saleTicket(ticketData, ticketConfig);
   }
 
   async function openSaleEdit(id: string) {
@@ -370,13 +411,22 @@ export default function AdminOrdersPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         {item.source === "pos" && (
-                          <button
-                            onClick={() => openSaleEdit(item.id)}
-                            title="Editar venta"
-                            className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-brand-pink transition-colors cursor-pointer"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleReprint(item)}
+                              title="Reimprimir ticket"
+                              className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-blue-500 transition-colors cursor-pointer"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => openSaleEdit(item.id)}
+                              title="Editar venta"
+                              className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-brand-pink transition-colors cursor-pointer"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          </>
                         )}
                         {item.source === "manual" && (
                           <>
@@ -522,6 +572,18 @@ export default function AdminOrdersPage() {
                       placeholder="Nombre del encargado"
                       className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
                   )}
+                </div>
+
+                {/* Observaciones */}
+                <div>
+                  <label className="block text-xs font-medium text-brand-dark/60 mb-1">Observaciones</label>
+                  <textarea
+                    value={editSale.notes ?? ""}
+                    onChange={(e) => setEditSale({ ...editSale, notes: e.target.value })}
+                    placeholder="Observaciones sobre esta venta (opcional)"
+                    rows={2}
+                    className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink resize-none"
+                  />
                 </div>
 
                 {/* Productos */}

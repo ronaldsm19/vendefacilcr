@@ -115,6 +115,7 @@ export default function PosPage() {
   const [tipAmount, setTipAmount]   = useState(0);
   const [customerName, setCustomerName] = useState("");
   const [tableNumber, setTableNumber]   = useState("");
+  const [observaciones, setObservaciones] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "sinpe" | "tarjeta" | "mixto">("efectivo");
   const [showMixedModal, setShowMixedModal] = useState(false);
   const [mixedAmounts, setMixedAmounts]     = useState({ efectivo: 0, sinpe: 0, tarjeta: 0 });
@@ -292,6 +293,7 @@ export default function PosPage() {
           cashUserName:   cashUser?.name ?? "",
           customerName,
           tableNumber,
+          notes: observaciones,
           items,
           subtotal,
           ivaEnabled,
@@ -328,12 +330,14 @@ export default function PosPage() {
           total: s.total,
           paymentMethod: s.paymentMethod,
           mixedPayment: s.mixedPayment,
+          notes: s.notes,
         });
         setShowSuccess(true);
         setCart([]);
         setTipAmount(0);
         setCustomerName("");
         setTableNumber("");
+        setObservaciones("");
         setMixedAmounts({ efectivo: 0, sinpe: 0, tarjeta: 0 });
         localStorage.removeItem(DRAFT_KEY);
         window.dispatchEvent(new CustomEvent("pos-cart-update"));
@@ -469,6 +473,13 @@ export default function PosPage() {
                 ))}
               </select>
             )}
+            <textarea
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Observaciones (opcional)"
+              rows={2}
+              className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-pink bg-white resize-none"
+            />
           </div>
 
           {/* Cart lines */}
@@ -769,6 +780,13 @@ export default function PosPage() {
                 ))}
               </select>
             )}
+            <textarea
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Observaciones (opcional)"
+              rows={2}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white resize-none"
+            />
           </div>
 
           {/* Cart lines */}

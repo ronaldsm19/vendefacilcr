@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
       paid:          true,
       paymentMethod: METHOD_LABELS[s.paymentMethod] ?? s.paymentMethod,
       cashierName:   s.cashUserName ?? "",
+      notes:         s.notes ?? "",
       itemCount:     s.items?.length ?? 0,
     })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

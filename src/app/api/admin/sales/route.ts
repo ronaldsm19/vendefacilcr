@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
           ivaEnabled, ivaRate, ivaAmount,
           serviceEnabled, serviceRate, serviceAmount,
           tipEnabled, tipAmount,
-          total, paymentMethod, mixedPayment } = body;
+          total, paymentMethod, mixedPayment, notes } = body;
 
   if (!items?.length || !paymentMethod) {
     return NextResponse.json({ error: "Faltan campos requeridos (items, paymentMethod)" }, { status: 400 });
@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
     total,
     paymentMethod,
     mixedPayment: mixedPayment ?? { efectivo: 0, sinpe: 0, tarjeta: 0 },
+    notes: notes ?? "",
     saleDate: new Date(),
   });
 

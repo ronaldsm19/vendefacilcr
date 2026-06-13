@@ -147,6 +147,7 @@ export interface SaleTicketData {
   total: number;
   paymentMethod: "efectivo" | "sinpe" | "tarjeta" | "mixto" | string;
   mixedPayment?: { efectivo: number; sinpe: number; tarjeta: number };
+  notes?: string;
 }
 
 export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT_TICKET_CONFIG): Row[] {
@@ -257,6 +258,12 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
       if ((d.mixedPayment[m] ?? 0) > 0)
         rows.push({ t: "center", text: `${METHOD_LABEL[m]}: ${money(d.mixedPayment[m])}`, size: 8 });
     }
+  }
+
+  if (d.notes) {
+    rows.push({ t: "divider" });
+    rows.push({ t: "left", text: "Observaciones:", bold: true, size: 8 });
+    rows.push({ t: "left", text: clip(d.notes, 36), size: 8 });
   }
 
   if (cfg.taxRegime) rows.push({ t: "center", text: cfg.taxRegime, size: 7 });

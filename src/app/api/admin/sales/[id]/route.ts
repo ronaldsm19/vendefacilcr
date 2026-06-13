@@ -32,6 +32,7 @@ export async function PUT(
     customerName, tableNumber, cashUserId, cashUserName,
     items, paymentMethod, mixedPayment,
     ivaEnabled, ivaRate, serviceEnabled, serviceRate, tipEnabled, tipAmount,
+    notes,
   } = body;
 
   if (!items?.length) {
@@ -69,6 +70,7 @@ export async function PUT(
         serviceAmount,
         tipEnabled:    tipEnabled    ?? false,
         tipAmount:     tipAmt,
+        notes:         notes         ?? "",
         subtotal,
         total,
       },

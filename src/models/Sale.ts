@@ -29,6 +29,7 @@ export interface ISale {
   total: number;
   paymentMethod: "efectivo" | "sinpe" | "tarjeta" | "mixto";
   mixedPayment: { efectivo: number; sinpe: number; tarjeta: number };
+  notes?: string;
   saleDate: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -70,6 +71,7 @@ const SaleSchema = new Schema(
       sinpe:    { type: Number, default: 0 },
       tarjeta:  { type: Number, default: 0 },
     },
+    notes:    { type: String, default: "" },
     saleDate: { type: Date, default: Date.now },
   },
   { timestamps: true }
