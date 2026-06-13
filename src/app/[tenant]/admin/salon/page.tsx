@@ -58,19 +58,51 @@ const STATUS_COLORS: Record<string, { bg: string; border: string; label: string 
 
 // ── Table Visual ──────────────────────────────────────────────────────────────
 
-function SeatDot({ cx, cy, angle, r }: { cx: number; cy: number; angle: number; r: number }) {
-  const rad = (angle * Math.PI) / 180;
+function SeatDot({ x, y }: { x: number; y: number }) {
   return (
     <div style={{
       position: "absolute",
-      left: cx + Math.cos(rad) * r - 5,
-      top:  cy + Math.sin(rad) * r - 5,
+      left: x - 5, top: y - 5,
       width: 10, height: 10,
       borderRadius: "50%",
       background: "#94a3b8",
       border: "1.5px solid #64748b",
     }} />
   );
+}
+
+// Seats evenly spaced on a circle — for round tables
+function roundSeatPositions(seats: number, W: number, H: number, r: number) {
+  const cx = W / 2, cy = H / 2;
+  return Array.from({ length: seats }).map((_, i) => {
+    const a = (2 * Math.PI / seats) * i - Math.PI / 2;
+    return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+  });
+}
+
+// Seats distributed evenly along the perimeter — for square / rectangle tables.
+// Longer sides naturally get more seats (e.g. 12 on a rectangle → 4 top, 4 bottom, 2 each side).
+function rectSeatPositions(seats: number, W: number, H: number, inset: number, out: number) {
+  const x0 = inset, y0 = inset, x1 = W - inset, y1 = H - inset;
+  const bw = x1 - x0, bh = y1 - y0;
+  const P = 2 * (bw + bh);
+  const gap = P / seats;
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i < seats; i++) {
+    let d = (gap / 2 + i * gap) % P;
+    let x: number, y: number;
+    if (d < bw) {                       // top edge: left → right
+      x = x0 + d; y = y0 - out;
+    } else if (d < bw + bh) {           // right edge: top → bottom
+      d -= bw; x = x1 + out; y = y0 + d;
+    } else if (d < 2 * bw + bh) {       // bottom edge: right → left
+      d -= bw + bh; x = x1 - d; y = y1 + out;
+    } else {                            // left edge: bottom → top
+      d -= 2 * bw + bh; x = x0 - out; y = y1 - d;
+    }
+    pts.push({ x, y });
+  }
+  return pts;
 }
 
 function TableVisual({ table, selected }: { table: SalonTable; selected?: boolean }) {
@@ -95,18 +127,18 @@ function TableVisual({ table, selected }: { table: SalonTable; selected?: boolea
   }
 
   const isRect = table.shape === "rectangle";
-  const W = isRect ? 96 : 72;
-  const H = 72;
-  const cx = W / 2, cy = H / 2;
-  const bodyInset = 11;
-  const seatCount = Math.min(table.seats, 12);
-  const seatR = Math.min(W, H) / 2 - 3;
+  const W = isRect ? 108 : 80;
+  const H = 80;
+  const bodyInset = 13;
+  const seatCount = Math.max(1, Math.min(table.seats, 14));
+
+  const seatPositions = table.shape === "round"
+    ? roundSeatPositions(seatCount, W, H, (Math.min(W, H) - 2 * bodyInset) / 2 + 8)
+    : rectSeatPositions(seatCount, W, H, bodyInset, 7);
 
   return (
     <div style={{ position: "relative", width: W, height: H, userSelect: "none" }}>
-      {Array.from({ length: seatCount }).map((_, i) => (
-        <SeatDot key={i} cx={cx} cy={cy} angle={(360 / seatCount) * i - 90} r={seatR + 5} />
-      ))}
+      {seatPositions.map((p, i) => <SeatDot key={i} x={p.x} y={p.y} />)}
       <div style={{
         position: "absolute", inset: bodyInset,
         background: bg, border: `2px solid ${border}`,
