@@ -46,7 +46,10 @@ export default function ThermalPrintButton({
         setState("success");
         setTimeout(() => setState("idle"), 3000);
       } else {
-        setErrorMsg(result.mensaje);
+        const detalle = result.detalles?.errores?.length
+          ? `: ${result.detalles.errores.join("; ")}`
+          : "";
+        setErrorMsg(`${result.mensaje}${detalle}`);
         setState("error");
       }
     } catch (err) {

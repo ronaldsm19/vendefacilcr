@@ -229,7 +229,10 @@ export default function PosPage() {
       ]);
       setCashUsers(usersRes.users ?? []);
       setProducts((productsRes.products ?? []).filter((p: ProductRow) => p.available));
-      setBusinessName(meRes.tenantName ?? tenantSlug);
+      // `||` (no `??`): si tenantName viene como cadena vacía, igual caemos al
+      // slug del tenant, para que el nombre del negocio nunca vaya vacío (el
+      // agente de impresión lo exige como obligatorio).
+      setBusinessName(meRes.tenantName || tenantSlug);
       if (meRes.ticketConfig) setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...meRes.ticketConfig });
       const cfg: PosConfig = configRes;
 
