@@ -193,7 +193,18 @@ export function buildSalePayload(
   // Mandamos el SaleTicketData COMPLETO + config: el agente v1.1 lo acepta y
   // reproduce la MISMA distribución que el PDF (Encargado, Cliente, Mesa,
   // desglose de impuestos, pie, etc.). No recortamos campos.
-  return { ...sale, config: cfg, openDrawer: openDrawer || undefined };
+  //
+  // El agente exige un businessName no vacío y lo toma de config.businessName
+  // con prioridad (su helper `primero` no salta cadenas vacías). Si el negocio
+  // no configuró el ticket, ese campo viene "", así que garantizamos un valor
+  // en AMBOS lugares tomando el nombre del ticket (o un genérico de respaldo).
+  const businessName = cfg.businessName || sale.businessName || "Mi negocio";
+  return {
+    ...sale,
+    businessName,
+    config: { ...cfg, businessName },
+    openDrawer: openDrawer || undefined,
+  };
 }
 
 /**
