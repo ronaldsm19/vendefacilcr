@@ -6,6 +6,8 @@ import Image from "next/image";
 import { Loader2, Plus, Minus, X, ChevronDown, Check, ShoppingCart, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
+import { buildSalePayload } from "@/lib/printBridge";
+import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import {
   Dialog,
   DialogContent,
@@ -869,16 +871,24 @@ export default function PosPage() {
               </div>
             )}
 
-            {/* Imprimir / Descargar PDF (persistente) */}
+            {/* Imprimir: térmica (principal) + PDF (respaldo) */}
             {lastSaleTicket && (
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full gap-2"
-                onClick={() => saleTicket(lastSaleTicket, ticketConfig)}
-              >
-                <Printer className="w-4 h-4" /> Imprimir / Descargar PDF
-              </Button>
+              <div className="space-y-1.5">
+                <ThermalPrintButton
+                  label="Imprimir en térmica"
+                  className="w-full py-2 px-4"
+                  getPayload={() => buildSalePayload(lastSaleTicket, ticketConfig, true)}
+                  onPdfFallback={() => saleTicket(lastSaleTicket, ticketConfig)}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full gap-2"
+                  onClick={() => saleTicket(lastSaleTicket, ticketConfig)}
+                >
+                  <Printer className="w-4 h-4" /> Descargar PDF
+                </Button>
+              </div>
             )}
           </div>
         </div>
@@ -1132,16 +1142,24 @@ export default function PosPage() {
               </div>
             )}
 
-            {/* Imprimir / Descargar PDF (persistente) */}
+            {/* Imprimir: térmica (principal) + PDF (respaldo) */}
             {lastSaleTicket && (
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full gap-2"
-                onClick={() => saleTicket(lastSaleTicket, ticketConfig)}
-              >
-                <Printer className="w-4 h-4" /> Imprimir / Descargar PDF
-              </Button>
+              <div className="space-y-1.5">
+                <ThermalPrintButton
+                  label="Imprimir en térmica"
+                  className="w-full py-2 px-4"
+                  getPayload={() => buildSalePayload(lastSaleTicket, ticketConfig, true)}
+                  onPdfFallback={() => saleTicket(lastSaleTicket, ticketConfig)}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full gap-2"
+                  onClick={() => saleTicket(lastSaleTicket, ticketConfig)}
+                >
+                  <Printer className="w-4 h-4" /> Descargar PDF
+                </Button>
+              </div>
             )}
           </div>
         </div>

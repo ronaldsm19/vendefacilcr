@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Loader2, Printer, Check, RefreshCw, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cashCloseTicket, DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@/lib/ticket";
+import { buildCashClosePayload, printCierre } from "@/lib/printBridge";
+import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -438,7 +440,38 @@ export default function CierreDeCajaPage() {
             >
               <RefreshCw className="w-4 h-4" />
             </button>
-            {/* PDF: siempre visible, deshabilitado hasta que caja esté cerrada */}
+            {/* Térmica + PDF: visibles solo cuando caja está cerrada */}
+            {closedToday && (
+              <ThermalPrintButton
+                printFn={printCierre}
+                label="Térmica"
+                className="py-1.5 px-3 text-sm"
+                getPayload={() => {
+                  const closeNumber = closes[0]?.closeNumber ?? closes.length;
+                  const denominaciones = DENOMS
+                    .filter((d) => (counts[d.valor] ?? 0) > 0)
+                    .map((d) => ({ valor: d.valor, cantidad: counts[d.valor], subtotal: d.valor * counts[d.valor] }));
+                  return buildCashClosePayload({
+                    businessName: businessName || "Mi negocio",
+                    closeNumber,
+                    date: editingClose?.closeDate ?? new Date().toISOString(),
+                    paymentBreakdown: today!.paymentBreakdown,
+                    salesTotal: today!.salesTotal,
+                    expensesTotal: today!.expensesTotal,
+                    profit: today!.profit,
+                    productsSummary: today!.productsSummary,
+                    arqueo: editingClose?.arqueo ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
+                    openingAmount: editingClose?.openingAmount ?? 0,
+                    withdrawals: editingClose?.withdrawals ?? [],
+                    withdrawalsTotal: editingClose?.withdrawalsTotal ?? withdrawalsTotal,
+                    cashLeft: editingClose?.cashLeft ?? cashLeft,
+                    salesList: today!.sales.map((s) => ({ ticketNumber: s.ticketNumber ?? 0, total: s.total })),
+                    notes: editingClose?.notes ?? notes,
+                  }, ticketConfig, denominaciones);
+                }}
+                onPdfFallback={handlePrint}
+              />
+            )}
             <Button
               variant="secondary" onClick={handlePrint}
               disabled={!closedToday}
@@ -928,14 +961,40 @@ export default function CierreDeCajaPage() {
                         </p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => printHistoryTicket(c, i)}
-                      title="Descargar ticket PDF"
-                      className="p-2 rounded-lg border border-brand-muted text-brand-dark/50 hover:text-brand-pink hover:border-brand-pink/40 transition-colors shrink-0"
-                    >
-                      <Printer className="w-4 h-4" />
-                    </button>
+                    <div className="flex gap-1 shrink-0">
+                      <ThermalPrintButton
+                        printFn={printCierre}
+                        label=""
+                        className="p-2 text-sm"
+                        getPayload={() => buildCashClosePayload({
+                          businessName: businessName || "Mi negocio",
+                          closeNumber: c.closeNumber ?? (closes.length - i),
+                          date: c.closeDate,
+                          closedBy: c.closedBy,
+                          paymentBreakdown: c.paymentBreakdown,
+                          salesTotal: c.salesTotal,
+                          expensesTotal: c.expensesTotal,
+                          profit: c.profit,
+                          productsSummary: [],
+                          arqueo: c.arqueo,
+                          openingAmount: c.openingAmount,
+                          withdrawals: c.withdrawals,
+                          withdrawalsTotal: c.withdrawalsTotal,
+                          cashLeft: c.cashLeft,
+                          salesList: c.salesList,
+                          notes: c.notes,
+                        }, ticketConfig, c.arqueo?.denominaciones)}
+                        onPdfFallback={() => printHistoryTicket(c, i)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => printHistoryTicket(c, i)}
+                        title="Descargar ticket PDF"
+                        className="p-2 rounded-lg border border-brand-muted text-brand-dark/50 hover:text-brand-pink hover:border-brand-pink/40 transition-colors"
+                      >
+                        <Printer className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
