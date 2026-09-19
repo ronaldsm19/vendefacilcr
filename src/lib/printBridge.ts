@@ -123,11 +123,16 @@ export type AgentPayload = PrintReceiptPayload | SaleAgentPayload | CashCloseAge
 
 // ── Funciones de API ─────────────────────────────────────────────────────────
 
-/** Verifica que el agente esté corriendo. Retorna null si no responde (timeout 3s). */
+/**
+ * Verifica que el agente esté corriendo. Retorna null si no responde.
+ * Timeout amplio (12s): /health enumera las impresoras del sistema con
+ * PowerShell y en equipos lentos puede tardar varios segundos; un timeout
+ * corto daba falsos "agente no activo" aunque el agente sí estuviera corriendo.
+ */
 export async function checkAgent(): Promise<AgentHealth | null> {
   try {
     const res = await fetch(`${AGENT_URL}/health`, {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(12000),
     });
     if (!res.ok) return null;
     const data = await res.json();
