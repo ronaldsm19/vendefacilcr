@@ -218,6 +218,7 @@ export async function POST(request: NextRequest) {
       deliveryFee:     Number(deliveryFee) || 0,
       tableId:         typeof tableId === "string" ? tableId : "",
       comandaIds:      claimedIds,
+      comandaClaims:   validated.map((v) => ({ comandaId: v.comandaId, items: v.items })),
       items,
       subtotal,
       ivaEnabled:     ivaEnabled     ?? false,

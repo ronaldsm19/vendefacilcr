@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
       source:        "pos" as const,
       date:          (s.saleDate ?? s.createdAt).toISOString(),
       customerName:  s.customerName ?? "Venta POS",
+      ticketNumber:  s.ticketNumber ?? null,
       total:         s.total ?? 0,
       paid:          true,
       paymentMethod: METHOD_LABELS[s.paymentMethod] ?? s.paymentMethod,

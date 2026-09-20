@@ -155,6 +155,8 @@ export interface SaleTicketData {
   amountPaid?: number;
   changeGiven?: number;
   notes?: string;
+  /** true → marca el ticket como "** REIMPRESIÓN **"; el original nunca lo manda. */
+  isReprint?: boolean;
 }
 
 export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT_TICKET_CONFIG): Row[] {
@@ -171,6 +173,7 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
     const parts = [cfg.ownerName, cfg.taxId ? `Céd: ${cfg.taxId}` : ""].filter(Boolean);
     rows.push({ t: "center", text: parts.join(" - "), size: 8 });
   }
+  if (d.isReprint) rows.push({ t: "center", text: "** REIMPRESIÓN **", bold: true });
   rows.push({ t: "divider" });
 
   rows.push({ t: "lr", left: "Factura:", right: ticketLabel });

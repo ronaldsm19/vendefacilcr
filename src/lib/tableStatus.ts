@@ -80,7 +80,10 @@ export function isOpenComanda(c: ComandaStatusLike): boolean {
  * no con new Date(): ver buildStatusUpdate(..., { now }) y la sección 6.)
  * Devuelve el nuevo estado o null si no cambia.
  * Reglas del contrato §2:
- * - hay comanda abierta y la mesa está libre/reservada → "ocupada"
+ * - hay comanda abierta y la mesa está libre/reservada/por_limpiar → "ocupada"
+ *   (Fase 7 agrega "por_limpiar": al eliminar una venta una comanda "pagada" puede volver a
+ *   abrirse, y por_limpiar es el estado más común en el que queda una mesa justo después de
+ *   cobrar — no solo "libre" — así que también debe poder reabrirse desde ahí.)
  * - mesa ocupada sin comandas abiertas: alguna pagada → "por_limpiar"; todas anuladas → "libre"
  * - sin comandas en absoluto → null (ocupación manual, no se toca)
  */
@@ -89,7 +92,7 @@ export function computeTableStatusFromComandas(
   comandas: ComandaStatusLike[]
 ): TableStatus | null {
   const hasOpen = comandas.some(isOpenComanda);
-  if (hasOpen) return current === "libre" || current === "reservada" ? "ocupada" : null;
+  if (hasOpen) return current === "ocupada" ? null : "ocupada";
   if (current !== "ocupada" || comandas.length === 0) return null;
   if (comandas.some(c => c.status === "pagada")) return "por_limpiar";
   if (comandas.every(c => c.status === "anulada")) return "libre";

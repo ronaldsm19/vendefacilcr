@@ -203,7 +203,11 @@ export function buildSalePayload(
     ...sale,
     businessName,
     config: { ...cfg, businessName },
-    openDrawer: openDrawer || undefined,
+    // Booleano explícito: `openDrawer || undefined` mandaba `undefined` cuando se
+    // pedía `false`, y el agente caía en su propia configuración por defecto (que
+    // en un negocio puede ser "abrir siempre"), abriendo la gaveta aunque el
+    // llamador hubiera pedido lo contrario.
+    openDrawer,
   };
 }
 

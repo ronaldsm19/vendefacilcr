@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
-import { buildSalePayload } from "@/lib/printBridge";
+import { buildSalePayload, checkAgent, printReceipt } from "@/lib/printBridge";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
@@ -257,6 +257,8 @@ function PosPageInner() {
   const [lastSaleNum, setLastSaleNum] = useState<string | null>(null);
   const [lastSaleTicket, setLastSaleTicket] = useState<SaleTicketData | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [autoPrintError, setAutoPrintError] = useState<string | null>(null);
+  const autoPrintedSaleIds = useRef<Set<string>>(new Set());
 
   // ── Payment modal state ──────────────────────────────────────────
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -543,6 +545,33 @@ function PosPageInner() {
     await registerSale();
   }
 
+  /**
+   * Imprime en la térmica (CON gaveta) el tiquete recién creado, sin bloquear
+   * la pantalla de éxito ni el vaciado del carrito: se llama sin `await` desde
+   * `registerSale`. La venta ya está guardada cuando esto corre, así que un
+   * fallo acá nunca la hace fallar ni la revierte. Guarda por id de venta para
+   * no imprimir dos veces la misma.
+   */
+  async function autoPrintSale(saleId: string, data: SaleTicketData) {
+    if (autoPrintedSaleIds.current.has(saleId)) return;
+    autoPrintedSaleIds.current.add(saleId);
+    setAutoPrintError(null);
+    try {
+      const health = await checkAgent();
+      if (!health) {
+        setAutoPrintError("La venta se guardó pero no se pudo imprimir: el agente de impresión no responde en esta computadora.");
+        return;
+      }
+      const result = await printReceipt(buildSalePayload({ ...data, isReprint: false }, ticketConfig, true));
+      if (!result.ok) {
+        const detalle = result.detalles?.errores?.length ? `: ${result.detalles.errores.join("; ")}` : "";
+        setAutoPrintError(`La venta se guardó pero no se pudo imprimir: ${result.mensaje}${detalle}`);
+      }
+    } catch (err) {
+      setAutoPrintError(`La venta se guardó pero no se pudo imprimir: ${err instanceof Error ? err.message : "error de conexión con el agente"}`);
+    }
+  }
+
   async function registerSale() {
     if (cart.length === 0) return;
     setSaving(true);
@@ -593,7 +622,7 @@ function PosPageInner() {
       const prevTableNumber = tableNumber;
       const saleNumber = String(s._id).slice(-6).toUpperCase();
       setLastSaleNum(saleNumber);
-      setLastSaleTicket({
+      const ticketData: SaleTicketData = {
         businessName,
         ticketNumber: s.ticketNumber,
         saleNumber,
@@ -617,8 +646,10 @@ function PosPageInner() {
         deliveryFee: s.deliveryFee,
         amountPaid: needsChangeCalc && amountPaid > 0 ? amountPaid : undefined,
         changeGiven: needsChangeCalc && amountPaid > 0 ? Math.max(0, amountPaid - cashPortion) : undefined,
-      });
+      };
+      setLastSaleTicket(ticketData);
       setShowSuccess(true);
+      autoPrintSale(String(s._id), ticketData);
       setCart([]);
       setTipAmount(0);
       setCustomerName("");
@@ -637,7 +668,7 @@ function PosPageInner() {
       if (isPremium) loadOpenTables();
       localStorage.removeItem(DRAFT_KEY);
       window.dispatchEvent(new CustomEvent("pos-cart-update"));
-      setTimeout(() => { setShowSuccess(false); setLastTableNote(null); }, 10000);
+      setTimeout(() => { setShowSuccess(false); setLastTableNote(null); setAutoPrintError(null); }, 10000);
     } finally {
       setSaving(false);
     }
@@ -1040,12 +1071,18 @@ function PosPageInner() {
                 ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>{lastTableNote ? ` · ${lastTableNote}` : ""}
               </div>
             )}
+            {showSuccess && autoPrintError && (
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                {autoPrintError}
+              </div>
+            )}
 
             {/* Imprimir: térmica (principal) + PDF (respaldo) */}
             {lastSaleTicket && (
               <div className="space-y-1.5">
                 <ThermalPrintButton
-                  label="Imprimir en térmica"
+                  label="Reimprimir en térmica"
                   className="w-full py-2 px-4"
                   getPayload={() => buildSalePayload(lastSaleTicket, ticketConfig, true)}
                   onPdfFallback={() => saleTicket(lastSaleTicket, ticketConfig)}
@@ -1360,12 +1397,18 @@ function PosPageInner() {
                 ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>{lastTableNote ? ` · ${lastTableNote}` : ""}
               </div>
             )}
+            {showSuccess && autoPrintError && (
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                {autoPrintError}
+              </div>
+            )}
 
             {/* Imprimir: térmica (principal) + PDF (respaldo) */}
             {lastSaleTicket && (
               <div className="space-y-1.5">
                 <ThermalPrintButton
-                  label="Imprimir en térmica"
+                  label="Reimprimir en térmica"
                   className="w-full py-2 px-4"
                   getPayload={() => buildSalePayload(lastSaleTicket, ticketConfig, true)}
                   onPdfFallback={() => saleTicket(lastSaleTicket, ticketConfig)}

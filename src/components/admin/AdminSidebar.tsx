@@ -31,7 +31,7 @@ function buildNavItems(base: string): { href: string; label: string; icon: typeo
     { href: `${base}/inventario`,       label: "Inventario",    icon: Warehouse,       feature: "inventario" },
     { href: `${base}/materiales`,       label: "Materiales",    icon: FlaskConical,    feature: "materiales" },
     { href: `${base}/recetas`,          label: "Recetas",       icon: BookOpen,        feature: "recetas" },
-    { href: `${base}/pedidos`,          label: "Pedidos",       icon: ShoppingBag,     feature: "pedidos" },
+    { href: `${base}/pedidos`,          label: "Pedidos y ventas", icon: ShoppingBag,  feature: "pedidos" },
     { href: `${base}/gastos`,           label: "Gastos",         icon: Receipt,         feature: "gastos" },
     { href: `${base}/finanzas`,         label: "Finanzas",       icon: TrendingUp,      feature: "finanzas" },
     { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck,    feature: "pos" },

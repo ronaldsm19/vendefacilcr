@@ -7,8 +7,9 @@ import OrderForm from "@/components/admin/OrderForm";
 import Pagination from "@/components/admin/Pagination";
 import PeriodFilter, { getRange, PeriodMode } from "@/components/admin/PeriodFilter";
 import { IOrder } from "@/models/Order";
-import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer } from "lucide-react";
+import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle } from "lucide-react";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
+import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -28,6 +29,7 @@ interface VentaItem {
   phone?: string;
   notes?: string;
   itemCount: number;
+  ticketNumber?: number | null;
 }
 
 interface VentaStats {
@@ -82,9 +84,19 @@ export default function AdminOrdersPage() {
   const [saving, setSaving]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  // Eliminar venta POS (con contraseña)
+  const [confirmDeleteSale, setConfirmDeleteSale] = useState<VentaItem | null>(null);
+  const [deleteSalePassword, setDeleteSalePassword] = useState("");
+  const [deletingSale, setDeletingSale] = useState(false);
+  const [deleteSaleError, setDeleteSaleError] = useState<string | null>(null);
+
   // Ticket config for reprints
   const [businessName, setBusinessName] = useState("");
   const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
+
+  // Reimpresión térmica por fila (nunca afecta a otras filas)
+  const [printStates, setPrintStates] = useState<Record<string, "checking" | "printing" | "success" | "error">>({});
+  const [printBanner, setPrintBanner] = useState<string | null>(null);
 
   // POS sale edit
   const [editSale, setEditSale]         = useState<FullSale | null>(null);
@@ -160,12 +172,55 @@ export default function AdminOrdersPage() {
     await load();
   }
 
-  async function handleReprint(item: VentaItem) {
-    const saleRes = await fetch(`/api/admin/sales/${item.id}`).then((r) => r.json());
+  function isToday(dateStr: string) {
+    const d = new Date(dateStr);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  }
+
+  function openDeleteSale(item: VentaItem) {
+    setConfirmDeleteSale(item);
+    setDeleteSalePassword("");
+    setDeleteSaleError(null);
+  }
+
+  function closeDeleteSale() {
+    setConfirmDeleteSale(null);
+    setDeleteSalePassword("");
+    setDeleteSaleError(null);
+  }
+
+  async function handleDeleteSale() {
+    if (!confirmDeleteSale) return;
+    setDeletingSale(true);
+    setDeleteSaleError(null);
+    try {
+      const res = await fetch(`/api/admin/sales/${confirmDeleteSale.id}/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deleteSalePassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteSaleError(data.error ?? "No se pudo eliminar la venta");
+        return;
+      }
+      closeDeleteSale();
+      await load();
+    } catch {
+      setDeleteSaleError("Error de conexión");
+    } finally {
+      setDeletingSale(false);
+    }
+  }
+
+  /** GET la venta y arma el SaleTicketData; null si no existe. No dispara ninguna impresión. */
+  async function fetchSaleTicketData(id: string): Promise<SaleTicketData | null> {
+    const saleRes = await fetch(`/api/admin/sales/${id}`).then((r) => r.json());
     const s = saleRes.sale;
-    if (!s) return;
+    if (!s) return null;
     const saleNumber = String(s._id).slice(-6).toUpperCase();
-    const ticketData: SaleTicketData = {
+    return {
       businessName,
       ticketNumber: s.ticketNumber,
       saleNumber,
@@ -183,7 +238,51 @@ export default function AdminOrdersPage() {
       mixedPayment: s.mixedPayment,
       notes: s.notes,
     };
-    await saleTicket(ticketData, ticketConfig);
+  }
+
+  async function handleDownloadPdf(item: VentaItem) {
+    const data = await fetchSaleTicketData(item.id);
+    if (!data) return;
+    await saleTicket({ ...data, isReprint: true }, ticketConfig);
+  }
+
+  /**
+   * Imprime en la térmica (sin abrir la gaveta) el tiquete de una venta ya guardada.
+   * Estado por fila (nunca global): imprimir una no afecta a las demás. Reusado por
+   * el botón "Reimprimir en térmica" y por el auto-print tras editar una venta.
+   */
+  async function runThermalPrint(id: string) {
+    setPrintStates((p) => ({ ...p, [id]: "checking" }));
+    const health = await checkAgent();
+    if (!health) {
+      setPrintStates((p) => ({ ...p, [id]: "error" }));
+      setPrintBanner(`Venta #${id.slice(-6).toUpperCase()}: el agente de impresión no responde en esta computadora.`);
+      return;
+    }
+    setPrintStates((p) => ({ ...p, [id]: "printing" }));
+    try {
+      const data = await fetchSaleTicketData(id);
+      if (!data) throw new Error("No se pudo cargar la venta para imprimir");
+      const result = await printReceipt(buildSalePayload({ ...data, isReprint: true }, ticketConfig, false));
+      if (!result.ok) {
+        const detalle = result.detalles?.errores?.length ? `: ${result.detalles.errores.join("; ")}` : "";
+        throw new Error(`${result.mensaje}${detalle}`);
+      }
+      setPrintStates((p) => ({ ...p, [id]: "success" }));
+      setTimeout(() => setPrintStates((p) => {
+        const next = { ...p };
+        delete next[id];
+        return next;
+      }), 2000);
+    } catch (err) {
+      setPrintStates((p) => ({ ...p, [id]: "error" }));
+      const saleLabel = `Venta #${id.slice(-6).toUpperCase()}`;
+      setPrintBanner(`${saleLabel}: ${err instanceof Error ? err.message : "Error de conexión con el agente"}`);
+    }
+  }
+
+  async function handleThermalReprint(item: VentaItem) {
+    await runThermalPrint(item.id);
   }
 
   async function openSaleEdit(id: string) {
@@ -199,13 +298,17 @@ export default function AdminOrdersPage() {
     if (!editSale) return;
     setSavingSale(true);
     try {
-      await fetch(`/api/admin/sales/${editSale._id}`, {
+      const id = editSale._id;
+      await fetch(`/api/admin/sales/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editSale),
       });
       setEditSale(null);
       await load();
+      // La venta ya quedó guardada; la impresión es best-effort y no bloquea el
+      // guardado. Si falla, el banner y el botón de la fila permiten reintentar.
+      runThermalPrint(id);
     } finally { setSavingSale(false); }
   }
 
@@ -338,6 +441,19 @@ export default function AdminOrdersPage() {
         )}
       </div>
 
+      {/* Aviso de impresión térmica (descartable) */}
+      {printBanner && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <p>{printBanner}</p>
+          </div>
+          <button type="button" onClick={() => setPrintBanner(null)} className="shrink-0 text-red-400 hover:text-red-600 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div className="text-brand-dark/40 text-sm">Cargando...</div>
@@ -410,11 +526,27 @@ export default function AdminOrdersPage() {
                         {item.source === "pos" && (
                           <>
                             <button
-                              onClick={() => handleReprint(item)}
-                              title="Reimprimir ticket"
+                              onClick={() => handleDownloadPdf(item)}
+                              title="Descargar PDF"
                               className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-blue-500 transition-colors cursor-pointer"
                             >
-                              <Printer className="w-4 h-4" />
+                              <FileText className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleThermalReprint(item)}
+                              disabled={printStates[item.id] === "checking" || printStates[item.id] === "printing"}
+                              title="Reimprimir en térmica"
+                              className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-blue-500 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {printStates[item.id] === "checking" || printStates[item.id] === "printing" ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : printStates[item.id] === "success" ? (
+                                <Check className="w-4 h-4 text-emerald-600" />
+                              ) : printStates[item.id] === "error" ? (
+                                <AlertCircle className="w-4 h-4 text-red-500" />
+                              ) : (
+                                <Printer className="w-4 h-4" />
+                              )}
                             </button>
                             <button
                               onClick={() => openSaleEdit(item.id)}
@@ -422,6 +554,13 @@ export default function AdminOrdersPage() {
                               className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-brand-pink transition-colors cursor-pointer"
                             >
                               <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => openDeleteSale(item)}
+                              title="Eliminar venta"
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </>
                         )}
@@ -681,6 +820,67 @@ export default function AdminOrdersPage() {
               <Button variant="outline" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Delete POS Sale */}
+      <Dialog open={!!confirmDeleteSale} onOpenChange={(v) => !v && closeDeleteSale()}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader className="pb-2"><DialogTitle>¿Eliminar venta?</DialogTitle></DialogHeader>
+          {confirmDeleteSale && (
+            <div className="px-6 pb-6 space-y-4">
+              <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Tiquete</span>
+                  <span className="font-semibold">#{confirmDeleteSale.ticketNumber ?? confirmDeleteSale.id.slice(-6).toUpperCase()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Total</span>
+                  <span className="font-semibold">{fmt(confirmDeleteSale.total)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Fecha</span>
+                  <span>
+                    {new Date(confirmDeleteSale.date).toLocaleDateString("es-CR", { day: "2-digit", month: "short" })}
+                    {" "}
+                    {new Date(confirmDeleteSale.date).toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+              </div>
+              <p className="text-sm text-red-600">
+                Esta acción no se puede deshacer: devuelve el inventario y, si venía de una mesa, reabre lo que quedó pendiente.
+              </p>
+              {!isToday(confirmDeleteSale.date) && (
+                <p className="text-sm text-orange-600">
+                  Esta venta no es de hoy: eliminarla puede afectar un cierre de caja ya realizado.
+                </p>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Contraseña de eliminación</label>
+                <input
+                  type="password"
+                  autoFocus
+                  value={deleteSalePassword}
+                  onChange={(e) => setDeleteSalePassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && deleteSalePassword) handleDeleteSale(); }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+                />
+              </div>
+              {deleteSaleError && <p className="text-sm text-red-600">{deleteSaleError}</p>}
+              <div className="flex gap-3">
+                <Button
+                  variant="ghost"
+                  className="flex-1 bg-red-50 text-red-600 hover:bg-red-100"
+                  disabled={deletingSale || !deleteSalePassword}
+                  onClick={handleDeleteSale}
+                >
+                  {deletingSale && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                  Eliminar
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={closeDeleteSale}>Cancelar</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
