@@ -88,5 +88,11 @@ export async function POST(request: NextRequest) {
     html: welcomeEmailHtml({ name, slug, email: emailNorm, tempPassword }),
   });
 
-  return NextResponse.json({ tenant, tempPassword }, { status: 201 });
+  // `Tenant.create(...)` devuelve el documento recién construido en memoria: a
+  // diferencia de una consulta (`find`/`findOne`), `select: false` no lo saca
+  // solo de acá, así que se excluye a mano antes de responder.
+  const tenantResponse = tenant.toObject();
+  delete tenantResponse.printAgentToken;
+
+  return NextResponse.json({ tenant: tenantResponse, tempPassword }, { status: 201 });
 }
