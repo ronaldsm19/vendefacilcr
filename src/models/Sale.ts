@@ -21,6 +21,8 @@ export interface ISale {
   deliveryAddress?: string;
   deliveryPhone?: string;
   deliveryFee?: number;
+  tableId: string;        // _id de SalonTable, "" si la venta no viene de una mesa del Salón
+  comandaIds: string[];   // comandas cobradas (total o parcialmente) en esta venta
   items: ISaleItem[];
   subtotal: number;
   ivaEnabled: boolean;
@@ -64,6 +66,8 @@ const SaleSchema = new Schema(
     deliveryAddress: { type: String, default: "" },
     deliveryPhone: { type: String, default: "" },
     deliveryFee:   { type: Number, default: 0 },
+    tableId:       { type: String, default: "" },
+    comandaIds:    { type: [String], default: [] },
     items:         { type: [SaleItemSchema], required: true },
     subtotal:      { type: Number, required: true },
     ivaEnabled:    { type: Boolean, default: false },
@@ -88,6 +92,7 @@ const SaleSchema = new Schema(
 );
 
 SaleSchema.index({ tenantId: 1, saleDate: -1 });
+SaleSchema.index({ tenantId: 1, comandaIds: 1 });
 
 export const Sale =
   mongoose.models.Sale || mongoose.model<ISale>("Sale", SaleSchema);

@@ -13,7 +13,7 @@ import { useAdminSession } from "@/components/admin/SessionContext";
 import { usePolling } from "@/hooks/usePolling";
 import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaConfig";
 import { comandaMinutes, badgeLevel, BADGE_COLORS, type ComandaThresholds } from "@/lib/comandaTime";
-import { AlertTriangle, CheckCheck, Ban, Pencil, Eye, Printer, Check } from "lucide-react";
+import { AlertTriangle, CheckCheck, Ban, Pencil, Eye, Printer, Check, MonitorCheck } from "lucide-react";
 
 const STATUS_PILL: Record<ComandaRow["status"], string> = {
   enviada: "bg-blue-50 text-blue-700",
@@ -322,8 +322,10 @@ export default function AdminComandasPage() {
                                 <Ban className="w-4 h-4" />
                               </button>
                             )}
-                            <Button asChild size="sm">
-                              <Link href={`/${tenantSlug}/admin/pos`}>Ir a cobrar</Link>
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={`/${tenantSlug}/admin/pos?tableId=${c.tableId}`}>
+                                <MonitorCheck className="w-3.5 h-3.5" /> Cobrar en POS
+                              </Link>
                             </Button>
                           </>
                         ) : (
@@ -376,7 +378,9 @@ export default function AdminComandasPage() {
                 />
                 {tab === "pendientes" && (
                   <Button asChild size="sm" variant="secondary" className="w-full">
-                    <Link href={`/${tenantSlug}/admin/pos`}>Ir a cobrar</Link>
+                    <Link href={`/${tenantSlug}/admin/pos?tableId=${c.tableId}`}>
+                      <MonitorCheck className="w-3.5 h-3.5" /> Cobrar en POS
+                    </Link>
                   </Button>
                 )}
               </div>

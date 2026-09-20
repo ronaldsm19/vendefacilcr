@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { Loader2, Plus, Minus, X, Check, ShoppingCart, Printer, UserCircle } from "lucide-react";
+import {
+  Loader2, Plus, Minus, X, Check, ShoppingCart, Printer, UserCircle,
+  Utensils, ChevronLeft, RefreshCw, AlertCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { buildSalePayload } from "@/lib/printBridge";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import { useAdminSession } from "@/components/admin/SessionContext";
+import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
+import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import {
   Dialog,
   DialogContent,
@@ -34,7 +39,47 @@ interface CartLine {
   productName: string;
   unitPrice: number;
   quantity: number;
+  // Solo en líneas que vienen de una comanda (bloqueadas)
+  comandaId?: string;
+  comandaNumber?: number;
+  itemIndex?: number;
+  note?: string;
 }
+
+function lineKey(l: CartLine) {
+  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : l.productId;
+}
+
+interface ComandaSelection {
+  comandaId: string;
+  number: number;
+  version: number;
+  items: { index: number; qty: number }[];
+}
+
+interface OpenComandaItem {
+  index: number; productId: string; productName: string; unitPrice: number;
+  quantity: number; paidQty: number; pendingQty: number; note: string; station: string;
+}
+interface OpenComanda {
+  _id: string; number: number; status: "enviada" | "servida"; version: number;
+  customerName: string; waiterName: string; sentAt: string; servedAt: string | null;
+  notes: string; isPrevious: boolean; pendingTotal: number; items: OpenComandaItem[];
+}
+interface OpenTable {
+  tableId: string; tableLabel: string; tableShape: string; areaId: string; areaName: string;
+  tableStatus: string | null; openCount: number; pendingTotal: number;
+  oldestSentAt: string; minutes: number; comandas: OpenComanda[];
+}
+
+function defaultPicks(t: OpenTable) {
+  const p: Record<string, number> = {};
+  for (const c of t.comandas) if (!c.isPrevious)
+    for (const it of c.items) if (it.pendingQty > 0) p[`${c._id}:${it.index}`] = it.pendingQty;
+  return p;
+}
+
+const MIN_TEXT: Record<BadgeLevel, string> = { ok: "text-emerald-600", warn: "text-amber-600", alert: "text-red-600" };
 
 interface PosConfig {
   ivaEnabled: boolean;
@@ -146,10 +191,21 @@ function OrderTypeSelector({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PosPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin text-brand-pink" /></div>}>
+      <PosPageInner />
+    </Suspense>
+  );
+}
+
+function PosPageInner() {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const tenantSlug = pathname.split("/")[1];
   const DRAFT_KEY = `pos_cart_${tenantSlug}`;
   const session = useAdminSession();
+  const { isPremium } = session;
 
   // ── Data state ──────────────────────────────────────────────────
   const [products, setProducts]       = useState<ProductRow[]>([]);
@@ -181,6 +237,21 @@ export default function PosPage() {
   const [deliveryPhone, setDeliveryPhone]   = useState("");
   const [deliveryFee, setDeliveryFee]       = useState(0);
 
+  // ── Mesas / comandas state ─────────────────────────────────────────
+  const [tableId, setTableId] = useState("");                       // _id de SalonTable
+  const [comandaSelections, setComandaSelections] = useState<ComandaSelection[]>([]);
+  const [saleError, setSaleError] = useState<{ message: string; code?: string } | null>(null);
+  const [showTablesPanel, setShowTablesPanel] = useState(false);
+  const [openTables, setOpenTables] = useState<OpenTable[]>([]);
+  const [tablesMultiArea, setTablesMultiArea] = useState(false);
+  const [thresholds, setThresholds] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [activeTable, setActiveTable] = useState<OpenTable | null>(null);   // null = lista
+  // selección dentro del panel: clave `${comandaId}:${index}` → qty elegida
+  const [picked, setPicked] = useState<Record<string, number>>({});
+  const [panelNotice, setPanelNotice] = useState<string | null>(null);
+  const [lastTableNote, setLastTableNote] = useState<string | null>(null);
+
   // ── Sale state ───────────────────────────────────────────────────
   const [saving, setSaving]           = useState(false);
   const [lastSaleNum, setLastSaleNum] = useState<string | null>(null);
@@ -205,10 +276,33 @@ export default function PosPage() {
   // ── Persist draft cart (solo rates y carrito, NO los enabled flags) ─
   useEffect(() => {
     if (!draftLoaded || !tenantSlug) return;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType }));
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType,
+      tableId, tableNumber, customerName, comandaSelections,
+    }));
     window.dispatchEvent(new CustomEvent("pos-cart-update"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType, draftLoaded]);
+  }, [cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections]);
+
+  async function loadOpenTables(focusTableId?: string) {
+    setTablesLoading(true);
+    try {
+      const res = await fetch("/api/admin/comandas/open-by-table");
+      if (!res.ok) { setOpenTables([]); return; }
+      const data = await res.json();
+      setOpenTables(data.tables ?? []);
+      setTablesMultiArea(Boolean(data.multiArea));
+      setThresholds(readComandaConfig(data));
+      if (focusTableId) {
+        const t = (data.tables ?? []).find((x: OpenTable) => x.tableId === focusTableId) ?? null;
+        setActiveTable(t);
+        setPicked(t ? defaultPicks(t) : {});
+        if (!t) setPanelNotice("La mesa ya no tiene comandas abiertas.");
+      }
+    } finally {
+      setTablesLoading(false);
+    }
+  }
 
   // ── Load data ────────────────────────────────────────────────────
   useEffect(() => {
@@ -266,14 +360,20 @@ export default function PosPage() {
             if (typeof draft.serviceRate === "number") setServiceRate(draft.serviceRate);
             if (typeof draft.tipAmount   === "number") setTipAmount(draft.tipAmount);
             if (draft.orderType) setOrderType(draft.orderType);
+            if (typeof draft.tableId === "string") setTableId(draft.tableId);
+            if (typeof draft.tableNumber === "string") setTableNumber(draft.tableNumber);
+            if (typeof draft.customerName === "string") setCustomerName(draft.customerName);
+            if (Array.isArray(draft.comandaSelections)) setComandaSelections(draft.comandaSelections);
           }
         }
       } catch { /* ignore */ }
 
       setDraftLoaded(true);
       setLoading(false);
+      if (isPremium) loadOpenTables();
     }
     load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Focus payment input when modal opens
@@ -283,6 +383,20 @@ export default function PosPage() {
       return () => clearTimeout(timer);
     }
   }, [showPaymentModal]);
+
+  // Query param ?tableId= (viene de "Cobrar en POS" del historial de comandas)
+  useEffect(() => {
+    if (!draftLoaded) return;
+    const qp = searchParams.get("tableId");
+    if (!qp || !isPremium) return;
+    (async () => {
+      setOrderType("LOCAL");
+      setShowTablesPanel(true);
+      await loadOpenTables(qp);
+      router.replace(pathname);   // quitar el param para que un refresh no reabra el panel
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftLoaded, isPremium]);
 
   // ── Derived ──────────────────────────────────────────────────────
   const categories = ["todos", ...Array.from(new Set(products.map((p) => p.category).filter(Boolean)))];
@@ -304,6 +418,7 @@ export default function PosPage() {
 
   // ── Handlers ─────────────────────────────────────────────────────
   function changeOrderType(type: OrderType) {
+    if (type !== "LOCAL" && comandaSelections.length > 0) clearComandas();
     setOrderType(type);
     if (type !== "PICKUP")  setPickupTime("");
     if (type !== "EXPRESS") { setDeliveryAddress(""); setDeliveryPhone(""); setDeliveryFee(0); }
@@ -317,10 +432,10 @@ export default function PosPage() {
   function addToCart() {
     if (!qtyModal || qtyInput < 1) return;
     setCart((prev) => {
-      const existing = prev.find((l) => l.productId === qtyModal._id);
+      const existing = prev.find((l) => !l.comandaId && l.productId === qtyModal._id);
       if (existing) {
         return prev.map((l) =>
-          l.productId === qtyModal._id
+          !l.comandaId && l.productId === qtyModal._id
             ? { ...l, quantity: l.quantity + qtyInput }
             : l
         );
@@ -335,16 +450,78 @@ export default function PosPage() {
     setQtyModal(null);
   }
 
-  function updateQty(productId: string, delta: number) {
+  function updateQty(key: string, delta: number) {
     setCart((prev) =>
       prev
-        .map((l) => l.productId === productId ? { ...l, quantity: l.quantity + delta } : l)
+        .map((l) => (!l.comandaId && lineKey(l) === key) ? { ...l, quantity: l.quantity + delta } : l)
         .filter((l) => l.quantity > 0)
     );
   }
 
-  function removeLine(productId: string) {
-    setCart((prev) => prev.filter((l) => l.productId !== productId));
+  function removeLine(key: string) {
+    setCart((prev) => prev.filter((l) => l.comandaId || lineKey(l) !== key));
+  }
+
+  function clearComandas() {
+    setCart((prev) => prev.filter((l) => !l.comandaId));
+    setComandaSelections([]);
+    setTableId("");
+    setSaleError(null);
+  }
+
+  function handleTableChange(v: string) {
+    if (comandaSelections.length > 0) clearComandas();
+    setTableNumber(v);
+  }
+
+  function applySelection() {
+    if (!activeTable) return;
+    const t = activeTable;
+    const selections: ComandaSelection[] = [];
+    const lines: CartLine[] = [];
+    for (const c of t.comandas) {
+      const selItems = c.items
+        .filter((it) => (picked[`${c._id}:${it.index}`] ?? 0) > 0)
+        .map((it) => ({ index: it.index, qty: Math.min(picked[`${c._id}:${it.index}`], it.pendingQty) }));
+      if (selItems.length === 0) continue;
+      selections.push({ comandaId: c._id, number: c.number, version: c.version, items: selItems });
+      for (const it of selItems) {
+        const src = c.items[it.index];
+        lines.push({
+          productId: src.productId, productName: src.productName, unitPrice: src.unitPrice,
+          quantity: it.qty, comandaId: c._id, comandaNumber: c.number, itemIndex: it.index, note: src.note,
+        });
+      }
+    }
+    if (selections.length === 0) return;
+    const display = `${t.tableShape === "barstool" ? "Banqueta" : "Mesa"} ${t.tableLabel}`;
+    setCart((prev) => [...prev.filter((l) => !l.comandaId), ...lines]);
+    setComandaSelections(selections);
+    setTableId(t.tableId);
+    setTableNumber(tablesMultiArea ? `${t.areaName} · ${display}` : display);
+    setOrderType("LOCAL");
+    if (selections.length === 1) {
+      const c = t.comandas.find((x) => x._id === selections[0].comandaId);
+      if (c?.customerName) setCustomerName(c.customerName);
+    }
+    setSaleError(null);
+    setShowTablesPanel(false);
+    setActiveTable(null);
+    setPicked({});
+  }
+
+  function toggleComanda(c: OpenComanda) {
+    setPicked((prev) => {
+      const next = { ...prev };
+      const allPicked = c.items.every((it) => it.pendingQty === 0 || next[`${c._id}:${it.index}`] === it.pendingQty);
+      for (const it of c.items) {
+        if (it.pendingQty === 0) continue;
+        const key = `${c._id}:${it.index}`;
+        if (allPicked) delete next[key];
+        else next[key] = it.pendingQty;
+      }
+      return next;
+    });
   }
 
   async function saveRatesConfig() {
@@ -369,6 +546,7 @@ export default function PosPage() {
   async function registerSale() {
     if (cart.length === 0) return;
     setSaving(true);
+    setSaleError(null);
     try {
       const items = cart.map((l) => ({
         productId:   l.productId,
@@ -402,55 +580,64 @@ export default function PosPage() {
           deliveryAddress: orderType === "EXPRESS" ? deliveryAddress : undefined,
           deliveryPhone:  orderType === "EXPRESS" ? deliveryPhone  : undefined,
           deliveryFee:    orderType === "EXPRESS" ? deliveryFeeAmt : undefined,
+          tableId: tableId || undefined,
+          comandaSelections: comandaSelections.map(({ comandaId, version, items: selItems }) => ({ comandaId, version, items: selItems })),
         }),
       });
       const data = await res.json();
-      if (res.ok) {
-        const s = data.sale;
-        const saleNumber = String(s._id).slice(-6).toUpperCase();
-        setLastSaleNum(saleNumber);
-        setLastSaleTicket({
-          businessName,
-          ticketNumber: s.ticketNumber,
-          saleNumber,
-          date: s.saleDate ?? new Date().toISOString(),
-          cashUserName: s.cashUserName,
-          customerName: s.customerName,
-          tableNumber: s.tableNumber,
-          items: s.items,
-          subtotal: s.subtotal,
-          ivaEnabled: s.ivaEnabled, ivaRate: s.ivaRate, ivaAmount: s.ivaAmount,
-          serviceEnabled: s.serviceEnabled, serviceRate: s.serviceRate, serviceAmount: s.serviceAmount,
-          tipEnabled: s.tipEnabled, tipAmount: s.tipAmount,
-          total: s.total,
-          paymentMethod: s.paymentMethod,
-          mixedPayment: s.mixedPayment,
-          notes: s.notes,
-          orderType: s.orderType,
-          pickupTime: s.pickupTime,
-          deliveryAddress: s.deliveryAddress,
-          deliveryPhone: s.deliveryPhone,
-          deliveryFee: s.deliveryFee,
-          amountPaid: needsChangeCalc && amountPaid > 0 ? amountPaid : undefined,
-          changeGiven: needsChangeCalc && amountPaid > 0 ? Math.max(0, amountPaid - cashPortion) : undefined,
-        });
-        setShowSuccess(true);
-        setCart([]);
-        setTipAmount(0);
-        setCustomerName("");
-        setTableNumber("");
-        setObservaciones("");
-        setPickupTime("");
-        setDeliveryAddress("");
-        setDeliveryPhone("");
-        setDeliveryFee(0);
-        setAmountPaid(0);
-        setMixedAmounts({ efectivo: 0, sinpe: 0, tarjeta: 0 });
-        setShowCartPanel(false);
-        localStorage.removeItem(DRAFT_KEY);
-        window.dispatchEvent(new CustomEvent("pos-cart-update"));
-        setTimeout(() => setShowSuccess(false), 10000);
+      if (!res.ok) {
+        setSaleError({ message: data.error ?? "No se pudo registrar la venta", code: data.code });
+        return;
       }
+      const s = data.sale;
+      const prevTableNumber = tableNumber;
+      const saleNumber = String(s._id).slice(-6).toUpperCase();
+      setLastSaleNum(saleNumber);
+      setLastSaleTicket({
+        businessName,
+        ticketNumber: s.ticketNumber,
+        saleNumber,
+        date: s.saleDate ?? new Date().toISOString(),
+        cashUserName: s.cashUserName,
+        customerName: s.customerName,
+        tableNumber: s.tableNumber,
+        items: s.items,
+        subtotal: s.subtotal,
+        ivaEnabled: s.ivaEnabled, ivaRate: s.ivaRate, ivaAmount: s.ivaAmount,
+        serviceEnabled: s.serviceEnabled, serviceRate: s.serviceRate, serviceAmount: s.serviceAmount,
+        tipEnabled: s.tipEnabled, tipAmount: s.tipAmount,
+        total: s.total,
+        paymentMethod: s.paymentMethod,
+        mixedPayment: s.mixedPayment,
+        notes: s.notes,
+        orderType: s.orderType,
+        pickupTime: s.pickupTime,
+        deliveryAddress: s.deliveryAddress,
+        deliveryPhone: s.deliveryPhone,
+        deliveryFee: s.deliveryFee,
+        amountPaid: needsChangeCalc && amountPaid > 0 ? amountPaid : undefined,
+        changeGiven: needsChangeCalc && amountPaid > 0 ? Math.max(0, amountPaid - cashPortion) : undefined,
+      });
+      setShowSuccess(true);
+      setCart([]);
+      setTipAmount(0);
+      setCustomerName("");
+      setTableNumber("");
+      setObservaciones("");
+      setPickupTime("");
+      setDeliveryAddress("");
+      setDeliveryPhone("");
+      setDeliveryFee(0);
+      setAmountPaid(0);
+      setMixedAmounts({ efectivo: 0, sinpe: 0, tarjeta: 0 });
+      setShowCartPanel(false);
+      setComandaSelections([]);
+      setTableId("");
+      setLastTableNote(data.table?.status === "por_limpiar" ? `${prevTableNumber} quedó por limpiar` : null);
+      if (isPremium) loadOpenTables();
+      localStorage.removeItem(DRAFT_KEY);
+      window.dispatchEvent(new CustomEvent("pos-cart-update"));
+      setTimeout(() => { setShowSuccess(false); setLastTableNote(null); }, 10000);
     } finally {
       setSaving(false);
     }
@@ -529,7 +716,33 @@ export default function PosPage() {
 
           {/* Tipo de pedido + Cliente + campos condicionales */}
           <div className="px-3 pt-2 pb-1 space-y-2 shrink-0">
-            <OrderTypeSelector value={orderType} onChange={changeOrderType} />
+            <div className="flex gap-2">
+              <div className="flex-1"><OrderTypeSelector value={orderType} onChange={changeOrderType} /></div>
+              {orderType === "LOCAL" && isPremium && (
+                <button
+                  type="button"
+                  onClick={() => { setShowTablesPanel(true); setActiveTable(null); setPicked({}); setPanelNotice(null); loadOpenTables(); }}
+                  className="relative flex items-center gap-1.5 px-3 rounded-xl border border-brand-pink/40 bg-brand-pink/5 text-brand-pink text-xs font-semibold hover:bg-brand-pink/10 transition-colors"
+                >
+                  <Utensils className="w-3.5 h-3.5" /> Mesas
+                  {openTables.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full gradient-bg text-white text-[10px] font-bold flex items-center justify-center">
+                      {openTables.length}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+            {comandaSelections.length > 0 && (
+              <div className="flex items-center justify-between gap-2 bg-brand-pink/5 border border-brand-pink/20 rounded-xl px-3 py-1.5">
+                <span className="text-xs text-brand-pink font-medium truncate">
+                  {tableNumber} · Comandas {comandaSelections.map((s) => `#${s.number}`).join(", ")}
+                </span>
+                <button type="button" onClick={clearComandas} className="text-xs font-semibold text-brand-pink/70 hover:text-brand-pink shrink-0">
+                  Quitar comandas
+                </button>
+              </div>
+            )}
             <input
               type="text"
               value={customerName}
@@ -541,7 +754,7 @@ export default function PosPage() {
               <TableSelect
                 tableGroups={tableGroups}
                 value={tableNumber}
-                onChange={setTableNumber}
+                onChange={handleTableChange}
                 className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-pink bg-white"
               />
             )}
@@ -601,35 +814,49 @@ export default function PosPage() {
               </div>
             ) : (
               cart.map((line) => (
-                <div key={line.productId} className="bg-white rounded-xl border border-gray-100 p-3">
+                <div key={lineKey(line)} className="bg-white rounded-xl border border-gray-100 p-3">
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <p className="text-sm font-semibold text-gray-900 leading-tight flex-1">{line.productName}</p>
-                    <button
-                      type="button"
-                      onClick={() => removeLine(line.productId)}
-                      className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 leading-tight">{line.productName}</p>
+                      {line.comandaId && (
+                        <span className="inline-block mt-1 text-[10px] font-semibold text-brand-pink bg-brand-pink/10 rounded-full px-1.5 py-0.5">
+                          Comanda #{line.comandaNumber}
+                        </span>
+                      )}
+                      {line.note && <p className="text-xs text-gray-400 italic">{line.note}</p>}
+                    </div>
+                    {!line.comandaId && (
+                      <button
+                        type="button"
+                        onClick={() => removeLine(lineKey(line))}
+                        className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => updateQty(line.productId, -1)}
-                        className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
+                    {line.comandaId ? (
                       <span className="w-8 text-center text-sm font-bold">{line.quantity}</span>
-                      <button
-                        type="button"
-                        onClick={() => updateQty(line.productId, 1)}
-                        className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateQty(lineKey(line), -1)}
+                          className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="w-8 text-center text-sm font-bold">{line.quantity}</span>
+                        <button
+                          type="button"
+                          onClick={() => updateQty(lineKey(line), 1)}
+                          className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                     <span className="text-sm font-bold text-brand-pink">
                       {fmt(line.unitPrice * line.quantity)}
                     </span>
@@ -785,6 +1012,17 @@ export default function PosPage() {
               ))}
             </div>
 
+            {/* Error de venta */}
+            {saleError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600 space-y-2">
+                <p>{saleError.message}</p>
+                {["VERSION_MISMATCH", "QTY_EXCEEDED", "CONCURRENT_PAYMENT", "COMANDA_NOT_OPEN", "COMANDA_NOT_FOUND", "TABLE_MISMATCH"].includes(saleError.code ?? "") && (
+                  <button type="button" onClick={() => { const tid = tableId; clearComandas(); setShowTablesPanel(true); loadOpenTables(tid); }}
+                    className="font-semibold underline">Recargar mesas</button>
+                )}
+              </div>
+            )}
+
             {/* Register button */}
             <Button
               className="w-full"
@@ -799,7 +1037,7 @@ export default function PosPage() {
             {showSuccess && (
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-emerald-700">
                 <Check className="w-4 h-4 shrink-0" />
-                ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>
+                ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>{lastTableNote ? ` · ${lastTableNote}` : ""}
               </div>
             )}
 
@@ -884,7 +1122,33 @@ export default function PosPage() {
 
           {/* Tipo de pedido + Cliente + campos condicionales */}
           <div className="px-3 pt-2 pb-1 space-y-2 shrink-0">
-            <OrderTypeSelector value={orderType} onChange={changeOrderType} />
+            <div className="flex gap-2">
+              <div className="flex-1"><OrderTypeSelector value={orderType} onChange={changeOrderType} /></div>
+              {orderType === "LOCAL" && isPremium && (
+                <button
+                  type="button"
+                  onClick={() => { setShowTablesPanel(true); setActiveTable(null); setPicked({}); setPanelNotice(null); loadOpenTables(); }}
+                  className="relative flex items-center gap-1.5 px-3 rounded-xl border border-brand-pink/40 bg-brand-pink/5 text-brand-pink text-xs font-semibold hover:bg-brand-pink/10 transition-colors"
+                >
+                  <Utensils className="w-3.5 h-3.5" /> Mesas
+                  {openTables.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full gradient-bg text-white text-[10px] font-bold flex items-center justify-center">
+                      {openTables.length}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+            {comandaSelections.length > 0 && (
+              <div className="flex items-center justify-between gap-2 bg-brand-pink/5 border border-brand-pink/20 rounded-xl px-3 py-1.5">
+                <span className="text-xs text-brand-pink font-medium truncate">
+                  {tableNumber} · Comandas {comandaSelections.map((s) => `#${s.number}`).join(", ")}
+                </span>
+                <button type="button" onClick={clearComandas} className="text-xs font-semibold text-brand-pink/70 hover:text-brand-pink shrink-0">
+                  Quitar comandas
+                </button>
+              </div>
+            )}
             <input
               type="text"
               value={customerName}
@@ -896,7 +1160,7 @@ export default function PosPage() {
               <TableSelect
                 tableGroups={tableGroups}
                 value={tableNumber}
-                onChange={setTableNumber}
+                onChange={handleTableChange}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink bg-white"
               />
             )}
@@ -956,23 +1220,37 @@ export default function PosPage() {
               </div>
             ) : (
               cart.map((line) => (
-                <div key={line.productId} className="bg-gray-50 rounded-xl border border-gray-100 p-3">
+                <div key={lineKey(line)} className="bg-gray-50 rounded-xl border border-gray-100 p-3">
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <p className="text-sm font-semibold text-gray-900 leading-tight flex-1">{line.productName}</p>
-                    <button type="button" onClick={() => removeLine(line.productId)} className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 leading-tight">{line.productName}</p>
+                      {line.comandaId && (
+                        <span className="inline-block mt-1 text-[10px] font-semibold text-brand-pink bg-brand-pink/10 rounded-full px-1.5 py-0.5">
+                          Comanda #{line.comandaNumber}
+                        </span>
+                      )}
+                      {line.note && <p className="text-xs text-gray-400 italic">{line.note}</p>}
+                    </div>
+                    {!line.comandaId && (
+                      <button type="button" onClick={() => removeLine(lineKey(line))} className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <button type="button" onClick={() => updateQty(line.productId, -1)} className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors">
-                        <Minus className="w-3 h-3" />
-                      </button>
+                    {line.comandaId ? (
                       <span className="w-8 text-center text-sm font-bold">{line.quantity}</span>
-                      <button type="button" onClick={() => updateQty(line.productId, 1)} className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors">
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => updateQty(lineKey(line), -1)} className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors">
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="w-8 text-center text-sm font-bold">{line.quantity}</span>
+                        <button type="button" onClick={() => updateQty(lineKey(line), 1)} className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors">
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                     <span className="text-sm font-bold text-brand-pink">{fmt(line.unitPrice * line.quantity)}</span>
                   </div>
                   {line.quantity > 1 && <p className="text-xs text-gray-400 mt-1">{fmt(line.unitPrice)} c/u</p>}
@@ -1063,6 +1341,15 @@ export default function PosPage() {
                 </button>
               ))}
             </div>
+            {saleError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600 space-y-2">
+                <p>{saleError.message}</p>
+                {["VERSION_MISMATCH", "QTY_EXCEEDED", "CONCURRENT_PAYMENT", "COMANDA_NOT_OPEN", "COMANDA_NOT_FOUND", "TABLE_MISMATCH"].includes(saleError.code ?? "") && (
+                  <button type="button" onClick={() => { const tid = tableId; clearComandas(); setShowTablesPanel(true); loadOpenTables(tid); }}
+                    className="font-semibold underline">Recargar mesas</button>
+                )}
+              </div>
+            )}
             <Button className="w-full py-3 text-base" disabled={cart.length === 0 || saving} onClick={openPaymentModal}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {saving ? "Registrando..." : "Registrar venta"}
@@ -1070,7 +1357,7 @@ export default function PosPage() {
             {showSuccess && (
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-emerald-700">
                 <Check className="w-4 h-4 shrink-0" />
-                ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>
+                ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>{lastTableNote ? ` · ${lastTableNote}` : ""}
               </div>
             )}
 
@@ -1287,6 +1574,211 @@ export default function PosPage() {
               <Plus className="w-4 h-4" />
               Agregar al pedido
             </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Panel Mesas ── */}
+      <Dialog open={showTablesPanel} onOpenChange={(o) => { if (!o) { setShowTablesPanel(false); setActiveTable(null); setPanelNotice(null); } }}>
+        <DialogContent className="sm:max-w-2xl flex flex-col overflow-hidden max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {activeTable ? (
+                <button type="button" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }} className="inline-flex items-center gap-1 text-brand-dark/60 hover:text-brand-dark">
+                  <ChevronLeft className="w-4 h-4" /> Mesas
+                </button>
+              ) : "Mesas con comandas abiertas"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-2 space-y-3">
+            {!activeTable ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-brand-dark/60">{openTables.length} mesas</span>
+                  <Button type="button" variant="ghost" size="sm" disabled={tablesLoading} onClick={() => loadOpenTables()}>
+                    <RefreshCw className={`w-3.5 h-3.5 ${tablesLoading ? "animate-spin" : ""}`} /> Actualizar
+                  </Button>
+                </div>
+                {panelNotice && (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {panelNotice}
+                  </div>
+                )}
+                {tablesLoading && openTables.length === 0 ? (
+                  <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-brand-pink" /></div>
+                ) : openTables.length === 0 ? (
+                  <p className="text-sm text-brand-dark/40 text-center py-8">No hay mesas con comandas abiertas.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {openTables.map((t) => {
+                      const level = badgeLevel(t.minutes, thresholds);
+                      const hasPrevious = t.comandas.some((c) => c.isPrevious);
+                      return (
+                        <button
+                          key={t.tableId}
+                          type="button"
+                          onClick={() => {
+                            setActiveTable(t);
+                            setPicked(defaultPicks(t));
+                            setPanelNotice(
+                              comandaSelections.length > 0 && tableId !== t.tableId
+                                ? `El pedido en curso tiene comandas de ${tableNumber || "otra mesa"}. Al cobrar esta mesa se reemplazan.`
+                                : null
+                            );
+                          }}
+                          className="text-left rounded-xl border border-brand-muted p-3 hover:border-brand-pink/40 transition-colors"
+                        >
+                          <p className="text-sm font-semibold text-brand-dark">
+                            {t.tableShape === "barstool" ? "Banqueta" : "Mesa"} {t.tableLabel}
+                            {tablesMultiArea && <span className="text-brand-dark/50 font-normal"> · {t.areaName}</span>}
+                          </p>
+                          <p className="text-xs text-brand-dark/60 mt-0.5">{t.openCount} comanda{t.openCount !== 1 ? "s" : ""} · {fmt(t.pendingTotal)} pendiente</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`text-xs font-semibold ${MIN_TEXT[level]}`}>{t.minutes} min</span>
+                            {hasPrevious && <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 rounded-full px-1.5 py-0.5">Días anteriores</span>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-brand-dark">
+                      {activeTable.tableShape === "barstool" ? "Banqueta" : "Mesa"} {activeTable.tableLabel}
+                      {tablesMultiArea && <span className="text-brand-dark/50 font-normal"> · {activeTable.areaName}</span>}
+                    </p>
+                    <p className="text-xs text-brand-dark/50">
+                      {activeTable.tableStatus === "libre" ? "Libre" : activeTable.tableStatus === "ocupada" ? "Ocupada" : activeTable.tableStatus === "por_limpiar" ? "Por limpiar" : activeTable.tableStatus === "reservada" ? "Reservada" : ""}
+                      {" · "}{activeTable.openCount} comandas · {activeTable.minutes} min
+                    </p>
+                  </div>
+                </div>
+
+                {panelNotice && (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {panelNotice}
+                  </div>
+                )}
+
+                {(["hoy", "anteriores"] as const).map((group) => {
+                  const list = activeTable.comandas.filter((c) => (group === "hoy" ? !c.isPrevious : c.isPrevious));
+                  if (list.length === 0) return null;
+                  return (
+                    <div key={group} className="space-y-2">
+                      <p className="text-xs font-semibold text-brand-dark/50 uppercase tracking-wide">{group === "hoy" ? "Hoy" : "Anteriores"}</p>
+                      {group === "anteriores" && (
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Estas comandas son de días anteriores. Revisá con el mesero antes de cobrarlas.
+                        </div>
+                      )}
+                      {list.map((c) => {
+                        const pendingItems = c.items.filter((it) => it.pendingQty > 0);
+                        const allChecked = pendingItems.length > 0 && pendingItems.every((it) => picked[`${c._id}:${it.index}`] === it.pendingQty);
+                        return (
+                          <div key={c._id} className="rounded-xl border border-brand-muted p-3 space-y-2">
+                            <div className="flex items-start gap-2">
+                              <input
+                                type="checkbox"
+                                className="accent-brand-pink mt-0.5"
+                                checked={allChecked}
+                                onChange={() => toggleComanda(c)}
+                                disabled={pendingItems.length === 0}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-semibold text-brand-dark">#{c.number}</span>
+                                  <span className="text-xs text-brand-dark/50">{c.waiterName}</span>
+                                  <span className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 ${c.status === "servida" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>
+                                    {c.status === "servida" ? "Servida" : "Enviada"}
+                                  </span>
+                                  <span className="text-xs text-brand-dark/40">
+                                    {c.isPrevious && `${new Date(c.sentAt).toLocaleDateString("es-CR", { day: "2-digit", month: "short" })} `}
+                                    {new Date(c.sentAt).toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                  {c.customerName && <span className="text-xs text-brand-dark/50">{c.customerName}</span>}
+                                </div>
+                              </div>
+                              <span className="text-sm font-semibold text-brand-pink shrink-0">{fmt(c.pendingTotal)}</span>
+                            </div>
+                            <div className="space-y-1.5 pl-6">
+                              {c.items.map((it) => {
+                                const key = `${c._id}:${it.index}`;
+                                const qty = picked[key] ?? 0;
+                                if (it.pendingQty === 0) {
+                                  return (
+                                    <div key={key} className="flex items-center justify-between opacity-40 text-sm">
+                                      <span>{it.productName}</span>
+                                      <span className="text-xs">Pagado</span>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div key={key} className="flex items-center justify-between gap-2 text-sm">
+                                    <label className="flex items-start gap-2 flex-1 min-w-0">
+                                      <input
+                                        type="checkbox"
+                                        className="accent-brand-pink mt-1"
+                                        checked={qty > 0}
+                                        onChange={(e) => setPicked((prev) => {
+                                          const next = { ...prev };
+                                          if (e.target.checked) next[key] = it.pendingQty; else delete next[key];
+                                          return next;
+                                        })}
+                                      />
+                                      <span className="min-w-0">
+                                        <span className="block">{it.productName}</span>
+                                        {it.note && <span className="block text-xs text-gray-400 italic">{it.note}</span>}
+                                        <span className="block text-xs text-brand-dark/40">pendiente {it.pendingQty} de {it.quantity}</span>
+                                      </span>
+                                    </label>
+                                    {qty > 0 && (
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button type="button" onClick={() => setPicked((prev) => ({ ...prev, [key]: Math.max(1, (prev[key] ?? 1) - 1) }))}
+                                          className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
+                                          <Minus className="w-3 h-3" />
+                                        </button>
+                                        <span className="w-5 text-center text-xs font-bold">{qty}</span>
+                                        <button type="button" onClick={() => setPicked((prev) => ({ ...prev, [key]: Math.min(it.pendingQty, (prev[key] ?? 1) + 1) }))}
+                                          className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
+                                          <Plus className="w-3 h-3" />
+                                        </button>
+                                        <span className="text-xs font-semibold text-brand-pink w-14 text-right">{fmt(it.unitPrice * qty)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {c.notes && <p className="text-xs text-gray-400 pl-6">{c.notes}</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+
+                {(() => {
+                  const count = Object.values(picked).filter((q) => q > 0).length;
+                  const sum = activeTable.comandas.reduce((s, c) => s + c.items.reduce((s2, it) => {
+                    const q = picked[`${c._id}:${it.index}`] ?? 0;
+                    return s2 + Math.min(q, it.pendingQty) * it.unitPrice;
+                  }, 0), 0);
+                  return (
+                    <div className="sticky bottom-0 bg-white pt-3 border-t border-brand-muted flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <span className="text-sm text-brand-dark/60">Seleccionado: {count} ítem{count !== 1 ? "s" : ""} · {fmt(sum)}</span>
+                      <div className="flex gap-2 shrink-0">
+                        <Button type="button" variant="secondary" className="flex-1 sm:flex-none" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }}>Cancelar</Button>
+                        <Button type="button" className="flex-1 sm:flex-none" disabled={count === 0} onClick={applySelection}>Cobrar seleccionado</Button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
