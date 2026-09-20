@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Tenant } from "@/models/Tenant";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "configuracion");
+  if (denied) return denied;
 
   await connectToDatabase();
   const tenant = await Tenant.findById(session.tenantId)
@@ -26,6 +28,8 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "configuracion");
+  if (denied) return denied;
 
   await connectToDatabase();
   const { whatsapp, instagram, facebook, tiktok, youtube } = await request.json();

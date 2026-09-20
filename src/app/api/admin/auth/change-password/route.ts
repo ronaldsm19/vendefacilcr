@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { connectToDatabase } from "@/lib/mongodb";
 import { User } from "@/models/User";
 import { Tenant } from "@/models/Tenant";
-import { getSession, COOKIE_NAME } from "@/lib/auth";
+import { getSession, COOKIE_NAME, forbidden } from "@/lib/auth";
 import { sendMail, passwordChangedEmailHtml } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
+  if (session.role !== "admin" || !session.email) return forbidden();
 
   const { currentPassword, newPassword } = await request.json();
 

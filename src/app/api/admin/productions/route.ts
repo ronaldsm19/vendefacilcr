@@ -3,11 +3,13 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Production } from "@/models/Production";
 import { Recipe } from "@/models/Recipe";
 import { RawMaterial } from "@/models/RawMaterial";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "recetas");
+  if (denied) return denied;
 
   await connectToDatabase();
   const productions = await Production.find({ tenantId: session.tenantId })
@@ -20,6 +22,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "recetas");
+  if (denied) return denied;
 
   await connectToDatabase();
   const { recipeId, batches, notes } = await request.json();

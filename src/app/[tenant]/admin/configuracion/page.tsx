@@ -254,17 +254,7 @@ export default function ConfiguracionPage() {
   const [savedTicket, setSavedTicket] = useState(false);
 
   // ── Tab state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "caja" | "ticket">("marca");
-
-  // ── Cash users state ─────────────────────────────────────────────
-  interface CashUser { _id: string; name: string; }
-  const [cashUsers, setCashUsers]         = useState<CashUser[]>([]);
-  const [cashUsersLoading, setCashUsersLoading] = useState(true);
-  const [newCashUserName, setNewCashUserName]   = useState("");
-  const [addingCashUser, setAddingCashUser]     = useState(false);
-  const [deletingCashUserId, setDeletingCashUserId] = useState<string | null>(null);
-  const [editingCashUserId, setEditingCashUserId]   = useState<string | null>(null);
-  const [editingCashUserName, setEditingCashUserName] = useState("");
+  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "ticket">("marca");
 
   // ── Categories state ─────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
@@ -315,12 +305,6 @@ export default function ConfiguracionPage() {
     fetch("/api/admin/menu-config")
       .then((r) => r.json())
       .then((data) => setMenuConfig({ ...MENU_CONFIG_DEFAULTS, ...data }));
-
-    // Cash users
-    fetch("/api/admin/cash-users")
-      .then((r) => r.json())
-      .then((d) => setCashUsers(d.users ?? []))
-      .finally(() => setCashUsersLoading(false));
 
     // Categories
     fetch("/api/admin/categories")
@@ -571,50 +555,6 @@ export default function ConfiguracionPage() {
   }
 
 
-  // ── Handlers: cash users ─────────────────────────────────────────
-  async function handleAddCashUser(e: React.FormEvent) {
-    e.preventDefault();
-    const name = newCashUserName.trim();
-    if (!name) return;
-    setAddingCashUser(true);
-    try {
-      const r = await fetch("/api/admin/cash-users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const d = await r.json();
-      if (d.user) {
-        setCashUsers((prev) => [...prev, d.user]);
-        setNewCashUserName("");
-      }
-    } finally {
-      setAddingCashUser(false);
-    }
-  }
-
-  async function handleSaveCashUserName(id: string) {
-    const name = editingCashUserName.trim();
-    if (!name) return;
-    await fetch(`/api/admin/cash-users/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    setCashUsers((prev) => prev.map((u) => (u._id === id ? { ...u, name } : u)));
-    setEditingCashUserId(null);
-  }
-
-  async function handleDeleteCashUser(id: string) {
-    setDeletingCashUserId(id);
-    try {
-      await fetch(`/api/admin/cash-users/${id}`, { method: "DELETE" });
-      setCashUsers((prev) => prev.filter((u) => u._id !== id));
-    } finally {
-      setDeletingCashUserId(null);
-    }
-  }
-
   // ── Handlers: categories ─────────────────────────────────────────
   async function handleAddCategory(e: React.FormEvent) {
     e.preventDefault();
@@ -666,7 +606,6 @@ export default function ConfiguracionPage() {
     { key: "nosotros", label: "Nosotros", icon: "👥", title: "Sección Nosotros",          desc: "Texto e imágenes de la sección \"Nosotros\" en tu tienda." },
     { key: "productos",label: "Productos",icon: "📦", title: "Categorías de productos",  desc: "Administrá las categorías para organizar tu catálogo." },
     { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
-    { key: "caja",     label: "Caja",     icon: "🧑‍💼", title: "Usuarios de caja",          desc: "Personas que pueden atender el punto de venta." },
     { key: "ticket",   label: "Ticket",   icon: "🧾", title: "Ticket electrónico",        desc: "Datos que aparecen en tus tickets impresos." },
   ] as const;
 
@@ -1661,106 +1600,6 @@ export default function ConfiguracionPage() {
       </form>
 
       </>}
-
-      {/* ── TAB: CAJA ── Usuarios de caja ───────────────────────────── */}
-      {activeTab === "caja" && <div className="max-w-xl">
-
-      <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
-        <div>
-          <h2 className="font-semibold text-brand-dark text-lg">Usuarios de caja</h2>
-          <p className="text-sm text-brand-dark/50 mt-0.5">
-            Estos nombres aparecen en el Punto de venta para identificar quién atendió cada venta.
-          </p>
-        </div>
-
-        {cashUsersLoading ? (
-          <div className="flex justify-center py-4">
-            <Loader2 className="w-5 h-5 animate-spin text-brand-pink" />
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {cashUsers.length === 0 && (
-              <p className="text-sm text-brand-dark/40 italic">No hay usuarios de caja aún.</p>
-            )}
-            {cashUsers.map((u) => (
-              <div
-                key={u._id}
-                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-brand-muted bg-brand-muted/10"
-              >
-                {editingCashUserId === u._id ? (
-                  <input
-                    autoFocus
-                    type="text"
-                    value={editingCashUserName}
-                    onChange={(e) => setEditingCashUserName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSaveCashUserName(u._id);
-                      if (e.key === "Escape") setEditingCashUserId(null);
-                    }}
-                    className="flex-1 border border-brand-pink rounded-lg px-2 py-1 text-sm focus:outline-none"
-                  />
-                ) : (
-                  <span className="text-sm text-brand-dark flex-1">{u.name}</span>
-                )}
-                <div className="flex items-center gap-1">
-                  {editingCashUserId === u._id ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveCashUserName(u._id)}
-                        className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
-                      >
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingCashUserId(null)}
-                        className="p-1.5 rounded-lg text-brand-dark/30 hover:bg-gray-100 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => { setEditingCashUserId(u._id); setEditingCashUserName(u.name); }}
-                      className="p-1.5 rounded-lg text-brand-dark/30 hover:text-brand-dark hover:bg-brand-muted/30 transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteCashUser(u._id)}
-                    disabled={deletingCashUserId === u._id}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors disabled:opacity-50"
-                  >
-                    {deletingCashUserId === u._id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <form onSubmit={handleAddCashUser} className="flex gap-2">
-          <input
-            type="text"
-            value={newCashUserName}
-            onChange={(e) => setNewCashUserName(e.target.value)}
-            placeholder="Nombre del usuario..."
-            className="flex-1 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-          />
-          <Button type="submit" disabled={addingCashUser || !newCashUserName.trim()} size="sm">
-            {addingCashUser ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          </Button>
-        </form>
-      </section>
-      </div>}
 
       {/* ── TAB: TICKET ── Ticket electrónico ───────────────────────── */}
       {activeTab === "ticket" && <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">

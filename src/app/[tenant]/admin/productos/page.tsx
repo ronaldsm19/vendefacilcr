@@ -11,6 +11,8 @@ import Pagination from "@/components/admin/Pagination";
 import { IProduct } from "@/models/Product";
 import { Plus, Pencil, Trash2, Search, Upload } from "lucide-react";
 import ImportProductsModal from "@/components/admin/ImportProductsModal";
+import { useAdminSession } from "@/components/admin/SessionContext";
+import { can } from "@/lib/permissions";
 
 type ProductRow = IProduct & { _id: string };
 
@@ -21,6 +23,8 @@ const catLabel: Record<string, string> = {
 };
 
 export default function AdminProductsPage() {
+  const session = useAdminSession();
+  const canEdit = can(session, "productos:editar");
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -79,7 +83,9 @@ export default function AdminProductsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1">
           <h1 className="font-brand text-2xl md:text-3xl font-bold text-brand-dark">Productos</h1>
-          <p className="text-brand-dark/50 text-sm mt-1">{products.length} productos en catálogo</p>
+          <p className="text-brand-dark/50 text-sm mt-1">
+            {products.length} productos en catálogo{!canEdit && " · Solo lectura"}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -92,12 +98,16 @@ export default function AdminProductsPage() {
               className="pl-8 pr-3 py-1.5 border border-brand-muted rounded-full text-sm focus:outline-none focus:border-brand-pink w-48"
             />
           </div>
-          <Button variant="secondary" size="sm" onClick={() => setShowImport(true)} className="shrink-0">
-            <Upload className="w-4 h-4" /> Importar
-          </Button>
-          <Button onClick={openCreate} className="shrink-0">
-            <Plus className="w-4 h-4 mr-1" /> Nuevo
-          </Button>
+          {canEdit && (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setShowImport(true)} className="shrink-0">
+                <Upload className="w-4 h-4" /> Importar
+              </Button>
+              <Button onClick={openCreate} className="shrink-0">
+                <Plus className="w-4 h-4 mr-1" /> Nuevo
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -125,7 +135,7 @@ export default function AdminProductsPage() {
                 <th className="text-left px-4 py-3">Precio</th>
                 <th className="text-left px-4 py-3 hidden sm:table-cell">Stock</th>
                 <th className="text-left px-4 py-3 hidden sm:table-cell">Estado</th>
-                <th className="text-right px-4 py-3">Acciones</th>
+                {canEdit && <th className="text-right px-4 py-3">Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -182,27 +192,29 @@ export default function AdminProductsPage() {
                       {p.available ? "Disponible" : "No disponible"}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => openEdit(p)}
-                        className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-pink transition-colors cursor-pointer"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(p._id)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/50 hover:text-red-500 transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
+                  {canEdit && (
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openEdit(p)}
+                          className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-pink transition-colors cursor-pointer"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setConfirmDelete(p._id)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/50 hover:text-red-500 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
               {pageItems.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-brand-dark/40">
+                  <td colSpan={canEdit ? 6 : 5} className="px-4 py-8 text-center text-brand-dark/40">
                     {search ? "Sin resultados para esa búsqueda." : "No hay productos. Crea el primero."}
                   </td>
                 </tr>

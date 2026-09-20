@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Expense } from "@/models/Expense";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "gastos");
+  if (denied) return denied;
 
   await connectToDatabase();
   const expenses = await Expense.find({ tenantId: session.tenantId }).sort({ date: -1 }).lean();
@@ -15,6 +17,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "gastos");
+  if (denied) return denied;
 
   await connectToDatabase();
   const body = await request.json();

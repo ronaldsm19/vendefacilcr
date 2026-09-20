@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAdminSession } from "@/components/admin/SessionContext";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -320,6 +321,7 @@ function DraggableWall({ wall, isDesignMode, isSelected, onClick, onResizeLive, 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SalonPage() {
+  const session = useAdminSession();
   const [mode, setMode]     = useState<"design" | "operation">("operation");
   const [areas, setAreas]   = useState<Area[]>([]);
   const [tables, setTables] = useState<SalonTable[]>([]);
@@ -653,12 +655,14 @@ export default function SalonPage() {
             }`}>
             <Eye className="w-4 h-4" /> Operación
           </button>
-          <button onClick={() => setMode("design")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              mode === "design" ? "bg-white shadow text-brand-dark" : "text-brand-dark/50"
-            }`}>
-            <Settings2 className="w-4 h-4" /> Diseño
-          </button>
+          {session.role !== "mesero" && (
+            <button onClick={() => setMode("design")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                mode === "design" ? "bg-white shadow text-brand-dark" : "text-brand-dark/50"
+              }`}>
+              <Settings2 className="w-4 h-4" /> Diseño
+            </button>
+          )}
         </div>
       </div>
 

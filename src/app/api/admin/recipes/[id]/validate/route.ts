@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Recipe, IRecipeIngredient } from "@/models/Recipe";
 import { RawMaterial } from "@/models/RawMaterial";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function POST(
   request: NextRequest,
@@ -10,6 +10,8 @@ export async function POST(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "recetas");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();

@@ -3,7 +3,7 @@ import * as xlsx from "xlsx";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 function parseBool(val: unknown, fallback: boolean): boolean {
   if (typeof val === "boolean") return val;
@@ -31,6 +31,8 @@ function get(row: Record<string, unknown>, ...keys: string[]): unknown {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "productos:editar");
+  if (denied) return denied;
 
   const formData = await request.formData();
   const file = formData.get("file") as File | null;

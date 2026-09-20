@@ -90,7 +90,6 @@ export default function AdminOrdersPage() {
   const [editSale, setEditSale]         = useState<FullSale | null>(null);
   const [savingSale, setSavingSale]     = useState(false);
   const [saleProducts, setSaleProducts] = useState<ProductOption[]>([]);
-  const [cashUsers, setCashUsers]       = useState<{ _id: string; name: string }[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductDrop, setShowProductDrop] = useState(false);
   const productSearchRef = useRef<HTMLDivElement>(null);
@@ -188,14 +187,12 @@ export default function AdminOrdersPage() {
   }
 
   async function openSaleEdit(id: string) {
-    const [saleRes, productsRes, usersRes] = await Promise.all([
+    const [saleRes, productsRes] = await Promise.all([
       fetch(`/api/admin/sales/${id}`).then((r) => r.json()),
       fetch("/api/admin/products").then((r) => r.json()),
-      fetch("/api/admin/cash-users").then((r) => r.json()),
     ]);
     if (saleRes.sale) setEditSale(saleRes.sale);
     setSaleProducts(productsRes.products ?? []);
-    setCashUsers(usersRes.users ?? []);
   }
 
   async function handleSaleSave() {
@@ -554,25 +551,9 @@ export default function AdminOrdersPage() {
                       className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-brand-dark/60 mb-1">Encargado</label>
-                  {cashUsers.length > 0 ? (
-                    <select value={editSale.cashUserName}
-                      onChange={(e) => {
-                        const u = cashUsers.find((c) => c.name === e.target.value);
-                        setEditSale({ ...editSale, cashUserName: e.target.value, cashUserId: u?._id ?? "" });
-                      }}
-                      className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink">
-                      <option value="">Sin encargado</option>
-                      {cashUsers.map((u) => <option key={u._id} value={u.name}>{u.name}</option>)}
-                    </select>
-                  ) : (
-                    <input type="text" value={editSale.cashUserName}
-                      onChange={(e) => setEditSale({ ...editSale, cashUserName: e.target.value })}
-                      placeholder="Nombre del encargado"
-                      className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
-                  )}
-                </div>
+                <p className="text-xs text-brand-dark/50">
+                  Atendió: <span className="font-medium text-brand-dark">{editSale.cashUserName || "—"}</span>
+                </p>
 
                 {/* Observaciones */}
                 <div>

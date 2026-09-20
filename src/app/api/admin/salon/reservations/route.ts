@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { SalonReservation } from "@/models/SalonReservation";
 import { SalonTable } from "@/models/SalonTable";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -22,6 +22,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "salon:editar");
+  if (denied) return denied;
 
   await connectToDatabase();
   const { tableId, customerName, partySize, dateTime, phone, notes } = await request.json();

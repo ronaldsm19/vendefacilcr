@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { Loader2, Plus, Minus, X, ChevronDown, Check, ShoppingCart, Printer } from "lucide-react";
+import { Loader2, Plus, Minus, X, Check, ShoppingCart, Printer, UserCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { buildSalePayload } from "@/lib/printBridge";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
+import { useAdminSession } from "@/components/admin/SessionContext";
 import {
   Dialog,
   DialogContent,
@@ -18,8 +19,6 @@ import {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type OrderType = "LOCAL" | "PICKUP" | "EXPRESS";
-
-interface CashUser { _id: string; name: string; }
 
 interface ProductRow {
   _id: string;
@@ -150,19 +149,14 @@ export default function PosPage() {
   const pathname = usePathname();
   const tenantSlug = pathname.split("/")[1];
   const DRAFT_KEY = `pos_cart_${tenantSlug}`;
+  const session = useAdminSession();
 
   // ── Data state ──────────────────────────────────────────────────
-  const [cashUsers, setCashUsers]     = useState<CashUser[]>([]);
   const [products, setProducts]       = useState<ProductRow[]>([]);
   const [tableGroups, setTableGroups] = useState<TableGroup[]>([]);
   const [businessName, setBusinessName] = useState("");
   const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
   const [loading, setLoading]         = useState(true);
-
-  // ── Session state ────────────────────────────────────────────────
-  const [cashUser, setCashUser]       = useState<CashUser | null>(null);
-  const [showUserPicker, setShowUserPicker] = useState(false);
-  const userPickerRef = useRef<HTMLDivElement>(null);
 
   // ── Catalog state ────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState("todos");
@@ -219,15 +213,14 @@ export default function PosPage() {
   // ── Load data ────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const [usersRes, productsRes, configRes, meRes, areasRes, salonTablesRes] = await Promise.all([
-        fetch("/api/admin/cash-users").then((r) => r.json()),
+      try { localStorage.removeItem("pos_cashUser"); } catch {}
+      const [productsRes, configRes, meRes, areasRes, salonTablesRes] = await Promise.all([
         fetch("/api/admin/products").then((r) => r.json()),
         fetch("/api/admin/pos-config").then((r) => r.json()),
         fetch("/api/admin/auth/me").then((r) => r.json()).catch(() => ({})),
         fetch("/api/admin/salon/areas").then((r) => r.json()).catch(() => ({})),
         fetch("/api/admin/salon/tables").then((r) => r.json()).catch(() => ({})),
       ]);
-      setCashUsers(usersRes.users ?? []);
       setProducts((productsRes.products ?? []).filter((p: ProductRow) => p.available));
       // `||` (no `??`): si tenantName viene como cadena vacía, igual caemos al
       // slug del tenant, para que el nombre del negocio nunca vaya vacío (el
@@ -283,29 +276,6 @@ export default function PosPage() {
     load();
   }, []);
 
-  // Restore cash user from localStorage
-  useEffect(() => {
-    if (cashUsers.length === 0) return;
-    try {
-      const saved = localStorage.getItem("pos_cashUser");
-      if (saved) {
-        const parsed = JSON.parse(saved) as CashUser;
-        if (cashUsers.find((u) => u._id === parsed._id)) setCashUser(parsed);
-      }
-    } catch { /* ignore */ }
-  }, [cashUsers]);
-
-  // Close user picker on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (userPickerRef.current && !userPickerRef.current.contains(e.target as Node)) {
-        setShowUserPicker(false);
-      }
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
   // Focus payment input when modal opens
   useEffect(() => {
     if (showPaymentModal) {
@@ -333,12 +303,6 @@ export default function PosPage() {
   const change         = amountPaid - cashPortion;
 
   // ── Handlers ─────────────────────────────────────────────────────
-  function selectCashUser(u: CashUser) {
-    setCashUser(u);
-    localStorage.setItem("pos_cashUser", JSON.stringify(u));
-    setShowUserPicker(false);
-  }
-
   function changeOrderType(type: OrderType) {
     setOrderType(type);
     if (type !== "PICKUP")  setPickupTime("");
@@ -417,8 +381,6 @@ export default function PosPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cashUserId:     cashUser?._id  ?? "",
-          cashUserName:   cashUser?.name ?? "",
           customerName,
           tableNumber,
           notes: observaciones,
@@ -510,41 +472,8 @@ export default function PosPage() {
         <h1 className="font-brand text-xl font-bold text-brand-dark">Punto de venta</h1>
 
         {/* Encargado */}
-        <div className="relative" ref={userPickerRef}>
-          <button
-            type="button"
-            onClick={() => setShowUserPicker((v) => !v)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
-              cashUser
-                ? "border-brand-pink/40 bg-brand-pink/5 text-brand-pink"
-                : "border-brand-muted text-brand-dark/50 hover:border-brand-pink/40"
-            }`}
-          >
-            <span className="text-base">🧑‍💼</span>
-            <span>{cashUser ? cashUser.name : "Seleccionar encargado"}</span>
-            <ChevronDown className="w-3.5 h-3.5 opacity-60" />
-          </button>
-          {showUserPicker && (
-            <div className="absolute right-0 top-full mt-1 bg-white rounded-xl border border-brand-muted shadow-lg z-50 min-w-[180px] py-1">
-              {cashUsers.length === 0 ? (
-                <p className="text-xs text-brand-dark/40 px-3 py-2">
-                  Sin usuarios — agregalos en Configuración → Caja
-                </p>
-              ) : (
-                cashUsers.map((u) => (
-                  <button
-                    key={u._id}
-                    type="button"
-                    onClick={() => selectCashUser(u)}
-                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-brand-muted/20 text-left"
-                  >
-                    {u.name}
-                    {cashUser?._id === u._id && <Check className="w-3.5 h-3.5 text-brand-pink" />}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-brand-muted text-sm text-brand-dark/70">
+          <UserCircle className="w-4 h-4" /> {session.name}
         </div>
       </div>
 
