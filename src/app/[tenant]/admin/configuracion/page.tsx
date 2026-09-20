@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TicketPreview from "@/components/admin/TicketPreview";
+import PrintQueueSection from "@/components/admin/PrintQueueSection";
 import {
   buildSaleRows, buildCashCloseRows, DEFAULT_TICKET_CONFIG,
   type TicketConfigData, type SaleTicketData, type CashCloseTicketData,
@@ -1845,7 +1846,7 @@ export default function ConfiguracionPage() {
             </div>
           </section>
         </form>
-        {/* FASE 4: sección "Impresión" (token del agente, estado, últimos jobs) va debajo de esta sección */}
+        <div className="mt-6"><PrintQueueSection /></div>
       </div>}
 
           </div>

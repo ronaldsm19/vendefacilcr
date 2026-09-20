@@ -13,7 +13,7 @@ import { useAdminSession } from "@/components/admin/SessionContext";
 import { usePolling } from "@/hooks/usePolling";
 import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaConfig";
 import { comandaMinutes, badgeLevel, BADGE_COLORS, type ComandaThresholds } from "@/lib/comandaTime";
-import { AlertTriangle, CheckCheck, Ban, Pencil, Eye } from "lucide-react";
+import { AlertTriangle, CheckCheck, Ban, Pencil, Eye, Printer, Check } from "lucide-react";
 
 const STATUS_PILL: Record<ComandaRow["status"], string> = {
   enviada: "bg-blue-50 text-blue-700",
@@ -87,6 +87,8 @@ export default function AdminComandasPage() {
 
   const [selected, setSelected] = useState<ComandaRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ComandaRow | null>(null);
+  const [reprintingId, setReprintingId] = useState<string | null>(null);
+  const [reprintMsg, setReprintMsg] = useState<{ type: "success" | "warning" | "error"; text: string } | null>(null);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -120,7 +122,6 @@ export default function AdminComandasPage() {
     setLoading(false);
   }, [tab, page, pageSize, periodMode, anchor, tableFilter, waiterFilter, statusFilter, isStaffView]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount, mismo patrón que pedidos/salón/toma de comanda
   useEffect(() => { load(); }, [load]);
   usePolling(load, 10000, true);
 
@@ -155,6 +156,26 @@ export default function AdminComandasPage() {
   function handleCancelDone() {
     setCancelTarget(null);
     load();
+  }
+
+  async function handleReprint(id: string) {
+    setReprintingId(id);
+    try {
+      const res = await fetch(`/api/admin/comandas/${id}/reprint`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) {
+        setReprintMsg({ type: "error", text: d.error ?? "No se pudo reimprimir" });
+      } else if (d.jobs.length === 0) {
+        setReprintMsg({ type: "warning", text: "Esta comanda no tiene ítems para imprimir" });
+      } else if (d.jobs.length === 2) {
+        setReprintMsg({ type: "success", text: "Enviado a impresión: COCINA y BEBIDAS" });
+      } else {
+        setReprintMsg({ type: "success", text: `Enviado a impresión: ${d.jobs[0].station === "cocina" ? "COCINA" : "BEBIDAS"}` });
+      }
+    } finally {
+      setReprintingId(null);
+      setTimeout(() => setReprintMsg(null), 3000);
+    }
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -232,6 +253,17 @@ export default function AdminComandasPage() {
         </div>
       )}
 
+      {reprintMsg && (
+        <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm border ${
+          reprintMsg.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
+          reprintMsg.type === "warning" ? "bg-amber-50 border-amber-200 text-amber-700" :
+          "bg-red-50 border-red-200 text-red-700"
+        }`}>
+          {reprintMsg.type === "success" && <Check className="w-4 h-4 shrink-0" />}
+          {reprintMsg.text}
+        </div>
+      )}
+
       {/* Contenido */}
       {loading ? (
         <div className="text-brand-dark/40 text-sm">Cargando...</div>
@@ -269,6 +301,16 @@ export default function AdminComandasPage() {
                         <Button size="sm" variant="secondary" onClick={() => setSelected(c)}>
                           <Eye className="w-3.5 h-3.5" /> Ver
                         </Button>
+                        {isStaffView && c.status !== "anulada" && (
+                          <button
+                            onClick={() => handleReprint(c._id)}
+                            disabled={reprintingId === c._id}
+                            title="Reimprimir"
+                            className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-brand-pink transition-colors cursor-pointer disabled:opacity-40"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                        )}
                         {tab === "pendientes" ? (
                           <>
                             {!hasPaidItems(c) && (
@@ -372,8 +414,6 @@ export default function AdminComandasPage() {
                 {selected.paidAt && <p>Pagada {fmtTime(selected.paidAt)}</p>}
               </div>
 
-              {/* TODO(Fase 4): botón Reimprimir */}
-
               <div className="flex flex-wrap gap-2">
                 {selected.status === "enviada" && (
                   <Button size="sm" onClick={() => handleServe(selected._id)}>
@@ -389,6 +429,11 @@ export default function AdminComandasPage() {
                       <Ban className="w-3.5 h-3.5" /> Anular
                     </Button>
                   </>
+                )}
+                {isStaffView && selected.status !== "anulada" && (
+                  <Button size="sm" variant="secondary" disabled={reprintingId === selected._id} onClick={() => handleReprint(selected._id)}>
+                    <Printer className="w-3.5 h-3.5" /> Reimprimir
+                  </Button>
                 )}
               </div>
             </div>

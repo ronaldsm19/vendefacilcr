@@ -67,6 +67,8 @@ export interface ITenant {
   tiktok: string;
   youtube: string;
   passwordChanged: boolean;
+  printAgentToken: string;              // 64 hex; "" = sin token
+  printAgentLastSeenAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -135,9 +137,13 @@ const TenantSchema = new Schema(
     tiktok:    { type: String, default: "" },
     youtube:   { type: String, default: "" },
     passwordChanged: { type: Boolean, default: false },
+    printAgentToken:      { type: String, default: "", select: false },
+    printAgentLastSeenAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
+
+TenantSchema.index({ printAgentToken: 1 });
 
 export const Tenant =
   mongoose.models.Tenant || mongoose.model<ITenant>("Tenant", TenantSchema);
