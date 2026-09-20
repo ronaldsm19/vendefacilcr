@@ -79,6 +79,13 @@ function defaultPicks(t: OpenTable) {
   return p;
 }
 
+/** Cuántas líneas de ítem (no unidades) siguen con algo pendiente en la mesa. */
+function pendingItemCount(t: OpenTable): number {
+  let n = 0;
+  for (const c of t.comandas) for (const it of c.items) if (it.pendingQty > 0) n++;
+  return n;
+}
+
 const MIN_TEXT: Record<BadgeLevel, string> = { ok: "text-emerald-600", warn: "text-amber-600", alert: "text-red-600" };
 
 interface PosConfig {
@@ -251,6 +258,8 @@ function PosPageInner() {
   const [picked, setPicked] = useState<Record<string, number>>({});
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
   const [lastTableNote, setLastTableNote] = useState<string | null>(null);
+  const [isPartialCharge, setIsPartialCharge] = useState(false);
+  const [nextTableToCharge, setNextTableToCharge] = useState<OpenTable | null>(null);
 
   // ── Sale state ───────────────────────────────────────────────────
   const [saving, setSaving]           = useState(false);
@@ -286,21 +295,23 @@ function PosPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections]);
 
-  async function loadOpenTables(focusTableId?: string) {
+  async function loadOpenTables(focusTableId?: string): Promise<OpenTable[]> {
     setTablesLoading(true);
     try {
       const res = await fetch("/api/admin/comandas/open-by-table");
-      if (!res.ok) { setOpenTables([]); return; }
+      if (!res.ok) { setOpenTables([]); return []; }
       const data = await res.json();
-      setOpenTables(data.tables ?? []);
+      const tables: OpenTable[] = data.tables ?? [];
+      setOpenTables(tables);
       setTablesMultiArea(Boolean(data.multiArea));
       setThresholds(readComandaConfig(data));
       if (focusTableId) {
-        const t = (data.tables ?? []).find((x: OpenTable) => x.tableId === focusTableId) ?? null;
+        const t = tables.find((x) => x.tableId === focusTableId) ?? null;
         setActiveTable(t);
         setPicked(t ? defaultPicks(t) : {});
         if (!t) setPanelNotice("La mesa ya no tiene comandas abiertas.");
       }
+      return tables;
     } finally {
       setTablesLoading(false);
     }
@@ -469,6 +480,7 @@ function PosPageInner() {
     setComandaSelections([]);
     setTableId("");
     setSaleError(null);
+    setIsPartialCharge(false);
   }
 
   function handleTableChange(v: string) {
@@ -481,7 +493,10 @@ function PosPageInner() {
     const t = activeTable;
     const selections: ComandaSelection[] = [];
     const lines: CartLine[] = [];
+    let selectedTotal = 0;
+    let tablePendingTotal = 0;
     for (const c of t.comandas) {
+      for (const it of c.items) tablePendingTotal += it.pendingQty * it.unitPrice;
       const selItems = c.items
         .filter((it) => (picked[`${c._id}:${it.index}`] ?? 0) > 0)
         .map((it) => ({ index: it.index, qty: Math.min(picked[`${c._id}:${it.index}`], it.pendingQty) }));
@@ -489,6 +504,7 @@ function PosPageInner() {
       selections.push({ comandaId: c._id, number: c.number, version: c.version, items: selItems });
       for (const it of selItems) {
         const src = c.items[it.index];
+        selectedTotal += src.unitPrice * it.qty;
         lines.push({
           productId: src.productId, productName: src.productName, unitPrice: src.unitPrice,
           quantity: it.qty, comandaId: c._id, comandaNumber: c.number, itemIndex: it.index, note: src.note,
@@ -499,6 +515,7 @@ function PosPageInner() {
     const display = `${t.tableShape === "barstool" ? "Banqueta" : "Mesa"} ${t.tableLabel}`;
     setCart((prev) => [...prev.filter((l) => !l.comandaId), ...lines]);
     setComandaSelections(selections);
+    setIsPartialCharge(selectedTotal < tablePendingTotal);
     setTableId(t.tableId);
     setTableNumber(tablesMultiArea ? `${t.areaName} · ${display}` : display);
     setOrderType("LOCAL");
@@ -620,6 +637,8 @@ function PosPageInner() {
       }
       const s = data.sale;
       const prevTableNumber = tableNumber;
+      const cameFromComandas = comandaSelections.length > 0;
+      const chargedTableId = tableId;
       const saleNumber = String(s._id).slice(-6).toUpperCase();
       setLastSaleNum(saleNumber);
       const ticketData: SaleTicketData = {
@@ -646,6 +665,7 @@ function PosPageInner() {
         deliveryFee: s.deliveryFee,
         amountPaid: needsChangeCalc && amountPaid > 0 ? amountPaid : undefined,
         changeGiven: needsChangeCalc && amountPaid > 0 ? Math.max(0, amountPaid - cashPortion) : undefined,
+        partialNote: cameFromComandas && isPartialCharge ? `Pago parcial · ${s.tableNumber}` : undefined,
       };
       setLastSaleTicket(ticketData);
       setShowSuccess(true);
@@ -665,13 +685,36 @@ function PosPageInner() {
       setComandaSelections([]);
       setTableId("");
       setLastTableNote(data.table?.status === "por_limpiar" ? `${prevTableNumber} quedó por limpiar` : null);
-      if (isPremium) loadOpenTables();
+      setNextTableToCharge(null);
+      if (isPremium) {
+        loadOpenTables().then((tables) => {
+          if (!cameFromComandas) return;
+          const stillOpen = tables.find((x) => x.tableId === chargedTableId);
+          setNextTableToCharge(stillOpen ?? null);
+        });
+      }
       localStorage.removeItem(DRAFT_KEY);
       window.dispatchEvent(new CustomEvent("pos-cart-update"));
-      setTimeout(() => { setShowSuccess(false); setLastTableNote(null); setAutoPrintError(null); }, 10000);
+      setTimeout(() => { setShowSuccess(false); setLastTableNote(null); setAutoPrintError(null); setNextTableToCharge(null); }, 10000);
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Reabre el panel de Mesas en la misma mesa, con la selección vacía, para cobrarle a la siguiente persona. */
+  async function chargeNextPerson() {
+    const tid = nextTableToCharge?.tableId;
+    if (!tid) return;
+    setShowSuccess(false);
+    setLastTableNote(null);
+    setPanelNotice(null);
+    setShowTablesPanel(true);
+    const tables = await loadOpenTables();
+    const t = tables.find((x) => x.tableId === tid) ?? null;
+    setActiveTable(t);
+    setPicked({});
+    if (!t) setPanelNotice("La mesa ya no tiene comandas abiertas.");
+    setNextTableToCharge(null);
   }
 
   // ── Render ───────────────────────────────────────────────────────
@@ -1077,6 +1120,11 @@ function PosPageInner() {
                 {autoPrintError}
               </div>
             )}
+            {showSuccess && nextTableToCharge && (
+              <Button type="button" variant="secondary" className="w-full" onClick={chargeNextPerson}>
+                Cobrar a la siguiente persona
+              </Button>
+            )}
 
             {/* Imprimir: térmica (principal) + PDF (respaldo) */}
             {lastSaleTicket && (
@@ -1403,6 +1451,11 @@ function PosPageInner() {
                 {autoPrintError}
               </div>
             )}
+            {showSuccess && nextTableToCharge && (
+              <Button type="button" variant="secondary" className="w-full" onClick={chargeNextPerson}>
+                Cobrar a la siguiente persona
+              </Button>
+            )}
 
             {/* Imprimir: térmica (principal) + PDF (respaldo) */}
             {lastSaleTicket && (
@@ -1675,7 +1728,9 @@ function PosPageInner() {
                             {t.tableShape === "barstool" ? "Banqueta" : "Mesa"} {t.tableLabel}
                             {tablesMultiArea && <span className="text-brand-dark/50 font-normal"> · {t.areaName}</span>}
                           </p>
-                          <p className="text-xs text-brand-dark/60 mt-0.5">{t.openCount} comanda{t.openCount !== 1 ? "s" : ""} · {fmt(t.pendingTotal)} pendiente</p>
+                          <p className="text-xs text-brand-dark/60 mt-0.5">
+                            {t.openCount} comanda{t.openCount !== 1 ? "s" : ""} · {pendingItemCount(t)} ítem{pendingItemCount(t) !== 1 ? "s" : ""} · {fmt(t.pendingTotal)} pendiente
+                          </p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className={`text-xs font-semibold ${MIN_TEXT[level]}`}>{t.minutes} min</span>
                             {hasPrevious && <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 rounded-full px-1.5 py-0.5">Días anteriores</span>}
@@ -1806,13 +1861,21 @@ function PosPageInner() {
 
                 {(() => {
                   const count = Object.values(picked).filter((q) => q > 0).length;
-                  const sum = activeTable.comandas.reduce((s, c) => s + c.items.reduce((s2, it) => {
-                    const q = picked[`${c._id}:${it.index}`] ?? 0;
-                    return s2 + Math.min(q, it.pendingQty) * it.unitPrice;
-                  }, 0), 0);
+                  let sum = 0;
+                  let tablePendingTotal = 0;
+                  for (const c of activeTable.comandas) {
+                    for (const it of c.items) {
+                      tablePendingTotal += it.pendingQty * it.unitPrice;
+                      const q = picked[`${c._id}:${it.index}`] ?? 0;
+                      sum += Math.min(q, it.pendingQty) * it.unitPrice;
+                    }
+                  }
+                  const willRemain = Math.max(0, tablePendingTotal - sum);
                   return (
                     <div className="sticky bottom-0 bg-white pt-3 border-t border-brand-muted flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <span className="text-sm text-brand-dark/60">Seleccionado: {count} ítem{count !== 1 ? "s" : ""} · {fmt(sum)}</span>
+                      <span className="text-sm text-brand-dark/60">
+                        Seleccionado: {count} ítem{count !== 1 ? "s" : ""} · {fmt(sum)} · Quedará pendiente: {fmt(willRemain)}
+                      </span>
                       <div className="flex gap-2 shrink-0">
                         <Button type="button" variant="secondary" className="flex-1 sm:flex-none" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }}>Cancelar</Button>
                         <Button type="button" className="flex-1 sm:flex-none" disabled={count === 0} onClick={applySelection}>Cobrar seleccionado</Button>

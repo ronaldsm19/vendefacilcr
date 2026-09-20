@@ -157,6 +157,8 @@ export interface SaleTicketData {
   notes?: string;
   /** true → marca el ticket como "** REIMPRESIÓN **"; el original nunca lo manda. */
   isReprint?: boolean;
+  /** Texto tipo "Pago parcial · Mesa 3": venta desde comandas que no cubrió todo lo pendiente de la mesa. */
+  partialNote?: string;
 }
 
 export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT_TICKET_CONFIG): Row[] {
@@ -182,6 +184,7 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
   if (d.cashUserName) rows.push({ t: "lr", left: "Encargado:", right: clip(d.cashUserName, 20) });
   if (d.customerName) rows.push({ t: "lr", left: "Cliente:", right: clip(d.customerName, 20) });
   if (d.tableNumber)  rows.push({ t: "lr", left: "Mesa:", right: clip(d.tableNumber, 20) });
+  if (d.partialNote)  rows.push({ t: "center", text: d.partialNote, bold: true });
   if (d.orderType === "PICKUP") {
     rows.push({ t: "lr", left: "Tipo:", right: "Para llevar" });
     if (d.pickupTime) rows.push({ t: "lr", left: "Recogida:", right: d.pickupTime });
