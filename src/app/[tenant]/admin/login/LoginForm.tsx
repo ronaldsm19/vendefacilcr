@@ -22,10 +22,20 @@ export default function LoginForm({
   secondaryColor,
 }: LoginFormProps) {
   const router = useRouter();
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [form, setForm] = useState({ login: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const isStaff = form.login.trim() !== "" && !form.login.includes("@");
+
+  function handleLoginChange(value: string) {
+    setForm((prev) => {
+      const nextIsStaff = value.trim() !== "" && !value.includes("@");
+      if (nextIsStaff !== isStaff) return { login: value, password: "" };
+      return { ...prev, login: value };
+    });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,14 +45,14 @@ export default function LoginForm({
       const res = await fetch("/api/admin/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, tenantSlug: slug }),
+        body: JSON.stringify({ login: form.login.trim(), password: form.password, tenantSlug: slug }),
       });
       const data = await res.json();
       if (res.ok) {
-        if (data.passwordChanged === false) {
+        if (data.role === "admin" && data.passwordChanged === false) {
           try { sessionStorage.setItem("vf_pw_reminder", "1"); } catch {}
         }
-        router.push(`/${slug}/admin`);
+        router.push(data.redirectTo ?? `/${slug}/admin`);
         router.refresh();
       } else {
         setError(data.error ?? "Error al iniciar sesión");
@@ -102,19 +112,23 @@ export default function LoginForm({
             {tenantName}
           </p>
           <p className="text-sm mt-1" style={{ color: `${primaryColor}80` }}>
-            Acceso de administrador
+            Acceso al panel
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Correo</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Correo o usuario</label>
             <input
-              type="email"
+              type="text"
               required
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              placeholder="Correo electrónico"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={form.login}
+              onChange={(e) => handleLoginChange(e.target.value)}
+              placeholder="correo@negocio.com o usuario"
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-colors"
               style={{ ["--tw-ring-color" as string]: primaryColor }}
               onFocus={(e) => (e.currentTarget.style.borderColor = primaryColor)}
@@ -123,13 +137,23 @@ export default function LoginForm({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {isStaff ? "PIN" : "Contraseña"}
+            </label>
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
                 required
+                inputMode={isStaff ? "numeric" : undefined}
+                pattern={isStaff ? "[0-9]{4}" : undefined}
+                maxLength={isStaff ? 4 : undefined}
+                autoComplete="current-password"
+                placeholder={isStaff ? "4 dígitos" : undefined}
                 value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                onChange={(e) => {
+                  const value = isStaff ? e.target.value.replace(/\D/g, "").slice(0, 4) : e.target.value;
+                  setForm({ ...form, password: value });
+                }}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 pr-10 text-sm focus:outline-none transition-colors"
                 onFocus={(e) => (e.currentTarget.style.borderColor = primaryColor)}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "#e5e7eb")}

@@ -3,11 +3,13 @@ import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { Product } from "@/models/Product";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   await connectToDatabase();
   const { searchParams } = new URL(request.url);
@@ -22,6 +24,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   await connectToDatabase();
   const body = await request.json();

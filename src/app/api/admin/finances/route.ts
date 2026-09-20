@@ -4,11 +4,13 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { Sale } from "@/models/Sale";
 import { Expense } from "@/models/Expense";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "finanzas");
+  if (denied) return denied;
 
   await connectToDatabase();
 

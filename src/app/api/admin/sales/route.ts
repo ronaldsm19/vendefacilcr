@@ -3,12 +3,14 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Sale } from "@/models/Sale";
 import { Product } from "@/models/Product";
 import { Tenant } from "@/models/Tenant";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 import mongoose from "mongoose";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   await connectToDatabase();
 
@@ -30,11 +32,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pos");
+  if (denied) return denied;
 
   await connectToDatabase();
   const body = await request.json();
 
-  const { cashUserId, cashUserName, customerName, tableNumber,
+  const { customerName, tableNumber,
           items, subtotal,
           ivaEnabled, ivaRate, ivaAmount,
           serviceEnabled, serviceRate, serviceAmount,
@@ -56,8 +60,8 @@ export async function POST(request: NextRequest) {
   const sale = await Sale.create({
     tenantId:     session.tenantId,
     ticketNumber,
-    cashUserId:   cashUserId   ?? "",
-    cashUserName: cashUserName ?? "",
+    cashUserId:   session.userId,
+    cashUserName: session.name,
     customerName: customerName ?? "",
     tableNumber:  tableNumber  ?? "",
     items,

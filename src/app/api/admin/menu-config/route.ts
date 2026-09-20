@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Tenant } from "@/models/Tenant";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 const VALID_COLUMNS = [1, 2, 3] as const;
 const VALID_FONTS = ["default", "playfair", "montserrat", "nunito", "lato"] as const;
@@ -10,6 +10,8 @@ const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "configuracion");
+  if (denied) return denied;
 
   await connectToDatabase();
   const tenant = await Tenant.findById(session.tenantId).select("menuConfig").lean() as
@@ -36,6 +38,8 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "configuracion");
+  if (denied) return denied;
 
   await connectToDatabase();
   const body = await request.json();

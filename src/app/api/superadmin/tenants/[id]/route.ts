@@ -14,7 +14,7 @@ import { Recipe } from "@/models/Recipe";
 import { RawMaterial } from "@/models/RawMaterial";
 import { Production } from "@/models/Production";
 import { ProductClick } from "@/models/ProductClick";
-import { CashUser } from "@/models/CashUser";
+import { StaffUser } from "@/models/StaffUser";
 import { CashClose } from "@/models/CashClose";
 import { SiteSettings } from "@/models/SiteSettings";
 import { TenantRequest } from "@/models/TenantRequest";
@@ -99,7 +99,7 @@ export async function DELETE(
     ["rawMaterials",  RawMaterial],
     ["productions",   Production],
     ["productClicks", ProductClick],
-    ["cashUsers",     CashUser],
+    ["staffUsers",    StaffUser],
     ["cashCloses",    CashClose],
     ["siteSettings",  SiteSettings],
     ["payments",      Payment],

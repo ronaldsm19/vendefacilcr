@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Sale } from "@/models/Sale";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(
   request: NextRequest,
@@ -9,6 +9,8 @@ export async function GET(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
@@ -23,13 +25,15 @@ export async function PUT(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
   const body = await request.json();
 
   const {
-    customerName, tableNumber, cashUserId, cashUserName,
+    customerName, tableNumber,
     items, paymentMethod, mixedPayment,
     ivaEnabled, ivaRate, serviceEnabled, serviceRate, tipEnabled, tipAmount,
     notes,
@@ -54,8 +58,6 @@ export async function PUT(
       $set: {
         customerName:  customerName  ?? "",
         tableNumber:   tableNumber   ?? "",
-        cashUserId:    cashUserId    ?? "",
-        cashUserName:  cashUserName  ?? "",
         items:         items.map((i: { productId: string; productName: string; unitPrice: number; quantity: number }) => ({
           ...i,
           lineTotal: i.unitPrice * i.quantity,
@@ -88,6 +90,8 @@ export async function DELETE(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();

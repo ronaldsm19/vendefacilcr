@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import ReminderToast from "@/components/admin/ReminderToast";
+import { AdminSessionProvider, type AdminSession } from "@/components/admin/SessionContext";
+import { can, featureForPath, homePathFor, PREMIUM_FEATURES } from "@/lib/permissions";
 
 interface TenantBranding {
   tenantName: string;
@@ -28,6 +30,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [branding, setBranding] = useState<TenantBranding>(DEFAULT_BRANDING);
+  const [session, setSession] = useState<AdminSession | null>(null);
 
   // Close sidebar on navigation
   useEffect(() => {
@@ -53,6 +56,28 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           secondaryColor: data.secondaryColor || "#8B5CF6",
           accentColor:    data.accentColor    || "#F59E0B",
         });
+        const base = `/${pathname.split("/")[1]}/admin`;
+        const s: AdminSession = {
+          role: data.role ?? "admin",
+          userId: data.userId ?? "",
+          name: data.name ?? "",
+          email: data.email ?? "",
+          plan: data.plan ?? "emprende",
+          isPremium: !!data.isPremium,
+          tenantSlug: data.tenantSlug,
+          tenantName: data.tenantName || pathname.split("/")[1],
+        };
+        if (s.role !== "admin" && !s.isPremium) {                 // tenant degradado con staff logueado
+          await fetch("/api/admin/auth/logout", { method: "POST" });
+          router.replace(`${base}/login`);
+          return;
+        }
+        const feature = featureForPath(pathname, base);
+        if (feature && (!can(s, feature) || (PREMIUM_FEATURES.includes(feature) && !s.isPremium))) {
+          router.replace(homePathFor(s.role, base));
+          return;                                                  // no setAuthChecked: el cambio de pathname re-ejecuta el efecto
+        }
+        setSession(s);
         setAuthChecked(true);
       }
     }).catch(() => {
@@ -82,7 +107,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     return <div className="min-h-screen bg-brand-muted/20">{children}</div>;
   }
 
-  if (!authChecked) {
+  if (!authChecked || !session) {
     return (
       <div className="flex h-screen items-center justify-center" style={{ background: "#F8F0F5" }}>
         <p className="text-brand-dark/30 text-sm">Verificando sesión...</p>
@@ -91,43 +116,45 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-muted/20">
-      {/* Desktop sidebar */}
-      <div className="hidden lg:flex shrink-0 h-screen overflow-y-auto">
-        <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} />
+    <AdminSessionProvider value={session}>
+      <div className="flex h-screen overflow-hidden bg-brand-muted/20">
+        {/* Desktop sidebar */}
+        <div className="hidden lg:flex shrink-0 h-screen overflow-y-auto">
+          <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} isPremium={session.isPremium} userName={session.name} />
+        </div>
+
+        {/* Mobile/tablet sidebar drawer */}
+        {sidebarOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+              onClick={() => setSidebarOpen(false)}
+            />
+            <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
+              <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} isPremium={session.isPremium} userName={session.name} onClose={() => setSidebarOpen(false)} />
+            </div>
+          </>
+        )}
+
+        {/* Content area */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Mobile/tablet top bar */}
+          <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-brand-dark shrink-0 z-30">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              aria-label="Abrir menú"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <p className="font-brand text-lg font-bold gradient-text">{branding.tenantName}</p>
+          </header>
+
+          <main className="flex-1 overflow-y-auto">{children}</main>
+        </div>
+
+        <ReminderToast />
       </div>
-
-      {/* Mobile/tablet sidebar drawer */}
-      {sidebarOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-          <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
-            <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} onClose={() => setSidebarOpen(false)} />
-          </div>
-        </>
-      )}
-
-      {/* Content area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile/tablet top bar */}
-        <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-brand-dark shrink-0 z-30">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-            aria-label="Abrir menú"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <p className="font-brand text-lg font-bold gradient-text">{branding.tenantName}</p>
-        </header>
-
-        <main className="flex-1 overflow-y-auto">{children}</main>
-      </div>
-
-      <ReminderToast />
-    </div>
+    </AdminSessionProvider>
   );
 }
