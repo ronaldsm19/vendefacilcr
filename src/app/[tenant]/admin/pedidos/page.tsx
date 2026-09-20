@@ -194,7 +194,7 @@ export default function AdminOrdersPage() {
   async function handleDownloadPdf(item: VentaItem) {
     const data = await fetchSaleTicketData(item.id);
     if (!data) return;
-    await saleTicket(data, ticketConfig);
+    await saleTicket({ ...data, isReprint: true }, ticketConfig);
   }
 
   /**
@@ -214,7 +214,7 @@ export default function AdminOrdersPage() {
     try {
       const data = await fetchSaleTicketData(id);
       if (!data) throw new Error("No se pudo cargar la venta para imprimir");
-      const result = await printReceipt(buildSalePayload(data, ticketConfig, false));
+      const result = await printReceipt(buildSalePayload({ ...data, isReprint: true }, ticketConfig, false));
       if (!result.ok) {
         const detalle = result.detalles?.errores?.length ? `: ${result.detalles.errores.join("; ")}` : "";
         throw new Error(`${result.mensaje}${detalle}`);

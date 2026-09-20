@@ -562,7 +562,7 @@ function PosPageInner() {
         setAutoPrintError("La venta se guardó pero no se pudo imprimir: el agente de impresión no responde en esta computadora.");
         return;
       }
-      const result = await printReceipt(buildSalePayload(data, ticketConfig, true));
+      const result = await printReceipt(buildSalePayload({ ...data, isReprint: false }, ticketConfig, true));
       if (!result.ok) {
         const detalle = result.detalles?.errores?.length ? `: ${result.detalles.errores.join("; ")}` : "";
         setAutoPrintError(`La venta se guardó pero no se pudo imprimir: ${result.mensaje}${detalle}`);
