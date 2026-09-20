@@ -11,6 +11,8 @@ import {
   buildSaleRows, buildCashCloseRows, DEFAULT_TICKET_CONFIG,
   type TicketConfigData, type SaleTicketData, type CashCloseTicketData,
 } from "@/lib/ticket";
+import { useAdminSession } from "@/components/admin/SessionContext";
+import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 
 interface Category {
   _id: string;
@@ -210,6 +212,9 @@ function IconYouTube({ className }: { className?: string }) {
 }
 
 export default function ConfiguracionPage() {
+  const session = useAdminSession();
+  const showComandas = session.role === "admin" && session.isPremium;
+
   // ── Logo state ───────────────────────────────────────────────────
   const [logoUrl, setLogoUrl] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -253,8 +258,14 @@ export default function ConfiguracionPage() {
   const [savingTicket, setSavingTicket] = useState(false);
   const [savedTicket, setSavedTicket] = useState(false);
 
+  // ── Comanda config state ─────────────────────────────────────────
+  const [comandaConfig, setComandaConfig] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
+  const [savingComanda, setSavingComanda] = useState(false);
+  const [savedComanda, setSavedComanda] = useState(false);
+  const [comandaError, setComandaError] = useState<string | null>(null);
+
   // ── Tab state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "ticket">("marca");
+  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "ticket" | "comandas">("marca");
 
   // ── Categories state ─────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
@@ -316,6 +327,11 @@ export default function ConfiguracionPage() {
     fetch("/api/admin/ticket-config")
       .then((r) => r.json())
       .then((d) => setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...(d.ticketConfig ?? {}) }));
+
+    // Comanda config (403 si no es admin premium; se ignora)
+    fetch("/api/admin/comanda-config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setComandaConfig(readComandaConfig(d)); });
   }, []);
 
   // ── Handlers: logo ───────────────────────────────────────────────
@@ -555,6 +571,27 @@ export default function ConfiguracionPage() {
   }
 
 
+  // ── Handlers: comanda config ─────────────────────────────────────
+  async function handleSaveComandaConfig(e: React.FormEvent) {
+    e.preventDefault();
+    setComandaError(null);
+    if (comandaConfig.warnMinutes >= comandaConfig.alertMinutes) {
+      setComandaError("El umbral de aviso debe ser menor que el de alerta.");
+      return;
+    }
+    setSavingComanda(true);
+    try {
+      const res = await fetch("/api/admin/comanda-config", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(comandaConfig),
+      });
+      const data = await res.json();
+      if (!res.ok) { setComandaError(data.error ?? "No se pudo guardar"); return; }
+      setSavedComanda(true);
+      setTimeout(() => setSavedComanda(false), 3000);
+    } finally { setSavingComanda(false); }
+  }
+
   // ── Handlers: categories ─────────────────────────────────────────
   async function handleAddCategory(e: React.FormEvent) {
     e.preventDefault();
@@ -600,16 +637,18 @@ export default function ConfiguracionPage() {
     );
   }
 
-  const TABS = [
+  const ALL_TABS = [
     { key: "marca",    label: "Marca",    icon: "🎨", title: "Identidad de marca",      desc: "Logo, colores, tipografía y apariencia visual de tu tienda." },
     { key: "portada",  label: "Portada",  icon: "🏠", title: "Portada y contacto",       desc: "Texto principal de la tienda y redes sociales." },
     { key: "nosotros", label: "Nosotros", icon: "👥", title: "Sección Nosotros",          desc: "Texto e imágenes de la sección \"Nosotros\" en tu tienda." },
     { key: "productos",label: "Productos",icon: "📦", title: "Categorías de productos",  desc: "Administrá las categorías para organizar tu catálogo." },
     { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
+    { key: "comandas", label: "Comandas", icon: "⏱️", title: "Comandas",                 desc: "Umbrales de tiempo para las mesas con comandas activas." },
     { key: "ticket",   label: "Ticket",   icon: "🧾", title: "Ticket electrónico",        desc: "Datos que aparecen en tus tickets impresos." },
   ] as const;
 
-  const currentTab = TABS.find((t) => t.key === activeTab)!;
+  const TABS = ALL_TABS.filter((t) => t.key !== "comandas" || showComandas);
+  const currentTab = TABS.find((t) => t.key === activeTab) ?? TABS[0];
 
   return (
     <div className="flex min-h-full">
@@ -1770,6 +1809,43 @@ export default function ConfiguracionPage() {
       </section>
 
       </div>
+      </div>}
+
+      {/* ── TAB: COMANDAS ── Umbrales de tiempo ─────────────────────── */}
+      {activeTab === "comandas" && showComandas && <div className="max-w-xl">
+        <form onSubmit={handleSaveComandaConfig}>
+          <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
+            <div>
+              <h2 className="font-semibold text-brand-dark text-lg">Umbrales de tiempo</h2>
+              <p className="text-sm text-brand-dark/50 mt-0.5">
+                Definí a partir de cuántos minutos una mesa con comandas activas se marca en amarillo y en rojo.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Aviso (amarillo) — minutos</label>
+                <input type="number" min={1} max={600} step={1} value={comandaConfig.warnMinutes}
+                  onChange={e => setComandaConfig(c => ({ ...c, warnMinutes: Number(e.target.value) }))}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Alerta (rojo) — minutos</label>
+                <input type="number" min={1} max={600} step={1} value={comandaConfig.alertMinutes}
+                  onChange={e => setComandaConfig(c => ({ ...c, alertMinutes: Number(e.target.value) }))}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
+              </div>
+            </div>
+            <p className="text-xs text-brand-dark/50">
+              Verde por debajo del aviso, amarillo entre aviso y alerta, rojo desde la alerta. El badge aparece cuando la mesa tiene comandas activas.
+            </p>
+            {comandaError && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{comandaError}</p>}
+            <div className="flex items-center gap-3">
+              <Button type="submit" disabled={savingComanda}>{savingComanda ? "Guardando..." : "Guardar umbrales"}</Button>
+              {savedComanda && <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium"><Check className="w-4 h-4" /> Guardado</span>}
+            </div>
+          </section>
+        </form>
+        {/* FASE 4: sección "Impresión" (token del agente, estado, últimos jobs) va debajo de esta sección */}
       </div>}
 
           </div>

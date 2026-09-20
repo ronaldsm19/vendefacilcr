@@ -3,18 +3,27 @@
 import {
   useState, useEffect, useRef, useCallback,
   type PointerEvent as ReactPointerEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
   DndContext, useDraggable, PointerSensor, useSensor, useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  Plus, Trash2, X, Eye, Settings2, Loader2, CalendarCheck, Users,
-  ArrowRight, ArrowDown,
+  Plus, Minus, Maximize2, Trash2, X, Eye, Settings2, Loader2, CalendarCheck, Users, Clock,
+  ArrowRight, ArrowDown, Map as MapIcon, List as ListIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
+import { cn } from "@/lib/utils";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { usePolling } from "@/hooks/usePolling";
+import {
+  TABLE_STATUSES, TABLE_STATUS_META, TABLE_STATUS_ORDER, minutesSince,
+  type TableStatus,
+} from "@/lib/tableStatus";
+import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaConfig";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -33,8 +42,12 @@ interface SalonTable {
   y: number;
   seats: number;
   label: string;
-  status: "libre" | "ocupada" | "reservada";
+  status: TableStatus;
   statusNote: string;
+  occupiedAt: string | null;
+  dirtyAt: string | null;
+  cleanedAt?: string | null;
+  cleanedBy?: string;
 }
 
 interface SalonWall {
@@ -51,11 +64,9 @@ type AddMode = "mesa" | "banqueta" | "pared";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_COLORS: Record<string, { bg: string; border: string; label: string }> = {
-  libre:    { bg: "#22c55e", border: "#16a34a", label: "Libre" },
-  ocupada:  { bg: "#ef4444", border: "#dc2626", label: "Ocupada" },
-  reservada:{ bg: "#f59e0b", border: "#d97706", label: "Reservada" },
-};
+const STATUS_COLORS = TABLE_STATUS_META;
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3;
 
 // ── Table Visual ──────────────────────────────────────────────────────────────
 
@@ -123,6 +134,7 @@ function TableVisual({ table, selected }: { table: SalonTable; selected?: boolea
             {table.label || "•"}
           </span>
         </div>
+        {/* FASE 3: badge de minutos (activeAvgMinutes) en position:absolute top:-6 right:-6 zIndex:5 */}
       </div>
     );
   }
@@ -155,6 +167,7 @@ function TableVisual({ table, selected }: { table: SalonTable; selected?: boolea
           {table.label || "?"}
         </span>
       </div>
+      {/* FASE 3: badge de minutos (activeAvgMinutes) en position:absolute top:-6 right:-6 zIndex:5 */}
     </div>
   );
 }
@@ -201,7 +214,7 @@ function DraggableTable({ table, isDesignMode, isSelected, onClick }: {
         transform: `translate(-50%, -50%)${dragOffset}`,
         zIndex: isDragging ? 50 : isSelected ? 10 : 3,
         cursor: isDesignMode ? (isDragging ? "grabbing" : "grab") : "pointer",
-        touchAction: "none",
+        touchAction: isDesignMode ? "none" : undefined,
       }}
       {...(isDesignMode ? { ...listeners, ...attributes } : {})}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
@@ -287,7 +300,7 @@ function DraggableWall({ wall, isDesignMode, isSelected, onClick, onResizeLive, 
         transform: `translate(-50%, -50%)${dragOffset}`,
         zIndex: isDragging ? 50 : isSelected ? 12 : 2,
         cursor: isDesignMode ? (isDragging ? "grabbing" : "grab") : "default",
-        touchAction: "none",
+        touchAction: isDesignMode ? "none" : undefined,
       }}
       {...(isDesignMode ? { ...listeners, ...attributes } : {})}
       onClick={(e) => { e.stopPropagation(); if (isDesignMode) onClick(); }}
@@ -318,16 +331,91 @@ function DraggableWall({ wall, isDesignMode, isSelected, onClick, onResizeLive, 
   );
 }
 
+// ── Table List (mobile) ──────────────────────────────────────────────────────
+
+function TableList({ tables, onSelect }: { tables: SalonTable[]; onSelect: (t: SalonTable) => void }) {
+  const sorted = [...tables].sort((a, b) => {
+    const byStatus = TABLE_STATUS_ORDER[a.status] - TABLE_STATUS_ORDER[b.status];
+    if (byStatus !== 0) return byStatus;
+    // FASE 3: dentro de cada estado, ordenar por activeAvgMinutes desc
+    const na = Number(a.label), nb = Number(b.label);
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+    if (Number.isNaN(na) && !Number.isNaN(nb)) return 1;
+    if (!Number.isNaN(na) && Number.isNaN(nb)) return -1;
+    return a.label.localeCompare(b.label);
+  });
+
+  if (sorted.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-brand-dark/40 text-sm">
+        Sin mesas en esta zona
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {sorted.map((t) => {
+        const meta = TABLE_STATUS_META[t.status];
+        const minutes = t.status === "ocupada"
+          ? minutesSince(t.occupiedAt)
+          : t.status === "por_limpiar"
+            ? minutesSince(t.dirtyAt)
+            : null;
+        return (
+          <button key={t._id} onClick={() => onSelect(t)}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-white border-b border-brand-muted text-left active:bg-brand-muted/40">
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: meta.bg }} />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-brand-dark">
+                {t.shape === "barstool" ? "Banqueta" : "Mesa"} {t.label}
+              </p>
+              <p className="text-xs text-brand-dark/50">
+                {t.shape === "barstool" ? "Banqueta individual" : `${t.seats} sillas`}
+                {t.statusNote && ` · ${t.statusNote}`}
+              </p>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: meta.bg }}>
+                {meta.label}
+              </span>
+              {minutes !== null && <p className="text-[11px] text-brand-dark/40 mt-0.5">hace {minutes} min</p>}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SalonPage() {
   const session = useAdminSession();
+  const canManage = session.role === "admin" || session.role === "cajero";
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  const mobileUi = session.isPremium && isMobile;
   const [mode, setMode]     = useState<"design" | "operation">("operation");
+  const effectiveMode: "operation" | "design" = isMobile || !canManage ? "operation" : mode;
+
   const [areas, setAreas]   = useState<Area[]>([]);
   const [tables, setTables] = useState<SalonTable[]>([]);
   const [walls, setWalls]   = useState<SalonWall[]>([]);
   const [activeAreaId, setActiveAreaId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // FASE 3: umbrales para el badge de minutos
+  const [, setLiveConfig] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
+
+  // Mobile view state
+  const [view, setView] = useState<"map" | "list">("map");
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const gestureRef = useRef<{
+    startDist: number; startZoom: number; startPan: { x: number; y: number };
+    startMid: { x: number; y: number }; moved: boolean;
+  } | null>(null);
 
   // Design state
   const [selectedId, setSelectedId]         = useState<string | null>(null);
@@ -346,9 +434,10 @@ export default function SalonPage() {
   const [addingArea, setAddingArea]   = useState(false);
 
   // Operation state
-  const [actionTable, setActionTable]   = useState<SalonTable | null>(null);
+  const [actionTableId, setActionTableId] = useState<string | null>(null);
   const [showReserve, setShowReserve]   = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
+  const [actionError, setActionError]   = useState<string | null>(null);
   const [reserveForm, setReserveForm]   = useState({
     customerName: "", partySize: 2, dateTime: "", phone: "", notes: "",
   });
@@ -357,26 +446,137 @@ export default function SalonPage() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const sensors   = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // ── Load ──────────────────────────────────────────────────────────────────
+  // ── Load / polling ────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [areasRes, tablesRes, wallsRes] = await Promise.all([
-      fetch("/api/admin/salon/areas").then(r => r.json()),
-      fetch("/api/admin/salon/tables").then(r => r.json()),
+    const [liveRes, wallsRes] = await Promise.all([
+      fetch("/api/admin/salon/live").then(r => r.json()),
       fetch("/api/admin/salon/walls").then(r => r.json()),
     ]);
-    const loaded: Area[] = areasRes.areas ?? [];
-    setAreas(loaded);
-    setTables(tablesRes.tables ?? []);
+    const loadedAreas: Area[] = liveRes.areas ?? [];
+    setAreas(loadedAreas);
+    setTables(liveRes.tables ?? []);
+    setLiveConfig(liveRes.comandaConfig ?? DEFAULT_COMANDA_CONFIG);
     setWalls(wallsRes.walls ?? []);
-    setActiveAreaId(prev => prev ?? loaded[0]?._id ?? null);
+    setActiveAreaId(prev => prev ?? loadedAreas[0]?._id ?? null);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Drag ──────────────────────────────────────────────────────────────────
+  const refreshLive = useCallback(async () => {
+    const r = await fetch("/api/admin/salon/live", { cache: "no-store" });
+    if (!r.ok) return;
+    const d = await r.json();
+    setAreas(d.areas ?? []);
+    setTables(d.tables ?? []);
+    setLiveConfig(d.comandaConfig ?? DEFAULT_COMANDA_CONFIG);
+    setActiveAreaId(prev => prev ?? d.areas?.[0]?._id ?? null);
+  }, []);
+
+  usePolling(refreshLive, 4000, !loading && effectiveMode === "operation" && !statusSaving && !reserveSaving);
+
+  function resetView() {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }
+
+  // ── Zoom / pan (mobile) ───────────────────────────────────────────────────
+
+  function clampAxis(p: number, viewportSize: number, zoomVal: number) {
+    const scaled = viewportSize * zoomVal;
+    const minVisible = Math.min(scaled, viewportSize) * 0.25;
+    const min = minVisible - scaled;
+    const max = viewportSize - minVisible;
+    if (min > max) return (min + max) / 2;
+    return Math.min(max, Math.max(min, p));
+  }
+
+  function clampPanValue(p: { x: number; y: number }, zoomVal: number) {
+    const el = viewportRef.current;
+    const vw = el?.clientWidth ?? 0, vh = el?.clientHeight ?? 0;
+    return { x: clampAxis(p.x, vw, zoomVal), y: clampAxis(p.y, vh, zoomVal) };
+  }
+
+  function zoomAt(nextZoomRaw: number, px: number, py: number) {
+    const nextZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, nextZoomRaw));
+    setPan(prev => clampPanValue({
+      x: px - (px - prev.x) * (nextZoom / zoom),
+      y: py - (py - prev.y) * (nextZoom / zoom),
+    }, nextZoom));
+    setZoom(nextZoom);
+  }
+
+  function zoomByFactor(factor: number) {
+    const el = viewportRef.current;
+    if (!el) return;
+    zoomAt(zoom * factor, el.clientWidth / 2, el.clientHeight / 2);
+  }
+
+  function midpoint(pts: { x: number; y: number }[]) {
+    return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+  }
+  function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  function onCanvasPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pts = Array.from(pointersRef.current.values());
+    if (pts.length === 1) {
+      gestureRef.current = { startDist: 0, startZoom: zoom, startPan: pan, startMid: pts[0], moved: false };
+    } else if (pts.length >= 2) {
+      const [a, b] = pts;
+      gestureRef.current = { startDist: dist(a, b), startZoom: zoom, startPan: pan, startMid: midpoint([a, b]), moved: false };
+    }
+  }
+
+  function onCanvasPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gestureRef.current;
+    if (!g) return;
+    const pts = Array.from(pointersRef.current.values());
+
+    if (pts.length === 1) {
+      const dx = pts[0].x - g.startMid.x, dy = pts[0].y - g.startMid.y;
+      if (Math.hypot(dx, dy) > 6) g.moved = true;
+      setPan(clampPanValue({ x: g.startPan.x + dx, y: g.startPan.y + dy }, g.startZoom));
+    } else if (pts.length >= 2) {
+      const [a, b] = pts;
+      const d = dist(a, b);
+      const nextZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, g.startZoom * (d / (g.startDist || d))));
+      const mid = midpoint([a, b]);
+      if (Math.hypot(mid.x - g.startMid.x, mid.y - g.startMid.y) > 6 || Math.abs(nextZoom - g.startZoom) > 0.02) {
+        g.moved = true;
+      }
+      const newPan = {
+        x: mid.x - (g.startMid.x - g.startPan.x) * (nextZoom / g.startZoom),
+        y: mid.y - (g.startMid.y - g.startPan.y) * (nextZoom / g.startZoom),
+      };
+      setZoom(nextZoom);
+      setPan(clampPanValue(newPan, nextZoom));
+    }
+  }
+
+  function onCanvasPointerEnd(e: ReactPointerEvent<HTMLDivElement>) {
+    pointersRef.current.delete(e.pointerId);
+    const pts = Array.from(pointersRef.current.values());
+    if (pts.length === 1) {
+      gestureRef.current = { startDist: 0, startZoom: zoom, startPan: pan, startMid: pts[0], moved: gestureRef.current?.moved ?? false };
+    }
+  }
+
+  function onCanvasClickCapture(e: ReactMouseEvent) {
+    if (gestureRef.current?.moved) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (gestureRef.current) gestureRef.current.moved = false;
+  }
+
+  // ── Drag (design mode) ────────────────────────────────────────────────────
 
   function handleDragEnd(event: DragEndEvent) {
     const canvas = canvasRef.current;
@@ -388,28 +588,26 @@ export default function SalonPage() {
 
     if (id.startsWith("t-")) {
       const tableId = id.slice(2);
-      setTables(prev => prev.map(t => {
-        if (String(t._id) !== tableId) return t;
-        const nx = Math.max(3, Math.min(97, t.x + dxPct));
-        const ny = Math.max(3, Math.min(97, t.y + dyPct));
-        fetch(`/api/admin/salon/tables/${t._id}`, {
-          method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ x: nx, y: ny }),
-        }).catch(() => {});
-        return { ...t, x: nx, y: ny };
-      }));
+      const current = tables.find(t => String(t._id) === tableId);
+      if (!current) return;
+      const nx = Math.max(3, Math.min(97, current.x + dxPct));
+      const ny = Math.max(3, Math.min(97, current.y + dyPct));
+      setTables(prev => prev.map(t => String(t._id) === tableId ? { ...t, x: nx, y: ny } : t));
+      fetch(`/api/admin/salon/tables/${tableId}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ x: nx, y: ny }),
+      }).catch(() => {});
     } else if (id.startsWith("w-")) {
       const wallId = id.slice(2);
-      setWalls(prev => prev.map(w => {
-        if (String(w._id) !== wallId) return w;
-        const nx = Math.max(0, Math.min(100, w.x + dxPct));
-        const ny = Math.max(0, Math.min(100, w.y + dyPct));
-        fetch(`/api/admin/salon/walls/${w._id}`, {
-          method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ x: nx, y: ny }),
-        }).catch(() => {});
-        return { ...w, x: nx, y: ny };
-      }));
+      const current = walls.find(w => String(w._id) === wallId);
+      if (!current) return;
+      const nx = Math.max(0, Math.min(100, current.x + dxPct));
+      const ny = Math.max(0, Math.min(100, current.y + dyPct));
+      setWalls(prev => prev.map(w => String(w._id) === wallId ? { ...w, x: nx, y: ny } : w));
+      fetch(`/api/admin/salon/walls/${wallId}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ x: nx, y: ny }),
+      }).catch(() => {});
     }
   }
 
@@ -570,9 +768,18 @@ export default function SalonPage() {
 
   // ── Status & Reservation ──────────────────────────────────────────────────
 
-  async function changeStatus(status: SalonTable["status"], note = "") {
+  const actionTable = tables.find(t => t._id === actionTableId) ?? null;
+
+  function openTable(t: SalonTable) {
+    setActionTableId(t._id);
+    setShowReserve(false);
+    setActionError(null);
+  }
+
+  async function changeStatus(status: TableStatus, note = "") {
     if (!actionTable) return;
     setStatusSaving(true);
+    setActionError(null);
     try {
       const res  = await fetch(`/api/admin/salon/tables/${actionTable._id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
@@ -581,7 +788,23 @@ export default function SalonPage() {
       const data = await res.json();
       if (data.table) {
         setTables(prev => prev.map(t => t._id === actionTable._id ? data.table : t));
-        setActionTable(data.table);
+      } else {
+        setActionError(data.error ?? "No se pudo actualizar la mesa");
+      }
+    } finally { setStatusSaving(false); }
+  }
+
+  async function markClean() {
+    if (!actionTable) return;
+    setStatusSaving(true);
+    setActionError(null);
+    try {
+      const res  = await fetch(`/api/admin/salon/tables/${actionTable._id}/clean`, { method: "POST" });
+      const data = await res.json();
+      if (data.table) {
+        setTables(prev => prev.map(t => t._id === data.table._id ? { ...t, ...data.table } : t));
+      } else {
+        setActionError(data.error ?? "No se pudo marcar la mesa como limpia");
       }
     } finally { setStatusSaving(false); }
   }
@@ -598,8 +821,8 @@ export default function SalonPage() {
           body: JSON.stringify({ status: "cancelled" }),
         })
       ));
-      await load();
-      setActionTable(null);
+      await refreshLive();
+      setActionTableId(null);
     } finally { setStatusSaving(false); }
   }
 
@@ -613,8 +836,8 @@ export default function SalonPage() {
       });
       const data = await res.json();
       if (data.reservation) {
-        await load();
-        setActionTable(null);
+        await refreshLive();
+        setActionTableId(null);
         setShowReserve(false);
         setReserveForm({ customerName: "", partySize: 2, dateTime: "", phone: "", notes: "" });
       }
@@ -628,6 +851,12 @@ export default function SalonPage() {
   const visibleTables  = tables.filter(t => t.areaId === activeAreaId);
   const visibleWalls   = walls.filter(w => w.areaId === activeAreaId);
   const hasSelection   = !!selectedTable || !!selectedWall;
+
+  const actionMinutes = actionTable?.status === "ocupada"
+    ? minutesSince(actionTable.occupiedAt)
+    : actionTable?.status === "por_limpiar"
+      ? minutesSince(actionTable.dirtyAt)
+      : null;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -648,20 +877,38 @@ export default function SalonPage() {
           {visibleTables.filter(t => t.shape === "barstool").length > 0 && ` · ${visibleTables.filter(t => t.shape === "barstool").length} banquetas`}
           {visibleWalls.filter(w => w.wallType === "counter").length > 0 && ` · ${visibleWalls.filter(w => w.wallType === "counter").length} mostradores`}
         </p>
-        <div className="ml-auto flex items-center gap-1 p-0.5 rounded-xl bg-gray-100">
-          <button onClick={() => { setMode("operation"); setSelectedId(null); setSelectedWallId(null); }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              mode === "operation" ? "bg-white shadow text-brand-dark" : "text-brand-dark/50"
-            }`}>
-            <Eye className="w-4 h-4" /> Operación
-          </button>
-          {session.role !== "mesero" && (
-            <button onClick={() => setMode("design")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                mode === "design" ? "bg-white shadow text-brand-dark" : "text-brand-dark/50"
-              }`}>
-              <Settings2 className="w-4 h-4" /> Diseño
-            </button>
+        <div className="ml-auto flex items-center gap-2">
+          {mobileUi && (
+            <div className="md:hidden flex items-center gap-1 p-0.5 rounded-xl bg-gray-100">
+              <button onClick={() => { setView("map"); resetView(); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  view === "map" ? "bg-white shadow text-brand-dark" : "text-brand-dark/50"
+                }`}>
+                <MapIcon className="w-4 h-4" /> Mapa
+              </button>
+              <button onClick={() => { setView("list"); resetView(); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  view === "list" ? "bg-white shadow text-brand-dark" : "text-brand-dark/50"
+                }`}>
+                <ListIcon className="w-4 h-4" /> Lista
+              </button>
+            </div>
+          )}
+          {canManage && !isMobile && (
+            <div className="flex items-center gap-1 p-0.5 rounded-xl bg-gray-100">
+              <button onClick={() => { setMode("operation"); setSelectedId(null); setSelectedWallId(null); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  mode === "operation" ? "bg-white shadow text-brand-dark" : "text-brand-dark/50"
+                }`}>
+                <Eye className="w-4 h-4" /> Operación
+              </button>
+              <button onClick={() => { setMode("design"); resetView(); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  mode === "design" ? "bg-white shadow text-brand-dark" : "text-brand-dark/50"
+                }`}>
+                <Settings2 className="w-4 h-4" /> Diseño
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -670,7 +917,7 @@ export default function SalonPage() {
       <div className="shrink-0 flex items-center border-b border-brand-muted bg-white overflow-x-auto px-2">
         {areas.map(area => (
           <button key={area._id}
-            onClick={() => { setActiveAreaId(area._id); setSelectedId(null); setSelectedWallId(null); }}
+            onClick={() => { setActiveAreaId(area._id); setSelectedId(null); setSelectedWallId(null); resetView(); }}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
               activeAreaId === area._id
                 ? "border-brand-pink text-brand-pink"
@@ -679,7 +926,7 @@ export default function SalonPage() {
           >
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: area.color }} />
             {area.name}
-            {mode === "design" && (
+            {effectiveMode === "design" && (
               <span onClick={(e) => { e.stopPropagation(); removeArea(area._id); }}
                 className="ml-0.5 text-brand-dark/30 hover:text-red-400 transition-colors cursor-pointer">
                 <X className="w-3.5 h-3.5" />
@@ -687,7 +934,7 @@ export default function SalonPage() {
             )}
           </button>
         ))}
-        {mode === "design" && (
+        {effectiveMode === "design" && (
           <button onClick={() => setShowAddArea(true)}
             className="flex items-center gap-1 px-3 py-2.5 text-sm text-brand-dark/40 hover:text-brand-pink transition-colors whitespace-nowrap shrink-0">
             <Plus className="w-3.5 h-3.5" /> Zona
@@ -698,80 +945,116 @@ export default function SalonPage() {
       {/* Body */}
       <div className="flex-1 flex overflow-hidden min-h-0">
 
-        {/* Canvas */}
-        <div className="flex-1 relative overflow-hidden">
-          {areas.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-brand-dark/40">
-              <span className="text-5xl">🗺️</span>
-              <p className="text-base font-medium">Sin zonas configuradas</p>
-              {mode === "design"
-                ? <Button onClick={() => setShowAddArea(true)}><Plus className="w-4 h-4 mr-1" />Crear primera zona</Button>
-                : <p className="text-sm">Activa Modo Diseño para comenzar</p>
-              }
-            </div>
-          ) : (
-            <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-              <div
-                ref={canvasRef}
-                className="w-full h-full relative select-none"
-                style={{
-                  backgroundImage: "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
-                  backgroundSize: "24px 24px",
-                  backgroundColor: "#f9fafb",
-                }}
-                onClick={() => { if (mode === "design") { setSelectedId(null); setSelectedWallId(null); } }}
-              >
+        {mobileUi && view === "list" ? (
+          <TableList tables={visibleTables} onSelect={openTable} />
+        ) : (
+          /* Canvas */
+          <div
+            ref={viewportRef}
+            className="flex-1 relative overflow-hidden"
+            style={mobileUi ? { touchAction: "none" } : undefined}
+            onPointerDown={mobileUi ? onCanvasPointerDown : undefined}
+            onPointerMove={mobileUi ? onCanvasPointerMove : undefined}
+            onPointerUp={mobileUi ? onCanvasPointerEnd : undefined}
+            onPointerCancel={mobileUi ? onCanvasPointerEnd : undefined}
+            onPointerLeave={mobileUi ? onCanvasPointerEnd : undefined}
+            onClickCapture={mobileUi ? onCanvasClickCapture : undefined}
+          >
+            {areas.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-brand-dark/40">
+                <span className="text-5xl">🗺️</span>
+                <p className="text-base font-medium">Sin zonas configuradas</p>
+                {effectiveMode === "design"
+                  ? <Button onClick={() => setShowAddArea(true)}><Plus className="w-4 h-4 mr-1" />Crear primera zona</Button>
+                  : <p className="text-sm">Activa Modo Diseño para comenzar</p>
+                }
+              </div>
+            ) : (
+              <>
+                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                  <div
+                    ref={canvasRef}
+                    className="w-full h-full relative select-none"
+                    style={{
+                      backgroundImage: "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
+                      backgroundSize: "24px 24px",
+                      backgroundColor: "#f9fafb",
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                      transformOrigin: "0 0",
+                    }}
+                    onClick={() => { if (effectiveMode === "design") { setSelectedId(null); setSelectedWallId(null); } }}
+                  >
+                    {/* Walls (rendered below tables) */}
+                    {visibleWalls.map(w => (
+                      <DraggableWall key={w._id} wall={w}
+                        isDesignMode={effectiveMode === "design"}
+                        isSelected={selectedWallId === w._id}
+                        onClick={() => selectWall(w)}
+                        onResizeLive={resizeWallLive}
+                        onResizeCommit={resizeWallCommit}
+                        canvasRef={canvasRef}
+                      />
+                    ))}
+
+                    {/* Tables */}
+                    {visibleTables.map(t => (
+                      <DraggableTable key={t._id} table={t}
+                        isDesignMode={effectiveMode === "design"}
+                        isSelected={selectedId === t._id}
+                        onClick={() => effectiveMode === "design"
+                          ? selectTable(t)
+                          : openTable(t)
+                        }
+                      />
+                    ))}
+                  </div>
+                </DndContext>
+
                 {/* Status legend */}
-                {mode === "operation" && (
-                  <div className="absolute bottom-3 left-3 flex items-center gap-3 bg-white/95 px-3 py-2 rounded-xl border border-gray-200 shadow-sm z-20">
-                    {(["libre", "ocupada", "reservada"] as const).map(s => (
+                {effectiveMode === "operation" && (
+                  <div className="absolute bottom-3 left-3 flex items-center gap-3 bg-white/95 px-3 py-2 rounded-xl border border-gray-200 shadow-sm z-20 max-md:gap-2 max-md:px-2 max-md:py-1.5 max-md:text-[11px]">
+                    {TABLE_STATUSES.map(s => (
                       <div key={s} className="flex items-center gap-1.5">
                         <span className="w-3 h-3 rounded-full shrink-0" style={{ background: STATUS_COLORS[s].bg }} />
-                        <span className="text-xs font-medium text-gray-600">{STATUS_COLORS[s].label}</span>
+                        <span className="text-xs font-medium text-gray-600 max-md:text-[11px]">{STATUS_COLORS[s].label}</span>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Walls (rendered below tables) */}
-                {visibleWalls.map(w => (
-                  <DraggableWall key={w._id} wall={w}
-                    isDesignMode={mode === "design"}
-                    isSelected={selectedWallId === w._id}
-                    onClick={() => selectWall(w)}
-                    onResizeLive={resizeWallLive}
-                    onResizeCommit={resizeWallCommit}
-                    canvasRef={canvasRef}
-                  />
-                ))}
-
-                {/* Tables */}
-                {visibleTables.map(t => (
-                  <DraggableTable key={t._id} table={t}
-                    isDesignMode={mode === "design"}
-                    isSelected={selectedId === t._id}
-                    onClick={() => mode === "design"
-                      ? selectTable(t)
-                      : (setActionTable(t), setShowReserve(false))
-                    }
-                  />
-                ))}
-
                 {/* Empty hint */}
                 {visibleTables.length === 0 && visibleWalls.length === 0 && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-brand-dark/25 pointer-events-none">
                     <span className="text-4xl">🪑</span>
-                    <p className="text-sm">{mode === "design" ? "Agrega elementos desde el panel →" : "Sin mesas en esta zona"}</p>
+                    <p className="text-sm">{effectiveMode === "design" ? "Agrega elementos desde el panel →" : "Sin mesas en esta zona"}</p>
                   </div>
                 )}
-              </div>
-            </DndContext>
-          )}
-        </div>
+
+                {/* Zoom controls (mobile) */}
+                {mobileUi && (
+                  <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-1">
+                    <button onClick={() => zoomByFactor(1.25)}
+                      className="w-9 h-9 rounded-xl bg-white/95 border border-gray-200 shadow-sm text-brand-dark flex items-center justify-center">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => zoomByFactor(1 / 1.25)}
+                      className="w-9 h-9 rounded-xl bg-white/95 border border-gray-200 shadow-sm text-brand-dark flex items-center justify-center">
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button onClick={resetView}
+                      className="w-9 h-9 rounded-xl bg-white/95 border border-gray-200 shadow-sm text-brand-dark flex items-center justify-center">
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Design panel */}
-        {mode === "design" && (
-          <div className="w-[272px] shrink-0 border-l border-brand-muted bg-gray-50 flex flex-col overflow-y-auto">
+        {effectiveMode === "design" && (
+          <div className="hidden md:flex w-[272px] shrink-0 border-l border-brand-muted bg-gray-50 flex-col overflow-y-auto">
             <div className="p-4 space-y-4">
 
               {/* ── Editing selected TABLE ── */}
@@ -1045,7 +1328,7 @@ export default function SalonPage() {
                   {visibleTables.length > 0 && (
                     <div className="pt-4 border-t border-brand-muted space-y-1.5">
                       <p className="text-xs font-medium text-brand-dark/40 uppercase tracking-wide">Zona actual</p>
-                      {(["libre", "ocupada", "reservada"] as const).map(s => {
+                      {TABLE_STATUSES.map(s => {
                         const count = visibleTables.filter(t => t.status === s).length;
                         if (count === 0) return null;
                         return (
@@ -1101,10 +1384,14 @@ export default function SalonPage() {
       </Dialog>
 
       {/* Table Action Modal */}
-      <Dialog open={!!actionTable} onOpenChange={(v) => { if (!v) { setActionTable(null); setShowReserve(false); } }}>
-        <DialogContent className="max-w-sm">
+      <Dialog open={!!actionTable} onOpenChange={(v) => { if (!v) { setActionTableId(null); setShowReserve(false); setActionError(null); } }}>
+        <DialogContent className={cn(
+          "max-w-sm",
+          mobileUi && "max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:translate-x-0 max-md:translate-y-0 max-md:w-full max-md:max-w-none max-md:rounded-b-none max-md:rounded-t-2xl max-md:max-h-[85vh]"
+        )}>
           {actionTable && (
             <>
+              {mobileUi && <div className="md:hidden mx-auto mt-2 w-10 h-1 rounded-full bg-gray-200" />}
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 flex-wrap">
                   {actionTable.shape === "barstool" ? "Banqueta" : "Mesa"} {actionTable.label}
@@ -1114,7 +1401,7 @@ export default function SalonPage() {
                   </span>
                 </DialogTitle>
               </DialogHeader>
-              <div className="px-6 pb-6 space-y-4">
+              <div className={cn("px-6 pb-6 space-y-4", mobileUi && "pb-[calc(1.5rem+env(safe-area-inset-bottom))]")}>
                 <div className="flex items-center gap-3 text-sm text-brand-dark/60">
                   <Users className="w-4 h-4 shrink-0" />
                   <span>
@@ -1127,40 +1414,85 @@ export default function SalonPage() {
                   )}
                 </div>
 
+                {actionMinutes !== null && (
+                  <div className="flex items-center gap-3 text-sm text-brand-dark/60">
+                    <Clock className="w-4 h-4 shrink-0" />
+                    <span>
+                      {actionTable.status === "ocupada" ? "Ocupada" : "Por limpiar"} hace {actionMinutes} min
+                    </span>
+                  </div>
+                )}
+
                 {!showReserve ? (
                   <div className="space-y-2">
                     {actionTable.status === "libre" && (
+                      canManage ? (
+                        <>
+                          <Button className="w-full" disabled={statusSaving} onClick={() => changeStatus("ocupada")}>
+                            {statusSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : "☕ "}
+                            Marcar como ocupada
+                          </Button>
+                          {actionTable.shape !== "barstool" && (
+                            <Button variant="secondary" className="w-full" onClick={() => setShowReserve(true)}>
+                              <CalendarCheck className="w-4 h-4 mr-2" /> Reservar
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-sm text-brand-dark/50">Sin acciones disponibles para tu rol.</p>
+                      )
+                    )}
+                    {actionTable.status === "ocupada" && (
+                      canManage ? (
+                        <>
+                          <Button className="w-full" style={{ background: "#8b5cf6", color: "white" }}
+                            disabled={statusSaving} onClick={() => changeStatus("por_limpiar")}>
+                            {statusSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : "🧹 "}
+                            Marcar por limpiar
+                          </Button>
+                          <Button variant="secondary" className="w-full"
+                            disabled={statusSaving} onClick={() => changeStatus("libre", "")}>
+                            Liberar
+                          </Button>
+                        </>
+                      ) : (
+                        <p className="text-sm text-brand-dark/50">Sin acciones disponibles para tu rol.</p>
+                      )
+                    )}
+                    {actionTable.status === "por_limpiar" && (
                       <>
-                        <Button className="w-full" disabled={statusSaving} onClick={() => changeStatus("ocupada")}>
-                          {statusSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : "☕ "}
-                          Marcar como ocupada
+                        <Button className="w-full" style={{ background: "#22c55e", color: "white" }}
+                          disabled={statusSaving} onClick={markClean}>
+                          {statusSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : "✓ "}
+                          Marcar limpia
                         </Button>
-                        {actionTable.shape !== "barstool" && (
-                          <Button variant="secondary" className="w-full" onClick={() => setShowReserve(true)}>
-                            <CalendarCheck className="w-4 h-4 mr-2" /> Reservar
+                        {canManage && (
+                          <Button variant="secondary" className="w-full" disabled={statusSaving}
+                            onClick={() => changeStatus("ocupada")}>
+                            Marcar como ocupada
                           </Button>
                         )}
                       </>
                     )}
-                    {actionTable.status === "ocupada" && (
-                      <Button className="w-full" style={{ background: "#22c55e", color: "white" }}
-                        disabled={statusSaving} onClick={() => changeStatus("libre", "")}>
-                        {statusSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : "✓ "}
-                        Liberar
-                      </Button>
-                    )}
                     {actionTable.status === "reservada" && (
-                      <>
-                        <Button className="w-full" disabled={statusSaving}
-                          onClick={() => changeStatus("ocupada", actionTable.statusNote)}>
-                          {statusSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : "☕ "}
-                          Cliente llegó — Marcar ocupada
-                        </Button>
-                        <Button variant="secondary" className="w-full hover:text-red-500 transition-colors"
-                          disabled={statusSaving} onClick={handleCancelReservation}>
-                          Cancelar reserva
-                        </Button>
-                      </>
+                      canManage ? (
+                        <>
+                          <Button className="w-full" disabled={statusSaving}
+                            onClick={() => changeStatus("ocupada", actionTable.statusNote)}>
+                            {statusSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : "☕ "}
+                            Cliente llegó — Marcar ocupada
+                          </Button>
+                          <Button variant="secondary" className="w-full hover:text-red-500 transition-colors"
+                            disabled={statusSaving} onClick={handleCancelReservation}>
+                            Cancelar reserva
+                          </Button>
+                        </>
+                      ) : (
+                        <p className="text-sm text-brand-dark/50">Sin acciones disponibles para tu rol.</p>
+                      )
+                    )}
+                    {actionError && (
+                      <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{actionError}</p>
                     )}
                   </div>
                 ) : (

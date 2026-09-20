@@ -33,9 +33,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { id } = await params;
   await connectToDatabase();
 
-  // Check no occupied tables in this area
-  const busy = await SalonTable.findOne({ areaId: id, status: { $in: ["ocupada", "reservada"] } });
-  if (busy) return NextResponse.json({ error: "Hay mesas ocupadas o reservadas en esta zona" }, { status: 409 });
+  // Check no non-free tables in this area
+  const busy = await SalonTable.findOne({ tenantId: session.tenantId, areaId: id, status: { $ne: "libre" } });
+  if (busy) return NextResponse.json({ error: "Hay mesas ocupadas, reservadas o por limpiar en esta zona" }, { status: 409 });
 
   await SalonTable.deleteMany({ areaId: id, tenantId: session.tenantId });
   await SalonWall.deleteMany({ areaId: id, tenantId: session.tenantId });

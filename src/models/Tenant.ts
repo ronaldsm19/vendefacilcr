@@ -41,6 +41,12 @@ export interface ITicketConfig {
   ticketNextNumber: number;
 }
 
+export interface IComandaConfig {
+  warnMinutes: number;   // badge amarillo desde este valor (Fase 3)
+  alertMinutes: number;  // badge rojo desde este valor (Fase 3)
+  nextNumber: number;    // consecutivo de comanda, $inc atómico en Fase 3
+}
+
 export interface ITenant {
   _id: string;
   slug: string;
@@ -55,6 +61,7 @@ export interface ITenant {
   menuConfig: IMenuConfig;
   posConfig: { ivaEnabled: boolean; ivaRate: number; tipEnabled: boolean; serviceRate: number };
   ticketConfig: ITicketConfig;
+  comandaConfig: IComandaConfig;
   instagram: string;
   facebook: string;
   tiktok: string;
@@ -117,6 +124,11 @@ const TenantSchema = new Schema(
       terminalNumber:   { type: String, default: "1" },
       ticketPrefix:     { type: String, default: "" },
       ticketNextNumber: { type: Number, default: 1, min: 1 },
+    },
+    comandaConfig: {
+      warnMinutes:  { type: Number, default: 15, min: 1, max: 600 },
+      alertMinutes: { type: Number, default: 30, min: 1, max: 600 },
+      nextNumber:   { type: Number, default: 1, min: 1 },
     },
     instagram: { type: String, default: "" },
     facebook:  { type: String, default: "" },
