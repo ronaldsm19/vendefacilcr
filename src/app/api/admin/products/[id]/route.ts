@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
+import { isStation } from "@/lib/station";
 
 export async function GET(
   request: NextRequest,
@@ -9,6 +10,8 @@ export async function GET(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "productos");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
@@ -23,10 +26,16 @@ export async function PUT(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "productos:editar");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
   const body = await request.json();
+
+  if (body.station !== undefined && !isStation(body.station)) {
+    return NextResponse.json({ error: "Estación inválida" }, { status: 400 });
+  }
 
   const product = await Product.findOneAndUpdate(
     { _id: id, tenantId: session.tenantId },
@@ -44,6 +53,8 @@ export async function PATCH(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "productos:editar");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
@@ -61,6 +72,8 @@ export async function DELETE(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "productos:editar");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();

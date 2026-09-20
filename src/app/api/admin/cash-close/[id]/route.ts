@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { CashClose } from "@/models/CashClose";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 import mongoose from "mongoose";
 
 export async function PUT(
@@ -10,6 +10,8 @@ export async function PUT(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "cierre-de-caja");
+  if (denied) return denied;
 
   const { id } = await params;
   if (!mongoose.Types.ObjectId.isValid(id)) {

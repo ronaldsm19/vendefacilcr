@@ -14,10 +14,17 @@ import { Recipe } from "@/models/Recipe";
 import { RawMaterial } from "@/models/RawMaterial";
 import { Production } from "@/models/Production";
 import { ProductClick } from "@/models/ProductClick";
-import { CashUser } from "@/models/CashUser";
+import { StaffUser } from "@/models/StaffUser";
 import { CashClose } from "@/models/CashClose";
+import { CashSession } from "@/models/CashSession";
 import { SiteSettings } from "@/models/SiteSettings";
 import { TenantRequest } from "@/models/TenantRequest";
+import { Comanda } from "@/models/Comanda";
+import { PrintJob } from "@/models/PrintJob";
+import { SalonTable } from "@/models/SalonTable";
+import { SalonWall } from "@/models/SalonWall";
+import { SalonReservation } from "@/models/SalonReservation";
+import { TableArea } from "@/models/TableArea";
 import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
 import { getSuperadminSession } from "@/lib/auth";
 
@@ -66,8 +73,10 @@ export async function PATCH(
 /**
  * Elimina un tenant y TODOS sus datos relacionados en cascada: usuarios,
  * productos, ventas, pedidos, gastos, categorías, recetas, materiales,
- * producciones, clicks, cajeros, cierres de caja, configuración, pagos,
- * accesos y solicitudes. También limpia las imágenes en Supabase Storage.
+ * producciones, clicks, cajeros, sesiones y cierres de caja, configuración,
+ * pagos, accesos, solicitudes, comandas, cola de impresión y todo el Salón
+ * (mesas, paredes, zonas, reservas). También limpia las imágenes en
+ * Supabase Storage.
  */
 export async function DELETE(
   request: NextRequest,
@@ -99,12 +108,19 @@ export async function DELETE(
     ["rawMaterials",  RawMaterial],
     ["productions",   Production],
     ["productClicks", ProductClick],
-    ["cashUsers",     CashUser],
+    ["staffUsers",    StaffUser],
     ["cashCloses",    CashClose],
+    ["cashSessions",  CashSession],
     ["siteSettings",  SiteSettings],
     ["payments",      Payment],
     ["accessLogs",    AccessLog],
     ["tenantRequests", TenantRequest],
+    ["comandas",      Comanda],
+    ["printJobs",     PrintJob],
+    ["salonTables",   SalonTable],
+    ["salonWalls",    SalonWall],
+    ["salonReservations", SalonReservation],
+    ["tableAreas",    TableArea],
   ];
 
   const deleted: Record<string, number> = {};

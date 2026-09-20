@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { SalonReservation } from "@/models/SalonReservation";
 import { SalonTable } from "@/models/SalonTable";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
+import { buildStatusUpdate } from "@/lib/tableStatus";
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "salon:editar");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
@@ -21,10 +24,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   // If cancelled, free the table
   if (status === "cancelled") {
-    await SalonTable.updateOne(
-      { _id: reservation.tableId, tenantId: session.tenantId },
-      { $set: { status: "libre", statusNote: "" } }
-    );
+    const table = await SalonTable.findOne({ _id: reservation.tableId, tenantId: session.tenantId }).lean();
+    if (table) {
+      await SalonTable.updateOne(
+        { _id: reservation.tableId, tenantId: session.tenantId },
+        { $set: buildStatusUpdate(table.status, "libre") }
+      );
+    }
   }
 
   return NextResponse.json({ reservation });
@@ -33,15 +39,20 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "salon:editar");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
   const reservation = await SalonReservation.findOneAndDelete({ _id: id, tenantId: session.tenantId });
   if (reservation) {
-    await SalonTable.updateOne(
-      { _id: reservation.tableId, tenantId: session.tenantId },
-      { $set: { status: "libre", statusNote: "" } }
-    );
+    const table = await SalonTable.findOne({ _id: reservation.tableId, tenantId: session.tenantId }).lean();
+    if (table) {
+      await SalonTable.updateOne(
+        { _id: reservation.tableId, tenantId: session.tenantId },
+        { $set: buildStatusUpdate(table.status, "libre") }
+      );
+    }
   }
   return NextResponse.json({ ok: true });
 }

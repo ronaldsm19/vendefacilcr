@@ -16,10 +16,10 @@ interface Props {
 }
 
 const TEMPLATE_CSV =
-  "nombre,precio_venta,precio_costo,categoria,seccion_menu,descripcion,disponible,destacado,stock,toppings\n" +
-  "Café pequeño,1300,300,Café,bebidas,Café negro americano pequeño,true,false,0,\n" +
-  "Rollo de canela,800,250,Panadería,panaderia,Rollo con glaseado de azúcar,true,true,10,\n" +
-  "Pan de natilla,600,180,Panadería,panaderia,,true,false,15,Natilla|Azúcar";
+  "nombre,precio_venta,precio_costo,categoria,seccion_menu,estacion,descripcion,disponible,destacado,stock,toppings\n" +
+  "Café pequeño,1300,300,Café,bebidas,bebidas,Café negro americano pequeño,true,false,0,\n" +
+  "Rollo de canela,800,250,Panadería,panaderia,cocina,Rollo con glaseado de azúcar,true,true,10,\n" +
+  "Pan de natilla,600,180,Panadería,panaderia,cocina,,true,false,15,Natilla|Azúcar";
 
 function downloadTemplate() {
   const blob = new Blob([TEMPLATE_CSV], { type: "text/csv;charset=utf-8;" });

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { Sale } from "@/models/Sale";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
@@ -14,6 +14,8 @@ function endOfDay(d: Date) {
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   const { searchParams } = new URL(request.url);
   const fromParam = searchParams.get("from");
@@ -61,6 +63,7 @@ export async function GET(request: NextRequest) {
       source:        "pos" as const,
       date:          (s.saleDate ?? s.createdAt).toISOString(),
       customerName:  s.customerName ?? "Venta POS",
+      ticketNumber:  s.ticketNumber ?? null,
       total:         s.total ?? 0,
       paid:          true,
       paymentMethod: METHOD_LABELS[s.paymentMethod] ?? s.paymentMethod,

@@ -3,11 +3,13 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { TableArea } from "@/models/TableArea";
 import { SalonTable } from "@/models/SalonTable";
 import { SalonWall } from "@/models/SalonWall";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "salon:editar");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
@@ -25,13 +27,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "salon:editar");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
 
-  // Check no occupied tables in this area
-  const busy = await SalonTable.findOne({ areaId: id, status: { $in: ["ocupada", "reservada"] } });
-  if (busy) return NextResponse.json({ error: "Hay mesas ocupadas o reservadas en esta zona" }, { status: 409 });
+  // Check no non-free tables in this area
+  const busy = await SalonTable.findOne({ tenantId: session.tenantId, areaId: id, status: { $ne: "libre" } });
+  if (busy) return NextResponse.json({ error: "Hay mesas ocupadas, reservadas o por limpiar en esta zona" }, { status: 409 });
 
   await SalonTable.deleteMany({ areaId: id, tenantId: session.tenantId });
   await SalonWall.deleteMany({ areaId: id, tenantId: session.tenantId });

@@ -1,15 +1,19 @@
 import { SignJWT, jwtVerify } from "jose";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import type { Role, Feature } from "@/lib/permissions";
+import { can, hasRole, ERROR_FORBIDDEN } from "@/lib/permissions";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET ?? "fallback-secret-change-in-production"
 );
 
 export interface AdminPayload {
-  email: string;
-  role: "admin";
+  role: Role;               // "admin" | "cajero" | "mesero"
   tenantId: string;
   tenantSlug: string;
+  userId: string;           // User._id (admin) o StaffUser._id (staff), como string
+  name: string;             // admin: ticketConfig.ownerName || "Administrador"; staff: StaffUser.name
+  email?: string;           // solo admin
 }
 
 export async function signJwt(payload: AdminPayload): Promise<string> {
@@ -23,7 +27,10 @@ export async function signJwt(payload: AdminPayload): Promise<string> {
 export async function verifyJwt(token: string): Promise<AdminPayload | null> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    return payload as unknown as AdminPayload;
+    const p = payload as unknown as Partial<AdminPayload>;
+    if (!p.tenantId || !p.tenantSlug || !p.userId || !p.name) return null;
+    if (p.role !== "admin" && p.role !== "cajero" && p.role !== "mesero") return null;
+    return p as AdminPayload;
   } catch {
     return null;
   }
@@ -38,6 +45,20 @@ export async function getSession(
 }
 
 export const COOKIE_NAME = "dulce_admin_session";
+
+export function forbidden(message: string = ERROR_FORBIDDEN): NextResponse {
+  return NextResponse.json({ error: message }, { status: 403 });
+}
+
+/** null si el rol de la sesión tiene la feature; si no, respuesta 403 lista para retornar. */
+export function requireFeature(session: AdminPayload, feature: Feature): NextResponse | null {
+  return can(session, feature) ? null : forbidden();
+}
+
+/** null si session.role está en roles; si no, 403. */
+export function requireRole(session: AdminPayload, ...roles: Role[]): NextResponse | null {
+  return hasRole(session, ...roles) ? null : forbidden();
+}
 
 // ── Superadmin Auth ────────────────────────────────────────────
 

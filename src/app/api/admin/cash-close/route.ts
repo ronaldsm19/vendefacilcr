@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { CashClose } from "@/models/CashClose";
 import { CashSession } from "@/models/CashSession";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "cierre-de-caja");
+  if (denied) return denied;
 
   await connectToDatabase();
   const closes = await CashClose.find({ tenantId: session.tenantId })
@@ -19,11 +21,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "cierre-de-caja");
+  if (denied) return denied;
 
   await connectToDatabase();
   const body = await request.json();
 
-  const { closeDate, closedBy, salesTotal, paymentBreakdown,
+  const { closeDate, salesTotal, paymentBreakdown,
           expensesTotal, profit, productsSummary, arqueo,
           openingAmount, withdrawals, withdrawalsTotal, cashLeft, salesList, notes } = body;
 
@@ -32,7 +36,7 @@ export async function POST(request: NextRequest) {
   const cashClose = await CashClose.create({
     tenantId: session.tenantId,
     closeDate: closeDate ? new Date(closeDate) : new Date(),
-    closedBy:  closedBy ?? "",
+    closedBy:  session.name,
     closeNumber,
     salesTotal:       salesTotal       ?? 0,
     paymentBreakdown: paymentBreakdown ?? { efectivo: 0, sinpe: 0, tarjeta: 0 },

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Sale } from "@/models/Sale";
-import { getSession } from "@/lib/auth";
+import { Product } from "@/models/Product";
+import { getSession, requireFeature } from "@/lib/auth";
 
 export async function GET(
   request: NextRequest,
@@ -9,6 +11,8 @@ export async function GET(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
@@ -23,13 +27,15 @@ export async function PUT(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
 
   const { id } = await params;
   await connectToDatabase();
   const body = await request.json();
 
   const {
-    customerName, tableNumber, cashUserId, cashUserName,
+    customerName, tableNumber,
     items, paymentMethod, mixedPayment,
     ivaEnabled, ivaRate, serviceEnabled, serviceRate, tipEnabled, tipAmount,
     notes,
@@ -38,6 +44,11 @@ export async function PUT(
   if (!items?.length) {
     return NextResponse.json({ error: "La venta debe tener al menos un producto" }, { status: 400 });
   }
+
+  const existing = await Sale.findOne({ _id: id, tenantId: session.tenantId })
+    .select("items")
+    .lean() as { items?: { productId: string; quantity: number }[] } | null;
+  if (!existing) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
   const subtotal = items.reduce(
     (s: number, i: { unitPrice: number; quantity: number }) => s + i.unitPrice * i.quantity,
@@ -54,8 +65,6 @@ export async function PUT(
       $set: {
         customerName:  customerName  ?? "",
         tableNumber:   tableNumber   ?? "",
-        cashUserId:    cashUserId    ?? "",
-        cashUserName:  cashUserName  ?? "",
         items:         items.map((i: { productId: string; productName: string; unitPrice: number; quantity: number }) => ({
           ...i,
           lineTotal: i.unitPrice * i.quantity,
@@ -79,18 +88,42 @@ export async function PUT(
   ).lean();
 
   if (!sale) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+  // Ajustar stock/sold por la diferencia entre los items anteriores y los nuevos
+  // (mismo patrón de bulkWrite que POST /api/admin/sales, stock nunca bajo cero).
+  try {
+    const diffByProduct = new Map<string, number>();
+    for (const i of existing.items ?? []) {
+      if (!i.productId) continue;
+      diffByProduct.set(i.productId, (diffByProduct.get(i.productId) ?? 0) - i.quantity);
+    }
+    for (const i of items as { productId: string; quantity: number }[]) {
+      if (!i.productId) continue;
+      diffByProduct.set(i.productId, (diffByProduct.get(i.productId) ?? 0) + i.quantity);
+    }
+
+    const bulkOps = Array.from(diffByProduct.entries())
+      .filter(([, diff]) => diff !== 0)
+      .map(([productId, diff]) => ({
+        updateOne: {
+          filter: { _id: new mongoose.Types.ObjectId(productId), tenantId: session.tenantId },
+          update: [
+            {
+              $set: {
+                stock: { $max: [0, { $subtract: ["$stock", diff] }] },
+                sold:  { $max: [0, { $add: ["$sold", diff] }] },
+              },
+            },
+          ],
+        },
+      }));
+
+    if (bulkOps.length > 0) {
+      await Product.bulkWrite(bulkOps);
+    }
+  } catch (err) {
+    console.error("[sales PUT] Error actualizando stock:", err);
+  }
+
   return NextResponse.json({ sale });
-}
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await getSession(request);
-  if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
-  const { id } = await params;
-  await connectToDatabase();
-  await Sale.deleteOne({ _id: id, tenantId: session.tenantId });
-  return NextResponse.json({ ok: true });
 }

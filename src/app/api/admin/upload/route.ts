@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
 
 /** Extrae el path dentro del bucket a partir de una URL pública de Supabase */
@@ -13,6 +13,8 @@ function extractStoragePath(url: string): string | null {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "configuracion");
+  if (denied) return denied;
 
   try {
     const formData = await request.formData();
@@ -92,6 +94,8 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "configuracion");
+  if (denied) return denied;
 
   try {
     const { url } = await request.json();

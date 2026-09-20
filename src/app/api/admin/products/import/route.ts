@@ -3,7 +3,8 @@ import * as xlsx from "xlsx";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
+import { isStation } from "@/lib/station";
 
 function parseBool(val: unknown, fallback: boolean): boolean {
   if (typeof val === "boolean") return val;
@@ -31,6 +32,8 @@ function get(row: Record<string, unknown>, ...keys: string[]): unknown {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "productos:editar");
+  if (denied) return denied;
 
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
@@ -83,6 +86,9 @@ export async function POST(request: NextRequest) {
     const menuSectionRaw = String(get(row, "seccion_menu", "menuSection") ?? "").trim().toLowerCase();
     const menuSection = VALID_SECTIONS.includes(menuSectionRaw) ? menuSectionRaw : "panaderia";
 
+    const stationRaw = String(get(row, "estacion", "station") ?? "").trim().toLowerCase();
+    const station = isStation(stationRaw) ? stationRaw : (menuSection === "bebidas" ? "bebidas" : "cocina");
+
     // Toppings: string separado por "|" o array
     let toppings: string[] = [];
     const tRaw = get(row, "toppings", "ingredientes");
@@ -100,6 +106,7 @@ export async function POST(request: NextRequest) {
       cost:         parseNum(get(row, "precio_costo", "cost"), 0),
       category,
       menuSection,
+      station,
       image:        String(get(row, "imagen", "image") ?? ""),
       toppings,
       stock:        parseNum(get(row, "stock"), 0),

@@ -18,6 +18,7 @@ export interface IProduct {
   deliveryNote: string;    // nota de horarios/costo de envío
   offers: { qty: number; price: number }[];  // ofertas por volumen
   menuSection: "panaderia" | "bebidas" | "";
+  station: "cocina" | "bebidas" | "ninguna";
   stock: number;
   sold: number;            // unidades vendidas acumuladas
   createdAt: Date;
@@ -67,6 +68,11 @@ const ProductSchema = new Schema(
       type: String,
       enum: ["panaderia", "bebidas", ""],
       default: "panaderia",
+    },
+    station: {
+      type: String,
+      enum: ["cocina", "bebidas", "ninguna"],
+      default: "cocina",
     },
     available: {
       type: Boolean,

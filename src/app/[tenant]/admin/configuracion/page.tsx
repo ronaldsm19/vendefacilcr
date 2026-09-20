@@ -7,10 +7,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TicketPreview from "@/components/admin/TicketPreview";
+import PrintQueueSection from "@/components/admin/PrintQueueSection";
 import {
   buildSaleRows, buildCashCloseRows, DEFAULT_TICKET_CONFIG,
   type TicketConfigData, type SaleTicketData, type CashCloseTicketData,
 } from "@/lib/ticket";
+import { useAdminSession } from "@/components/admin/SessionContext";
+import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 
 interface Category {
   _id: string;
@@ -210,6 +213,9 @@ function IconYouTube({ className }: { className?: string }) {
 }
 
 export default function ConfiguracionPage() {
+  const session = useAdminSession();
+  const showComandas = session.role === "admin" && session.isPremium;
+
   // ── Logo state ───────────────────────────────────────────────────
   const [logoUrl, setLogoUrl] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -253,18 +259,24 @@ export default function ConfiguracionPage() {
   const [savingTicket, setSavingTicket] = useState(false);
   const [savedTicket, setSavedTicket] = useState(false);
 
-  // ── Tab state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "caja" | "ticket">("marca");
+  // ── Comanda config state ─────────────────────────────────────────
+  const [comandaConfig, setComandaConfig] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
+  const [savingComanda, setSavingComanda] = useState(false);
+  const [savedComanda, setSavedComanda] = useState(false);
+  const [comandaError, setComandaError] = useState<string | null>(null);
 
-  // ── Cash users state ─────────────────────────────────────────────
-  interface CashUser { _id: string; name: string; }
-  const [cashUsers, setCashUsers]         = useState<CashUser[]>([]);
-  const [cashUsersLoading, setCashUsersLoading] = useState(true);
-  const [newCashUserName, setNewCashUserName]   = useState("");
-  const [addingCashUser, setAddingCashUser]     = useState(false);
-  const [deletingCashUserId, setDeletingCashUserId] = useState<string | null>(null);
-  const [editingCashUserId, setEditingCashUserId]   = useState<string | null>(null);
-  const [editingCashUserName, setEditingCashUserName] = useState("");
+  // ── Sale delete password state (Fase 7) ───────────────────────────
+  const [saleDeleteConfigured, setSaleDeleteConfigured] = useState(false);
+  const [loadingSaleDeletePw, setLoadingSaleDeletePw] = useState(true);
+  const [newSaleDeletePw, setNewSaleDeletePw] = useState("");
+  const [confirmSaleDeletePw, setConfirmSaleDeletePw] = useState("");
+  const [savingSaleDeletePw, setSavingSaleDeletePw] = useState(false);
+  const [removingSaleDeletePw, setRemovingSaleDeletePw] = useState(false);
+  const [saleDeletePwError, setSaleDeletePwError] = useState<string | null>(null);
+  const [savedSaleDeletePw, setSavedSaleDeletePw] = useState(false);
+
+  // ── Tab state ────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "ticket" | "comandas" | "caja">("marca");
 
   // ── Categories state ─────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
@@ -316,12 +328,6 @@ export default function ConfiguracionPage() {
       .then((r) => r.json())
       .then((data) => setMenuConfig({ ...MENU_CONFIG_DEFAULTS, ...data }));
 
-    // Cash users
-    fetch("/api/admin/cash-users")
-      .then((r) => r.json())
-      .then((d) => setCashUsers(d.users ?? []))
-      .finally(() => setCashUsersLoading(false));
-
     // Categories
     fetch("/api/admin/categories")
       .then((r) => r.json())
@@ -332,6 +338,17 @@ export default function ConfiguracionPage() {
     fetch("/api/admin/ticket-config")
       .then((r) => r.json())
       .then((d) => setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...(d.ticketConfig ?? {}) }));
+
+    // Comanda config (403 si no es admin premium; se ignora)
+    fetch("/api/admin/comanda-config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setComandaConfig(readComandaConfig(d)); });
+
+    // Contraseña de eliminación de ventas — nunca trae la contraseña, solo si está configurada
+    fetch("/api/admin/sale-delete-password")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setSaleDeleteConfigured(!!d.configured); })
+      .finally(() => setLoadingSaleDeletePw(false));
   }, []);
 
   // ── Handlers: logo ───────────────────────────────────────────────
@@ -571,48 +588,69 @@ export default function ConfiguracionPage() {
   }
 
 
-  // ── Handlers: cash users ─────────────────────────────────────────
-  async function handleAddCashUser(e: React.FormEvent) {
+  // ── Handlers: comanda config ─────────────────────────────────────
+  async function handleSaveComandaConfig(e: React.FormEvent) {
     e.preventDefault();
-    const name = newCashUserName.trim();
-    if (!name) return;
-    setAddingCashUser(true);
+    setComandaError(null);
+    if (comandaConfig.warnMinutes >= comandaConfig.alertMinutes) {
+      setComandaError("El umbral de aviso debe ser menor que el de alerta.");
+      return;
+    }
+    setSavingComanda(true);
     try {
-      const r = await fetch("/api/admin/cash-users", {
+      const res = await fetch("/api/admin/comanda-config", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(comandaConfig),
+      });
+      const data = await res.json();
+      if (!res.ok) { setComandaError(data.error ?? "No se pudo guardar"); return; }
+      setSavedComanda(true);
+      setTimeout(() => setSavedComanda(false), 3000);
+    } finally { setSavingComanda(false); }
+  }
+
+  // ── Handlers: sale delete password (Fase 7) ───────────────────────
+  async function handleSaveSaleDeletePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setSaleDeletePwError(null);
+    if (newSaleDeletePw.length < 4) {
+      setSaleDeletePwError("La contraseña debe tener al menos 4 caracteres.");
+      return;
+    }
+    if (newSaleDeletePw !== confirmSaleDeletePw) {
+      setSaleDeletePwError("Las contraseñas no coinciden.");
+      return;
+    }
+    setSavingSaleDeletePw(true);
+    try {
+      const res = await fetch("/api/admin/sale-delete-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ password: newSaleDeletePw }),
       });
-      const d = await r.json();
-      if (d.user) {
-        setCashUsers((prev) => [...prev, d.user]);
-        setNewCashUserName("");
-      }
-    } finally {
-      setAddingCashUser(false);
-    }
+      const data = await res.json();
+      if (!res.ok) { setSaleDeletePwError(data.error ?? "No se pudo guardar"); return; }
+      setSaleDeleteConfigured(true);
+      setNewSaleDeletePw("");
+      setConfirmSaleDeletePw("");
+      setSavedSaleDeletePw(true);
+      setTimeout(() => setSavedSaleDeletePw(false), 3000);
+    } finally { setSavingSaleDeletePw(false); }
   }
 
-  async function handleSaveCashUserName(id: string) {
-    const name = editingCashUserName.trim();
-    if (!name) return;
-    await fetch(`/api/admin/cash-users/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    setCashUsers((prev) => prev.map((u) => (u._id === id ? { ...u, name } : u)));
-    setEditingCashUserId(null);
-  }
-
-  async function handleDeleteCashUser(id: string) {
-    setDeletingCashUserId(id);
+  async function handleRemoveSaleDeletePassword() {
+    setSaleDeletePwError(null);
+    setRemovingSaleDeletePw(true);
     try {
-      await fetch(`/api/admin/cash-users/${id}`, { method: "DELETE" });
-      setCashUsers((prev) => prev.filter((u) => u._id !== id));
-    } finally {
-      setDeletingCashUserId(null);
-    }
+      const res = await fetch("/api/admin/sale-delete-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSaleDeletePwError(data.error ?? "No se pudo quitar"); return; }
+      setSaleDeleteConfigured(false);
+    } finally { setRemovingSaleDeletePw(false); }
   }
 
   // ── Handlers: categories ─────────────────────────────────────────
@@ -660,17 +698,19 @@ export default function ConfiguracionPage() {
     );
   }
 
-  const TABS = [
+  const ALL_TABS = [
     { key: "marca",    label: "Marca",    icon: "🎨", title: "Identidad de marca",      desc: "Logo, colores, tipografía y apariencia visual de tu tienda." },
     { key: "portada",  label: "Portada",  icon: "🏠", title: "Portada y contacto",       desc: "Texto principal de la tienda y redes sociales." },
     { key: "nosotros", label: "Nosotros", icon: "👥", title: "Sección Nosotros",          desc: "Texto e imágenes de la sección \"Nosotros\" en tu tienda." },
     { key: "productos",label: "Productos",icon: "📦", title: "Categorías de productos",  desc: "Administrá las categorías para organizar tu catálogo." },
     { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
-    { key: "caja",     label: "Caja",     icon: "🧑‍💼", title: "Usuarios de caja",          desc: "Personas que pueden atender el punto de venta." },
+    { key: "comandas", label: "Comandas", icon: "⏱️", title: "Comandas",                 desc: "Umbrales de tiempo para las mesas con comandas activas." },
     { key: "ticket",   label: "Ticket",   icon: "🧾", title: "Ticket electrónico",        desc: "Datos que aparecen en tus tickets impresos." },
+    { key: "caja",     label: "Caja",     icon: "🔒", title: "Caja",                     desc: "Contraseña para autorizar la eliminación de ventas." },
   ] as const;
 
-  const currentTab = TABS.find((t) => t.key === activeTab)!;
+  const TABS = ALL_TABS.filter((t) => t.key !== "comandas" || showComandas);
+  const currentTab = TABS.find((t) => t.key === activeTab) ?? TABS[0];
 
   return (
     <div className="flex min-h-full">
@@ -1662,106 +1702,6 @@ export default function ConfiguracionPage() {
 
       </>}
 
-      {/* ── TAB: CAJA ── Usuarios de caja ───────────────────────────── */}
-      {activeTab === "caja" && <div className="max-w-xl">
-
-      <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
-        <div>
-          <h2 className="font-semibold text-brand-dark text-lg">Usuarios de caja</h2>
-          <p className="text-sm text-brand-dark/50 mt-0.5">
-            Estos nombres aparecen en el Punto de venta para identificar quién atendió cada venta.
-          </p>
-        </div>
-
-        {cashUsersLoading ? (
-          <div className="flex justify-center py-4">
-            <Loader2 className="w-5 h-5 animate-spin text-brand-pink" />
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {cashUsers.length === 0 && (
-              <p className="text-sm text-brand-dark/40 italic">No hay usuarios de caja aún.</p>
-            )}
-            {cashUsers.map((u) => (
-              <div
-                key={u._id}
-                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-brand-muted bg-brand-muted/10"
-              >
-                {editingCashUserId === u._id ? (
-                  <input
-                    autoFocus
-                    type="text"
-                    value={editingCashUserName}
-                    onChange={(e) => setEditingCashUserName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSaveCashUserName(u._id);
-                      if (e.key === "Escape") setEditingCashUserId(null);
-                    }}
-                    className="flex-1 border border-brand-pink rounded-lg px-2 py-1 text-sm focus:outline-none"
-                  />
-                ) : (
-                  <span className="text-sm text-brand-dark flex-1">{u.name}</span>
-                )}
-                <div className="flex items-center gap-1">
-                  {editingCashUserId === u._id ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveCashUserName(u._id)}
-                        className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
-                      >
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingCashUserId(null)}
-                        className="p-1.5 rounded-lg text-brand-dark/30 hover:bg-gray-100 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => { setEditingCashUserId(u._id); setEditingCashUserName(u.name); }}
-                      className="p-1.5 rounded-lg text-brand-dark/30 hover:text-brand-dark hover:bg-brand-muted/30 transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteCashUser(u._id)}
-                    disabled={deletingCashUserId === u._id}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors disabled:opacity-50"
-                  >
-                    {deletingCashUserId === u._id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <form onSubmit={handleAddCashUser} className="flex gap-2">
-          <input
-            type="text"
-            value={newCashUserName}
-            onChange={(e) => setNewCashUserName(e.target.value)}
-            placeholder="Nombre del usuario..."
-            className="flex-1 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-          />
-          <Button type="submit" disabled={addingCashUser || !newCashUserName.trim()} size="sm">
-            {addingCashUser ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          </Button>
-        </form>
-      </section>
-      </div>}
-
       {/* ── TAB: TICKET ── Ticket electrónico ───────────────────────── */}
       {activeTab === "ticket" && <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
 
@@ -1931,6 +1871,94 @@ export default function ConfiguracionPage() {
       </section>
 
       </div>
+      </div>}
+
+      {/* ── TAB: COMANDAS ── Umbrales de tiempo ─────────────────────── */}
+      {activeTab === "comandas" && showComandas && <div className="max-w-xl">
+        <form onSubmit={handleSaveComandaConfig}>
+          <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
+            <div>
+              <h2 className="font-semibold text-brand-dark text-lg">Umbrales de tiempo</h2>
+              <p className="text-sm text-brand-dark/50 mt-0.5">
+                Definí a partir de cuántos minutos una mesa con comandas activas se marca en amarillo y en rojo.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Aviso (amarillo) — minutos</label>
+                <input type="number" min={1} max={600} step={1} value={comandaConfig.warnMinutes}
+                  onChange={e => setComandaConfig(c => ({ ...c, warnMinutes: Number(e.target.value) }))}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Alerta (rojo) — minutos</label>
+                <input type="number" min={1} max={600} step={1} value={comandaConfig.alertMinutes}
+                  onChange={e => setComandaConfig(c => ({ ...c, alertMinutes: Number(e.target.value) }))}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
+              </div>
+            </div>
+            <p className="text-xs text-brand-dark/50">
+              Verde por debajo del aviso, amarillo entre aviso y alerta, rojo desde la alerta. El badge aparece cuando la mesa tiene comandas activas.
+            </p>
+            {comandaError && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{comandaError}</p>}
+            <div className="flex items-center gap-3">
+              <Button type="submit" disabled={savingComanda}>{savingComanda ? "Guardando..." : "Guardar umbrales"}</Button>
+              {savedComanda && <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium"><Check className="w-4 h-4" /> Guardado</span>}
+            </div>
+          </section>
+        </form>
+        <div className="mt-6"><PrintQueueSection /></div>
+      </div>}
+
+      {/* ── TAB: CAJA ── Contraseña de eliminación de ventas ─────────── */}
+      {activeTab === "caja" && <div className="max-w-xl">
+        <form onSubmit={handleSaveSaleDeletePassword}>
+          <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
+            <div>
+              <h2 className="font-semibold text-brand-dark text-lg">Contraseña de eliminación de ventas</h2>
+              <p className="text-sm text-brand-dark/50 mt-0.5">
+                Se pide en Pedidos y ventas para autorizar el borrado de una venta ya registrada.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-brand-dark/50">Estado:</span>
+              {loadingSaleDeletePw ? (
+                <span className="text-brand-dark/40">Cargando...</span>
+              ) : saleDeleteConfigured ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-medium">
+                  <Check className="w-3.5 h-3.5" /> Configurada
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-orange-50 text-orange-500 font-medium">Sin configurar</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Nueva contraseña</label>
+                <input type="password" value={newSaleDeletePw}
+                  onChange={(e) => setNewSaleDeletePw(e.target.value)}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Confirmar contraseña</label>
+                <input type="password" value={confirmSaleDeletePw}
+                  onChange={(e) => setConfirmSaleDeletePw(e.target.value)}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
+              </div>
+            </div>
+            <p className="text-xs text-brand-dark/50">Mínimo 4 caracteres. Viaja por HTTPS; el servidor la guarda cifrada (bcrypt).</p>
+            {saleDeletePwError && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{saleDeletePwError}</p>}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button type="submit" disabled={savingSaleDeletePw}>{savingSaleDeletePw ? "Guardando..." : "Guardar contraseña"}</Button>
+              {saleDeleteConfigured && (
+                <Button type="button" variant="outline" disabled={removingSaleDeletePw} onClick={handleRemoveSaleDeletePassword}>
+                  {removingSaleDeletePw ? "Quitando..." : "Quitar contraseña"}
+                </Button>
+              )}
+              {savedSaleDeletePw && <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium"><Check className="w-4 h-4" /> Guardado</span>}
+            </div>
+          </section>
+        </form>
       </div>}
 
           </div>

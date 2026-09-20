@@ -8,6 +8,11 @@ export interface ISaleItem {
   lineTotal: number;
 }
 
+export interface ISaleComandaClaim {
+  comandaId: string;
+  items: { index: number; qty: number }[]; // qty que ESTA venta cobró de cada índice
+}
+
 export interface ISale {
   _id: string;
   tenantId: string;
@@ -21,6 +26,13 @@ export interface ISale {
   deliveryAddress?: string;
   deliveryPhone?: string;
   deliveryFee?: number;
+  tableId: string;        // _id de SalonTable, "" si la venta no viene de una mesa del Salón
+  comandaIds: string[];   // comandas cobradas (total o parcialmente) en esta venta
+  // Detalle exacto de qué índice/cantidad de cada comanda cobró ESTA venta (Fase 7), para poder
+  // revertir el paidQty con precisión al eliminarla — Comanda.items[].paidQty es un acumulado
+  // entre ventas y por sí solo no alcanza para saber cuánto le corresponde a una venta puntual.
+  // Ventas anteriores a esta fase no lo tienen (fallback best-effort al eliminarlas).
+  comandaClaims: ISaleComandaClaim[];
   items: ISaleItem[];
   subtotal: number;
   ivaEnabled: boolean;
@@ -51,6 +63,17 @@ const SaleItemSchema = new Schema(
   { _id: false }
 );
 
+const SaleComandaClaimSchema = new Schema(
+  {
+    comandaId: { type: String, required: true },
+    items: {
+      type: [{ index: { type: Number, required: true }, qty: { type: Number, required: true }, _id: false }],
+      default: [],
+    },
+  },
+  { _id: false }
+);
+
 const SaleSchema = new Schema(
   {
     tenantId:      { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
@@ -64,6 +87,9 @@ const SaleSchema = new Schema(
     deliveryAddress: { type: String, default: "" },
     deliveryPhone: { type: String, default: "" },
     deliveryFee:   { type: Number, default: 0 },
+    tableId:       { type: String, default: "" },
+    comandaIds:    { type: [String], default: [] },
+    comandaClaims: { type: [SaleComandaClaimSchema], default: [] },
     items:         { type: [SaleItemSchema], required: true },
     subtotal:      { type: Number, required: true },
     ivaEnabled:    { type: Boolean, default: false },
@@ -88,6 +114,7 @@ const SaleSchema = new Schema(
 );
 
 SaleSchema.index({ tenantId: 1, saleDate: -1 });
+SaleSchema.index({ tenantId: 1, comandaIds: 1 });
 
 export const Sale =
   mongoose.models.Sale || mongoose.model<ISale>("Sale", SaleSchema);

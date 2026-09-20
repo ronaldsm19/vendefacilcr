@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Category } from "@/models/Category";
-import { getSession } from "@/lib/auth";
+import { getSession, requireFeature } from "@/lib/auth";
 
 const DEFAULTS = ["Gelatina Mosaico", "Apretado Gourmet", "Edición Especial"];
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "productos");
+  if (denied) return denied;
 
   await connectToDatabase();
   let cats = await Category.find({ tenantId: session.tenantId }).sort({ label: 1 }).lean();
@@ -21,6 +23,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "productos:editar");
+  if (denied) return denied;
 
   await connectToDatabase();
   const { label } = await request.json();

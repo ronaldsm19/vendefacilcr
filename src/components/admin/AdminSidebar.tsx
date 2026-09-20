@@ -19,23 +19,28 @@ import {
   BookCheck,
   UserCircle,
   LayoutGrid,
+  Users,
+  ClipboardList,
 } from "lucide-react";
+import { can, ROLE_LABELS, type Role, type Feature } from "@/lib/permissions";
 
-function buildNavItems(base: string) {
+function buildNavItems(base: string): { href: string; label: string; icon: typeof LayoutDashboard; feature: Feature; premium?: true }[] {
   return [
-    { href: base,                       label: "Dashboard",     icon: LayoutDashboard },
-    { href: `${base}/productos`,        label: "Productos",     icon: Package },
-    { href: `${base}/inventario`,       label: "Inventario",    icon: Warehouse },
-    { href: `${base}/materiales`,       label: "Materiales",    icon: FlaskConical },
-    { href: `${base}/recetas`,          label: "Recetas",       icon: BookOpen },
-    { href: `${base}/pedidos`,          label: "Pedidos",       icon: ShoppingBag },
-    { href: `${base}/gastos`,           label: "Gastos",         icon: Receipt },
-    { href: `${base}/finanzas`,         label: "Finanzas",       icon: TrendingUp },
-    { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck },
-    { href: `${base}/cierre-de-caja`,   label: "Cierre de caja", icon: BookCheck },
-    { href: `${base}/salon`,            label: "Salón",           icon: LayoutGrid },
-    { href: `${base}/configuracion`,    label: "Configuración",  icon: Settings },
-    { href: `${base}/perfil`,           label: "Perfil",         icon: UserCircle },
+    { href: base,                       label: "Dashboard",     icon: LayoutDashboard, feature: "dashboard" },
+    { href: `${base}/productos`,        label: "Productos",     icon: Package,         feature: "productos" },
+    { href: `${base}/inventario`,       label: "Inventario",    icon: Warehouse,       feature: "inventario" },
+    { href: `${base}/materiales`,       label: "Materiales",    icon: FlaskConical,    feature: "materiales" },
+    { href: `${base}/recetas`,          label: "Recetas",       icon: BookOpen,        feature: "recetas" },
+    { href: `${base}/pedidos`,          label: "Pedidos y ventas", icon: ShoppingBag,  feature: "pedidos" },
+    { href: `${base}/gastos`,           label: "Gastos",         icon: Receipt,         feature: "gastos" },
+    { href: `${base}/finanzas`,         label: "Finanzas",       icon: TrendingUp,      feature: "finanzas" },
+    { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck,    feature: "pos" },
+    { href: `${base}/cierre-de-caja`,   label: "Cierre de caja", icon: BookCheck,       feature: "cierre-de-caja" },
+    { href: `${base}/salon`,            label: "Salón",           icon: LayoutGrid,     feature: "salon" },
+    { href: `${base}/comandas`,         label: "Comandas",       icon: ClipboardList,   feature: "comandas", premium: true },
+    { href: `${base}/usuarios`,         label: "Usuarios",       icon: Users,           feature: "usuarios", premium: true },
+    { href: `${base}/configuracion`,    label: "Configuración",  icon: Settings,        feature: "configuracion" },
+    { href: `${base}/perfil`,           label: "Perfil",         icon: UserCircle,      feature: "perfil" },
   ];
 }
 
@@ -43,17 +48,25 @@ export default function AdminSidebar({
   onClose,
   tenantName,
   logoUrl,
+  role,
+  isPremium,
+  userName,
 }: {
   onClose?: () => void;
   tenantName?: string;
   logoUrl?: string;
+  role: Role;
+  isPremium: boolean;
+  userName?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
 
   const tenant = pathname.split("/")[1];
   const base = `/${tenant}/admin`;
-  const navItems = buildNavItems(base);
+  const navItems = buildNavItems(base).filter(
+    (i) => can({ role }, i.feature) && (!i.premium || isPremium)
+  );
 
   const [posCartCount, setPosCartCount] = useState(0);
 
@@ -92,7 +105,9 @@ export default function AdminSidebar({
           )}
           <div className="min-w-0">
             <p className="font-brand text-xl font-bold gradient-text truncate">{displayName}</p>
-            <p className="text-white/40 text-xs mt-0.5">Panel de administración</p>
+            <p className="text-white/40 text-xs mt-0.5 truncate">
+              {role === "admin" ? "Panel de administración" : `${userName} · ${ROLE_LABELS[role]}`}
+            </p>
           </div>
         </div>
         {onClose && (
