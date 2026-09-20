@@ -69,6 +69,7 @@ export interface ITenant {
   passwordChanged: boolean;
   printAgentToken: string;              // 64 hex; "" = sin token
   printAgentLastSeenAt: Date | null;
+  saleDeletePasswordHash: string;       // bcrypt; "" = sin configurar (Fase 7)
   createdAt: Date;
   updatedAt: Date;
 }
@@ -139,6 +140,7 @@ const TenantSchema = new Schema(
     passwordChanged: { type: Boolean, default: false },
     printAgentToken:      { type: String, default: "", select: false },
     printAgentLastSeenAt: { type: Date, default: null },
+    saleDeletePasswordHash: { type: String, default: "", select: false },
   },
   { timestamps: true }
 );

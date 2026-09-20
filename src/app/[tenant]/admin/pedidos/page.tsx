@@ -29,6 +29,7 @@ interface VentaItem {
   phone?: string;
   notes?: string;
   itemCount: number;
+  ticketNumber?: number | null;
 }
 
 interface VentaStats {
@@ -82,6 +83,12 @@ export default function AdminOrdersPage() {
   const [editOrder, setEditOrder]       = useState<OrderRow | null>(null);
   const [saving, setSaving]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // Eliminar venta POS (con contraseña)
+  const [confirmDeleteSale, setConfirmDeleteSale] = useState<VentaItem | null>(null);
+  const [deleteSalePassword, setDeleteSalePassword] = useState("");
+  const [deletingSale, setDeletingSale] = useState(false);
+  const [deleteSaleError, setDeleteSaleError] = useState<string | null>(null);
 
   // Ticket config for reprints
   const [businessName, setBusinessName] = useState("");
@@ -163,6 +170,48 @@ export default function AdminOrdersPage() {
     await fetch(`/api/admin/orders/${id}`, { method: "DELETE" });
     setConfirmDelete(null);
     await load();
+  }
+
+  function isToday(dateStr: string) {
+    const d = new Date(dateStr);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  }
+
+  function openDeleteSale(item: VentaItem) {
+    setConfirmDeleteSale(item);
+    setDeleteSalePassword("");
+    setDeleteSaleError(null);
+  }
+
+  function closeDeleteSale() {
+    setConfirmDeleteSale(null);
+    setDeleteSalePassword("");
+    setDeleteSaleError(null);
+  }
+
+  async function handleDeleteSale() {
+    if (!confirmDeleteSale) return;
+    setDeletingSale(true);
+    setDeleteSaleError(null);
+    try {
+      const res = await fetch(`/api/admin/sales/${confirmDeleteSale.id}/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deleteSalePassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteSaleError(data.error ?? "No se pudo eliminar la venta");
+        return;
+      }
+      closeDeleteSale();
+      await load();
+    } catch {
+      setDeleteSaleError("Error de conexión");
+    } finally {
+      setDeletingSale(false);
+    }
   }
 
   /** GET la venta y arma el SaleTicketData; null si no existe. No dispara ninguna impresión. */
@@ -506,6 +555,13 @@ export default function AdminOrdersPage() {
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
+                            <button
+                              onClick={() => openDeleteSale(item)}
+                              title="Eliminar venta"
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </>
                         )}
                         {item.source === "manual" && (
@@ -764,6 +820,67 @@ export default function AdminOrdersPage() {
               <Button variant="outline" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Delete POS Sale */}
+      <Dialog open={!!confirmDeleteSale} onOpenChange={(v) => !v && closeDeleteSale()}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader className="pb-2"><DialogTitle>¿Eliminar venta?</DialogTitle></DialogHeader>
+          {confirmDeleteSale && (
+            <div className="px-6 pb-6 space-y-4">
+              <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Tiquete</span>
+                  <span className="font-semibold">#{confirmDeleteSale.ticketNumber ?? confirmDeleteSale.id.slice(-6).toUpperCase()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Total</span>
+                  <span className="font-semibold">{fmt(confirmDeleteSale.total)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Fecha</span>
+                  <span>
+                    {new Date(confirmDeleteSale.date).toLocaleDateString("es-CR", { day: "2-digit", month: "short" })}
+                    {" "}
+                    {new Date(confirmDeleteSale.date).toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+              </div>
+              <p className="text-sm text-red-600">
+                Esta acción no se puede deshacer: devuelve el inventario y, si venía de una mesa, reabre lo que quedó pendiente.
+              </p>
+              {!isToday(confirmDeleteSale.date) && (
+                <p className="text-sm text-orange-600">
+                  Esta venta no es de hoy: eliminarla puede afectar un cierre de caja ya realizado.
+                </p>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Contraseña de eliminación</label>
+                <input
+                  type="password"
+                  autoFocus
+                  value={deleteSalePassword}
+                  onChange={(e) => setDeleteSalePassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && deleteSalePassword) handleDeleteSale(); }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+                />
+              </div>
+              {deleteSaleError && <p className="text-sm text-red-600">{deleteSaleError}</p>}
+              <div className="flex gap-3">
+                <Button
+                  variant="ghost"
+                  className="flex-1 bg-red-50 text-red-600 hover:bg-red-100"
+                  disabled={deletingSale || !deleteSalePassword}
+                  onClick={handleDeleteSale}
+                >
+                  {deletingSale && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                  Eliminar
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={closeDeleteSale}>Cancelar</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

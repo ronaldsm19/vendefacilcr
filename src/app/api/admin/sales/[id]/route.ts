@@ -127,18 +127,3 @@ export async function PUT(
 
   return NextResponse.json({ sale });
 }
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await getSession(request);
-  if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const denied = requireFeature(session, "pedidos");
-  if (denied) return denied;
-
-  const { id } = await params;
-  await connectToDatabase();
-  await Sale.deleteOne({ _id: id, tenantId: session.tenantId });
-  return NextResponse.json({ ok: true });
-}
