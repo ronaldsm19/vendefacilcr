@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { IProduct } from "@/models/Product";
 import { X, Plus, Upload, ImageIcon, Loader2, Images } from "lucide-react";
 import CategoryCombobox from "@/components/admin/CategoryCombobox";
+import { STATIONS, effectiveStation } from "@/lib/station";
 
 const MAX_EXTRA_IMAGES = 4;
 
@@ -14,9 +15,10 @@ interface ProductFormProps {
   onSave: (data: Partial<IProduct>) => Promise<void>;
   onCancel: () => void;
   saving?: boolean;
+  showStation?: boolean;
 }
 
-export default function ProductForm({ initial, onSave, onCancel, saving }: ProductFormProps) {
+export default function ProductForm({ initial, onSave, onCancel, saving, showStation }: ProductFormProps) {
   const [form, setForm] = useState({
     name:         initial?.name         ?? "",
     description:  initial?.description  ?? "",
@@ -26,6 +28,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving }: Produ
     image:        initial?.image        ?? "",
     category:     initial?.category     ?? "",
     menuSection:  initial?.menuSection  ?? "panaderia",
+    station:      effectiveStation(initial ?? {}),
     available:    initial?.available    ?? true,
     featured:     initial?.featured     ?? false,
     delivery:     initial?.delivery     ?? false,
@@ -230,6 +233,24 @@ export default function ProductForm({ initial, onSave, onCancel, saving }: Produ
           ))}
         </div>
       </div>
+
+      {/* Estación de preparación (comandas) */}
+      {showStation && (
+        <div>
+          <label className="block text-sm font-medium text-brand-dark mb-2">Estación de preparación</label>
+          <div className="flex gap-2">
+            {STATIONS.map((st) => (
+              <button key={st} type="button" onClick={() => setForm({ ...form, station: st })}
+                className={`flex-1 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                  form.station === st ? "border-brand-pink bg-brand-pink/10 text-brand-pink" : "border-brand-muted text-brand-dark/50 hover:border-brand-pink/40"
+                }`}>
+                {st === "cocina" ? "🍳 Cocina" : st === "bebidas" ? "🥤 Bebidas" : "Ninguna"}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-brand-dark/50 mt-1">Define a qué impresora va el ítem cuando se toma una comanda. &quot;Ninguna&quot; no se imprime.</p>
+        </div>
+      )}
 
       {/* Stock */}
       <div>

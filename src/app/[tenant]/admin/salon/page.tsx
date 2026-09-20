@@ -9,9 +9,10 @@ import {
   DndContext, useDraggable, PointerSensor, useSensor, useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { useRouter, usePathname } from "next/navigation";
 import {
   Plus, Minus, Maximize2, Trash2, X, Eye, Settings2, Loader2, CalendarCheck, Users, Clock,
-  ArrowRight, ArrowDown, Map as MapIcon, List as ListIcon,
+  ArrowRight, ArrowDown, Map as MapIcon, List as ListIcon, UtensilsCrossed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,6 +25,7 @@ import {
   type TableStatus,
 } from "@/lib/tableStatus";
 import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaConfig";
+import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -48,6 +50,10 @@ interface SalonTable {
   dirtyAt: string | null;
   cleanedAt?: string | null;
   cleanedBy?: string;
+  openCount?: number;
+  activeAvgMinutes?: number | null;
+  oldestSentAt?: string | null;
+  waiterNames?: string[];
 }
 
 interface SalonWall {
@@ -117,7 +123,23 @@ function rectSeatPositions(seats: number, W: number, H: number, inset: number, o
   return pts;
 }
 
-function TableVisual({ table, selected }: { table: SalonTable; selected?: boolean }) {
+function MinutesBadge({ badge }: { badge: { minutes: number; level: BadgeLevel } }) {
+  const bg = badge.level === "alert" ? "#dc2626" : badge.level === "warn" ? "#f59e0b" : "#16a34a";
+  const color = badge.level === "warn" ? "#1a1a2e" : "#ffffff";
+  return (
+    <div style={{
+      position: "absolute", top: -6, right: -6, zIndex: 5,
+      minWidth: 22, height: 22, padding: "0 6px", borderRadius: 11,
+      background: bg, color, fontSize: 11, fontWeight: 700,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      boxShadow: "0 1px 3px rgba(0,0,0,.3)",
+    }}>
+      {badge.minutes}′
+    </div>
+  );
+}
+
+function TableVisual({ table, selected, badge }: { table: SalonTable; selected?: boolean; badge?: { minutes: number; level: BadgeLevel } }) {
   const { bg, border } = STATUS_COLORS[table.status];
 
   if (table.shape === "barstool") {
@@ -134,7 +156,7 @@ function TableVisual({ table, selected }: { table: SalonTable; selected?: boolea
             {table.label || "•"}
           </span>
         </div>
-        {/* FASE 3: badge de minutos (activeAvgMinutes) en position:absolute top:-6 right:-6 zIndex:5 */}
+        {badge && <MinutesBadge badge={badge} />}
       </div>
     );
   }
@@ -167,7 +189,7 @@ function TableVisual({ table, selected }: { table: SalonTable; selected?: boolea
           {table.label || "?"}
         </span>
       </div>
-      {/* FASE 3: badge de minutos (activeAvgMinutes) en position:absolute top:-6 right:-6 zIndex:5 */}
+      {badge && <MinutesBadge badge={badge} />}
     </div>
   );
 }
@@ -194,11 +216,12 @@ function WallVisual({ wall, selected }: { wall: SalonWall; selected?: boolean })
 
 // ── Draggable Table ───────────────────────────────────────────────────────────
 
-function DraggableTable({ table, isDesignMode, isSelected, onClick }: {
+function DraggableTable({ table, isDesignMode, isSelected, onClick, badge }: {
   table: SalonTable;
   isDesignMode: boolean;
   isSelected: boolean;
   onClick: () => void;
+  badge?: { minutes: number; level: BadgeLevel };
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `t-${table._id}`,
@@ -219,7 +242,7 @@ function DraggableTable({ table, isDesignMode, isSelected, onClick }: {
       {...(isDesignMode ? { ...listeners, ...attributes } : {})}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
     >
-      <TableVisual table={table} selected={isSelected} />
+      <TableVisual table={table} selected={isSelected} badge={badge} />
     </div>
   );
 }
@@ -333,11 +356,12 @@ function DraggableWall({ wall, isDesignMode, isSelected, onClick, onResizeLive, 
 
 // ── Table List (mobile) ──────────────────────────────────────────────────────
 
-function TableList({ tables, onSelect }: { tables: SalonTable[]; onSelect: (t: SalonTable) => void }) {
+function TableList({ tables, onSelect, thresholds }: { tables: SalonTable[]; onSelect: (t: SalonTable) => void; thresholds: ComandaConfigData }) {
   const sorted = [...tables].sort((a, b) => {
     const byStatus = TABLE_STATUS_ORDER[a.status] - TABLE_STATUS_ORDER[b.status];
     if (byStatus !== 0) return byStatus;
-    // FASE 3: dentro de cada estado, ordenar por activeAvgMinutes desc
+    const byMinutes = (b.activeAvgMinutes ?? -1) - (a.activeAvgMinutes ?? -1);
+    if (byMinutes !== 0) return byMinutes;
     const na = Number(a.label), nb = Number(b.label);
     if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
     if (Number.isNaN(na) && !Number.isNaN(nb)) return 1;
@@ -362,6 +386,7 @@ function TableList({ tables, onSelect }: { tables: SalonTable[]; onSelect: (t: S
           : t.status === "por_limpiar"
             ? minutesSince(t.dirtyAt)
             : null;
+        const badge = t.activeAvgMinutes != null ? { minutes: t.activeAvgMinutes, level: badgeLevel(t.activeAvgMinutes, thresholds) } : null;
         return (
           <button key={t._id} onClick={() => onSelect(t)}
             className="w-full flex items-center gap-3 px-4 py-3 bg-white border-b border-brand-muted text-left active:bg-brand-muted/40">
@@ -373,13 +398,23 @@ function TableList({ tables, onSelect }: { tables: SalonTable[]; onSelect: (t: S
               <p className="text-xs text-brand-dark/50">
                 {t.shape === "barstool" ? "Banqueta individual" : `${t.seats} sillas`}
                 {t.statusNote && ` · ${t.statusNote}`}
+                {!!t.openCount && ` · ${t.openCount} comanda${t.openCount === 1 ? "" : "s"}`}
+                {!!t.waiterNames?.length && ` · ${t.waiterNames.join(", ")}`}
               </p>
             </div>
-            <div className="text-right shrink-0">
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: meta.bg }}>
-                {meta.label}
-              </span>
-              {minutes !== null && <p className="text-[11px] text-brand-dark/40 mt-0.5">hace {minutes} min</p>}
+            <div className="text-right shrink-0 flex items-center gap-1.5">
+              {badge && (
+                <span className="px-1.5 py-0.5 rounded-full text-[11px] font-bold"
+                  style={{ background: badge.level === "alert" ? "#dc2626" : badge.level === "warn" ? "#f59e0b" : "#16a34a", color: badge.level === "warn" ? "#1a1a2e" : "#fff" }}>
+                  {badge.minutes}′
+                </span>
+              )}
+              <div>
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: meta.bg }}>
+                  {meta.label}
+                </span>
+                {minutes !== null && <p className="text-[11px] text-brand-dark/40 mt-0.5">hace {minutes} min</p>}
+              </div>
             </div>
           </button>
         );
@@ -392,6 +427,9 @@ function TableList({ tables, onSelect }: { tables: SalonTable[]; onSelect: (t: S
 
 export default function SalonPage() {
   const session = useAdminSession();
+  const router = useRouter();
+  const pathname = usePathname();
+  const slug = pathname.split("/")[1];
   const canManage = session.role === "admin" || session.role === "cajero";
   const isMobile = useMediaQuery("(max-width: 767px)");
   const mobileUi = session.isPremium && isMobile;
@@ -403,8 +441,7 @@ export default function SalonPage() {
   const [walls, setWalls]   = useState<SalonWall[]>([]);
   const [activeAreaId, setActiveAreaId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  // FASE 3: umbrales para el badge de minutos
-  const [, setLiveConfig] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
+  const [liveConfig, setLiveConfig] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
 
   // Mobile view state
   const [view, setView] = useState<"map" | "list">("map");
@@ -946,7 +983,7 @@ export default function SalonPage() {
       <div className="flex-1 flex overflow-hidden min-h-0">
 
         {mobileUi && view === "list" ? (
-          <TableList tables={visibleTables} onSelect={openTable} />
+          <TableList tables={visibleTables} onSelect={openTable} thresholds={liveConfig} />
         ) : (
           /* Canvas */
           <div
@@ -1005,6 +1042,9 @@ export default function SalonPage() {
                           ? selectTable(t)
                           : openTable(t)
                         }
+                        badge={effectiveMode === "operation" && t.activeAvgMinutes != null
+                          ? { minutes: t.activeAvgMinutes, level: badgeLevel(t.activeAvgMinutes, liveConfig) }
+                          : undefined}
                       />
                     ))}
                   </div>
@@ -1420,6 +1460,26 @@ export default function SalonPage() {
                     <span>
                       {actionTable.status === "ocupada" ? "Ocupada" : "Por limpiar"} hace {actionMinutes} min
                     </span>
+                  </div>
+                )}
+
+                {session.isPremium && (
+                  <div className="space-y-2">
+                    {!!actionTable.openCount && (
+                      <p className="text-sm text-brand-dark/60">
+                        Comandas: {actionTable.openCount} abierta{actionTable.openCount === 1 ? "" : "s"}
+                        {actionTable.activeAvgMinutes != null && ` · promedio ${actionTable.activeAvgMinutes}′`}
+                        {!!actionTable.waiterNames?.length && ` · ${actionTable.waiterNames.join(", ")}`}
+                      </p>
+                    )}
+                    <Button className="w-full" onClick={() => router.push(`/${slug}/admin/salon/${actionTable._id}/comanda`)}>
+                      <UtensilsCrossed className="w-4 h-4 mr-1" /> Tomar comanda
+                    </Button>
+                    {!!actionTable.openCount && (
+                      <Button variant="secondary" className="w-full" onClick={() => router.push(`/${slug}/admin/salon/${actionTable._id}/comanda`)}>
+                        Ver comandas ({actionTable.openCount})
+                      </Button>
+                    )}
                   </div>
                 )}
 

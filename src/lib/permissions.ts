@@ -90,6 +90,7 @@ export const ROUTE_FEATURES: Record<string, Feature> = {
   configuracion:    "configuracion",
   perfil:           "perfil",
   usuarios:         "usuarios",
+  comandas:         "comandas",
 };
 
 export function featureForPath(pathname: string, base: string): Feature | null {

@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { isStation } from "@/lib/station";
 
 function parseBool(val: unknown, fallback: boolean): boolean {
   if (typeof val === "boolean") return val;
@@ -85,6 +86,9 @@ export async function POST(request: NextRequest) {
     const menuSectionRaw = String(get(row, "seccion_menu", "menuSection") ?? "").trim().toLowerCase();
     const menuSection = VALID_SECTIONS.includes(menuSectionRaw) ? menuSectionRaw : "panaderia";
 
+    const stationRaw = String(get(row, "estacion", "station") ?? "").trim().toLowerCase();
+    const station = isStation(stationRaw) ? stationRaw : (menuSection === "bebidas" ? "bebidas" : "cocina");
+
     // Toppings: string separado por "|" o array
     let toppings: string[] = [];
     const tRaw = get(row, "toppings", "ingredientes");
@@ -102,6 +106,7 @@ export async function POST(request: NextRequest) {
       cost:         parseNum(get(row, "precio_costo", "cost"), 0),
       category,
       menuSection,
+      station,
       image:        String(get(row, "imagen", "image") ?? ""),
       toppings,
       stock:        parseNum(get(row, "stock"), 0),
