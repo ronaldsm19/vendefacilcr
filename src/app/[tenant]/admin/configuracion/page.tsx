@@ -265,8 +265,18 @@ export default function ConfiguracionPage() {
   const [savedComanda, setSavedComanda] = useState(false);
   const [comandaError, setComandaError] = useState<string | null>(null);
 
+  // ── Sale delete password state (Fase 7) ───────────────────────────
+  const [saleDeleteConfigured, setSaleDeleteConfigured] = useState(false);
+  const [loadingSaleDeletePw, setLoadingSaleDeletePw] = useState(true);
+  const [newSaleDeletePw, setNewSaleDeletePw] = useState("");
+  const [confirmSaleDeletePw, setConfirmSaleDeletePw] = useState("");
+  const [savingSaleDeletePw, setSavingSaleDeletePw] = useState(false);
+  const [removingSaleDeletePw, setRemovingSaleDeletePw] = useState(false);
+  const [saleDeletePwError, setSaleDeletePwError] = useState<string | null>(null);
+  const [savedSaleDeletePw, setSavedSaleDeletePw] = useState(false);
+
   // ── Tab state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "ticket" | "comandas">("marca");
+  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "ticket" | "comandas" | "caja">("marca");
 
   // ── Categories state ─────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
@@ -333,6 +343,12 @@ export default function ConfiguracionPage() {
     fetch("/api/admin/comanda-config")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setComandaConfig(readComandaConfig(d)); });
+
+    // Contraseña de eliminación de ventas — nunca trae la contraseña, solo si está configurada
+    fetch("/api/admin/sale-delete-password")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setSaleDeleteConfigured(!!d.configured); })
+      .finally(() => setLoadingSaleDeletePw(false));
   }, []);
 
   // ── Handlers: logo ───────────────────────────────────────────────
@@ -593,6 +609,50 @@ export default function ConfiguracionPage() {
     } finally { setSavingComanda(false); }
   }
 
+  // ── Handlers: sale delete password (Fase 7) ───────────────────────
+  async function handleSaveSaleDeletePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setSaleDeletePwError(null);
+    if (newSaleDeletePw.length < 4) {
+      setSaleDeletePwError("La contraseña debe tener al menos 4 caracteres.");
+      return;
+    }
+    if (newSaleDeletePw !== confirmSaleDeletePw) {
+      setSaleDeletePwError("Las contraseñas no coinciden.");
+      return;
+    }
+    setSavingSaleDeletePw(true);
+    try {
+      const res = await fetch("/api/admin/sale-delete-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newSaleDeletePw }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSaleDeletePwError(data.error ?? "No se pudo guardar"); return; }
+      setSaleDeleteConfigured(true);
+      setNewSaleDeletePw("");
+      setConfirmSaleDeletePw("");
+      setSavedSaleDeletePw(true);
+      setTimeout(() => setSavedSaleDeletePw(false), 3000);
+    } finally { setSavingSaleDeletePw(false); }
+  }
+
+  async function handleRemoveSaleDeletePassword() {
+    setSaleDeletePwError(null);
+    setRemovingSaleDeletePw(true);
+    try {
+      const res = await fetch("/api/admin/sale-delete-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSaleDeletePwError(data.error ?? "No se pudo quitar"); return; }
+      setSaleDeleteConfigured(false);
+    } finally { setRemovingSaleDeletePw(false); }
+  }
+
   // ── Handlers: categories ─────────────────────────────────────────
   async function handleAddCategory(e: React.FormEvent) {
     e.preventDefault();
@@ -646,6 +706,7 @@ export default function ConfiguracionPage() {
     { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
     { key: "comandas", label: "Comandas", icon: "⏱️", title: "Comandas",                 desc: "Umbrales de tiempo para las mesas con comandas activas." },
     { key: "ticket",   label: "Ticket",   icon: "🧾", title: "Ticket electrónico",        desc: "Datos que aparecen en tus tickets impresos." },
+    { key: "caja",     label: "Caja",     icon: "🔒", title: "Caja",                     desc: "Contraseña para autorizar la eliminación de ventas." },
   ] as const;
 
   const TABS = ALL_TABS.filter((t) => t.key !== "comandas" || showComandas);
@@ -1847,6 +1908,57 @@ export default function ConfiguracionPage() {
           </section>
         </form>
         <div className="mt-6"><PrintQueueSection /></div>
+      </div>}
+
+      {/* ── TAB: CAJA ── Contraseña de eliminación de ventas ─────────── */}
+      {activeTab === "caja" && <div className="max-w-xl">
+        <form onSubmit={handleSaveSaleDeletePassword}>
+          <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
+            <div>
+              <h2 className="font-semibold text-brand-dark text-lg">Contraseña de eliminación de ventas</h2>
+              <p className="text-sm text-brand-dark/50 mt-0.5">
+                Se pide en Pedidos y ventas para autorizar el borrado de una venta ya registrada.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-brand-dark/50">Estado:</span>
+              {loadingSaleDeletePw ? (
+                <span className="text-brand-dark/40">Cargando...</span>
+              ) : saleDeleteConfigured ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-medium">
+                  <Check className="w-3.5 h-3.5" /> Configurada
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-orange-50 text-orange-500 font-medium">Sin configurar</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Nueva contraseña</label>
+                <input type="password" value={newSaleDeletePw}
+                  onChange={(e) => setNewSaleDeletePw(e.target.value)}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-brand-dark/60 mb-1">Confirmar contraseña</label>
+                <input type="password" value={confirmSaleDeletePw}
+                  onChange={(e) => setConfirmSaleDeletePw(e.target.value)}
+                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink" />
+              </div>
+            </div>
+            <p className="text-xs text-brand-dark/50">Mínimo 4 caracteres. Viaja por HTTPS; el servidor la guarda cifrada (bcrypt).</p>
+            {saleDeletePwError && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{saleDeletePwError}</p>}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button type="submit" disabled={savingSaleDeletePw}>{savingSaleDeletePw ? "Guardando..." : "Guardar contraseña"}</Button>
+              {saleDeleteConfigured && (
+                <Button type="button" variant="outline" disabled={removingSaleDeletePw} onClick={handleRemoveSaleDeletePassword}>
+                  {removingSaleDeletePw ? "Quitando..." : "Quitar contraseña"}
+                </Button>
+              )}
+              {savedSaleDeletePw && <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium"><Check className="w-4 h-4" /> Guardado</span>}
+            </div>
+          </section>
+        </form>
       </div>}
 
           </div>
