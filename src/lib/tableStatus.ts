@@ -99,10 +99,15 @@ export function computeTableStatusFromComandas(
   return null;
 }
 
-/** Minutos enteros transcurridos desde `since` (ISO o Date) hasta `now`. null si no hay fecha. */
+/**
+ * Minutos transcurridos desde `since` (ISO o Date) hasta `now`, redondeados — no truncados —
+ * para que coincidan con el badge de comandas (`activeAvgMinutes`, que también redondea). Con
+ * `since === now` da el mismo número que ese badge en vez de ir sistemáticamente un minuto atrás.
+ * null si no hay fecha.
+ */
 export function minutesSince(since: Date | string | null | undefined, now: Date = new Date()): number | null {
   if (!since) return null;
   const t = new Date(since).getTime();
   if (Number.isNaN(t)) return null;
-  return Math.max(0, Math.floor((now.getTime() - t) / 60000));
+  return Math.max(0, Math.round((now.getTime() - t) / 60000));
 }

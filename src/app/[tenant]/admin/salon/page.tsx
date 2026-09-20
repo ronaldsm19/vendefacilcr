@@ -123,11 +123,15 @@ function rectSeatPositions(seats: number, W: number, H: number, inset: number, o
   return pts;
 }
 
+// Aclara que este número es el reloj de las COMANDAS (cuánto llevan sin servir), no el de
+// cuánto lleva ocupada la mesa — son dos cosas distintas y pueden no coincidir.
+const COMANDA_BADGE_TITLE = "Comandas sin servir: minutos desde que se enviaron (no es el tiempo que lleva ocupada la mesa)";
+
 function MinutesBadge({ badge }: { badge: { minutes: number; level: BadgeLevel } }) {
   const bg = badge.level === "alert" ? "#dc2626" : badge.level === "warn" ? "#f59e0b" : "#16a34a";
   const color = badge.level === "warn" ? "#1a1a2e" : "#ffffff";
   return (
-    <div style={{
+    <div title={COMANDA_BADGE_TITLE} style={{
       position: "absolute", top: -6, right: -6, zIndex: 5,
       minWidth: 22, height: 22, padding: "0 6px", borderRadius: 11,
       background: bg, color, fontSize: 11, fontWeight: 700,
@@ -356,7 +360,7 @@ function DraggableWall({ wall, isDesignMode, isSelected, onClick, onResizeLive, 
 
 // ── Table List (mobile) ──────────────────────────────────────────────────────
 
-function TableList({ tables, onSelect, thresholds }: { tables: SalonTable[]; onSelect: (t: SalonTable) => void; thresholds: ComandaConfigData }) {
+function TableList({ tables, onSelect, thresholds, now }: { tables: SalonTable[]; onSelect: (t: SalonTable) => void; thresholds: ComandaConfigData; now: Date }) {
   const sorted = [...tables].sort((a, b) => {
     const byStatus = TABLE_STATUS_ORDER[a.status] - TABLE_STATUS_ORDER[b.status];
     if (byStatus !== 0) return byStatus;
@@ -382,9 +386,9 @@ function TableList({ tables, onSelect, thresholds }: { tables: SalonTable[]; onS
       {sorted.map((t) => {
         const meta = TABLE_STATUS_META[t.status];
         const minutes = t.status === "ocupada"
-          ? minutesSince(t.occupiedAt)
+          ? minutesSince(t.occupiedAt, now)
           : t.status === "por_limpiar"
-            ? minutesSince(t.dirtyAt)
+            ? minutesSince(t.dirtyAt, now)
             : null;
         const badge = t.activeAvgMinutes != null ? { minutes: t.activeAvgMinutes, level: badgeLevel(t.activeAvgMinutes, thresholds) } : null;
         return (
@@ -404,7 +408,7 @@ function TableList({ tables, onSelect, thresholds }: { tables: SalonTable[]; onS
             </div>
             <div className="text-right shrink-0 flex items-center gap-1.5">
               {badge && (
-                <span className="px-1.5 py-0.5 rounded-full text-[11px] font-bold"
+                <span title={COMANDA_BADGE_TITLE} className="px-1.5 py-0.5 rounded-full text-[11px] font-bold"
                   style={{ background: badge.level === "alert" ? "#dc2626" : badge.level === "warn" ? "#f59e0b" : "#16a34a", color: badge.level === "warn" ? "#1a1a2e" : "#fff" }}>
                   {badge.minutes}′
                 </span>
@@ -442,6 +446,11 @@ export default function SalonPage() {
   const [activeAreaId, setActiveAreaId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveConfig, setLiveConfig] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
+  // "Ahora" del servidor en el último poll: los minutos de "Ocupada hace"/"Por limpiar hace" se
+  // calculan contra este valor (no contra `new Date()` del navegador) para que coincidan con el
+  // badge de comandas, que ya usa el `now` del servidor — de lo contrario el desfase entre cuándo
+  // llegó la respuesta y cuándo se pinta el render sumaba minutos de diferencia entre los dos.
+  const [liveNow, setLiveNow] = useState<Date>(new Date());
 
   // Mobile view state
   const [view, setView] = useState<"map" | "list">("map");
@@ -495,6 +504,7 @@ export default function SalonPage() {
     setAreas(loadedAreas);
     setTables(liveRes.tables ?? []);
     setLiveConfig(liveRes.comandaConfig ?? DEFAULT_COMANDA_CONFIG);
+    if (liveRes.now) setLiveNow(new Date(liveRes.now));
     setWalls(wallsRes.walls ?? []);
     setActiveAreaId(prev => prev ?? loadedAreas[0]?._id ?? null);
     setLoading(false);
@@ -509,6 +519,7 @@ export default function SalonPage() {
     setAreas(d.areas ?? []);
     setTables(d.tables ?? []);
     setLiveConfig(d.comandaConfig ?? DEFAULT_COMANDA_CONFIG);
+    if (d.now) setLiveNow(new Date(d.now));
     setActiveAreaId(prev => prev ?? d.areas?.[0]?._id ?? null);
   }, []);
 
@@ -890,9 +901,9 @@ export default function SalonPage() {
   const hasSelection   = !!selectedTable || !!selectedWall;
 
   const actionMinutes = actionTable?.status === "ocupada"
-    ? minutesSince(actionTable.occupiedAt)
+    ? minutesSince(actionTable.occupiedAt, liveNow)
     : actionTable?.status === "por_limpiar"
-      ? minutesSince(actionTable.dirtyAt)
+      ? minutesSince(actionTable.dirtyAt, liveNow)
       : null;
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -983,7 +994,7 @@ export default function SalonPage() {
       <div className="flex-1 flex overflow-hidden min-h-0">
 
         {mobileUi && view === "list" ? (
-          <TableList tables={visibleTables} onSelect={openTable} thresholds={liveConfig} />
+          <TableList tables={visibleTables} onSelect={openTable} thresholds={liveConfig} now={liveNow} />
         ) : (
           /* Canvas */
           <div
@@ -1466,9 +1477,9 @@ export default function SalonPage() {
                 {session.isPremium && (
                   <div className="space-y-2">
                     {!!actionTable.openCount && (
-                      <p className="text-sm text-brand-dark/60">
+                      <p className="text-sm text-brand-dark/60" title={actionTable.activeAvgMinutes != null ? COMANDA_BADGE_TITLE : undefined}>
                         Comandas: {actionTable.openCount} abierta{actionTable.openCount === 1 ? "" : "s"}
-                        {actionTable.activeAvgMinutes != null && ` · promedio ${actionTable.activeAvgMinutes}′`}
+                        {actionTable.activeAvgMinutes != null && ` · ${actionTable.activeAvgMinutes}′ sin servir`}
                         {!!actionTable.waiterNames?.length && ` · ${actionTable.waiterNames.join(", ")}`}
                       </p>
                     )}
