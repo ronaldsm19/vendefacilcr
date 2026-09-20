@@ -7,8 +7,9 @@ import OrderForm from "@/components/admin/OrderForm";
 import Pagination from "@/components/admin/Pagination";
 import PeriodFilter, { getRange, PeriodMode } from "@/components/admin/PeriodFilter";
 import { IOrder } from "@/models/Order";
-import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer } from "lucide-react";
+import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle } from "lucide-react";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
+import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -86,6 +87,10 @@ export default function AdminOrdersPage() {
   const [businessName, setBusinessName] = useState("");
   const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
 
+  // Reimpresión térmica por fila (nunca afecta a otras filas)
+  const [printStates, setPrintStates] = useState<Record<string, "checking" | "printing" | "success" | "error">>({});
+  const [printBanner, setPrintBanner] = useState<string | null>(null);
+
   // POS sale edit
   const [editSale, setEditSale]         = useState<FullSale | null>(null);
   const [savingSale, setSavingSale]     = useState(false);
@@ -160,12 +165,13 @@ export default function AdminOrdersPage() {
     await load();
   }
 
-  async function handleReprint(item: VentaItem) {
-    const saleRes = await fetch(`/api/admin/sales/${item.id}`).then((r) => r.json());
+  /** GET la venta y arma el SaleTicketData; null si no existe. No dispara ninguna impresión. */
+  async function fetchSaleTicketData(id: string): Promise<SaleTicketData | null> {
+    const saleRes = await fetch(`/api/admin/sales/${id}`).then((r) => r.json());
     const s = saleRes.sale;
-    if (!s) return;
+    if (!s) return null;
     const saleNumber = String(s._id).slice(-6).toUpperCase();
-    const ticketData: SaleTicketData = {
+    return {
       businessName,
       ticketNumber: s.ticketNumber,
       saleNumber,
@@ -183,7 +189,51 @@ export default function AdminOrdersPage() {
       mixedPayment: s.mixedPayment,
       notes: s.notes,
     };
-    await saleTicket(ticketData, ticketConfig);
+  }
+
+  async function handleDownloadPdf(item: VentaItem) {
+    const data = await fetchSaleTicketData(item.id);
+    if (!data) return;
+    await saleTicket(data, ticketConfig);
+  }
+
+  /**
+   * Imprime en la térmica (sin abrir la gaveta) el tiquete de una venta ya guardada.
+   * Estado por fila (nunca global): imprimir una no afecta a las demás. Reusado por
+   * el botón "Reimprimir en térmica" y por el auto-print tras editar una venta.
+   */
+  async function runThermalPrint(id: string) {
+    setPrintStates((p) => ({ ...p, [id]: "checking" }));
+    const health = await checkAgent();
+    if (!health) {
+      setPrintStates((p) => ({ ...p, [id]: "error" }));
+      setPrintBanner(`Venta #${id.slice(-6).toUpperCase()}: el agente de impresión no responde en esta computadora.`);
+      return;
+    }
+    setPrintStates((p) => ({ ...p, [id]: "printing" }));
+    try {
+      const data = await fetchSaleTicketData(id);
+      if (!data) throw new Error("No se pudo cargar la venta para imprimir");
+      const result = await printReceipt(buildSalePayload(data, ticketConfig, false));
+      if (!result.ok) {
+        const detalle = result.detalles?.errores?.length ? `: ${result.detalles.errores.join("; ")}` : "";
+        throw new Error(`${result.mensaje}${detalle}`);
+      }
+      setPrintStates((p) => ({ ...p, [id]: "success" }));
+      setTimeout(() => setPrintStates((p) => {
+        const next = { ...p };
+        delete next[id];
+        return next;
+      }), 2000);
+    } catch (err) {
+      setPrintStates((p) => ({ ...p, [id]: "error" }));
+      const saleLabel = `Venta #${id.slice(-6).toUpperCase()}`;
+      setPrintBanner(`${saleLabel}: ${err instanceof Error ? err.message : "Error de conexión con el agente"}`);
+    }
+  }
+
+  async function handleThermalReprint(item: VentaItem) {
+    await runThermalPrint(item.id);
   }
 
   async function openSaleEdit(id: string) {
@@ -338,6 +388,19 @@ export default function AdminOrdersPage() {
         )}
       </div>
 
+      {/* Aviso de impresión térmica (descartable) */}
+      {printBanner && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <p>{printBanner}</p>
+          </div>
+          <button type="button" onClick={() => setPrintBanner(null)} className="shrink-0 text-red-400 hover:text-red-600 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div className="text-brand-dark/40 text-sm">Cargando...</div>
@@ -410,11 +473,27 @@ export default function AdminOrdersPage() {
                         {item.source === "pos" && (
                           <>
                             <button
-                              onClick={() => handleReprint(item)}
-                              title="Reimprimir ticket"
+                              onClick={() => handleDownloadPdf(item)}
+                              title="Descargar PDF"
                               className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-blue-500 transition-colors cursor-pointer"
                             >
-                              <Printer className="w-4 h-4" />
+                              <FileText className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleThermalReprint(item)}
+                              disabled={printStates[item.id] === "checking" || printStates[item.id] === "printing"}
+                              title="Reimprimir en térmica"
+                              className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-blue-500 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {printStates[item.id] === "checking" || printStates[item.id] === "printing" ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : printStates[item.id] === "success" ? (
+                                <Check className="w-4 h-4 text-emerald-600" />
+                              ) : printStates[item.id] === "error" ? (
+                                <AlertCircle className="w-4 h-4 text-red-500" />
+                              ) : (
+                                <Printer className="w-4 h-4" />
+                              )}
                             </button>
                             <button
                               onClick={() => openSaleEdit(item.id)}
