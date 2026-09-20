@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
   // solo de acá, así que se excluye a mano antes de responder.
   const tenantResponse = tenant.toObject();
   delete tenantResponse.printAgentToken;
+  delete tenantResponse.saleDeletePasswordHash;
 
   return NextResponse.json({ tenant: tenantResponse, tempPassword }, { status: 201 });
 }
