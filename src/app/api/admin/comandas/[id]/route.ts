@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Comanda, type IComandaItem } from "@/models/Comanda";
@@ -141,11 +141,10 @@ export async function PUT(
     return NextResponse.json({ error: "La comanda fue modificada por otra persona. Recargá e intentá de nuevo." }, { status: 409 });
   }
 
-  try {
-    await enqueueComandaPrint(updated);
-  } catch (err) {
-    console.error("[PUT /api/admin/comandas/[id]] enqueueComandaPrint failed:", err);
-  }
+  after(async () => {
+    try { await enqueueComandaPrint(updated); }
+    catch (err) { console.error("[printQueue] comanda editada", err); }
+  });
 
   return NextResponse.json({ comanda: updated });
 }

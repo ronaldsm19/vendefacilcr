@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Comanda } from "@/models/Comanda";
@@ -223,11 +223,10 @@ export async function POST(request: NextRequest) {
     { $set: buildStatusUpdate(table.status, "ocupada", { now: sentAt }) }
   );
 
-  try {
-    await enqueueComandaPrint(comanda.toObject());
-  } catch (err) {
-    console.error("[POST /api/admin/comandas] enqueueComandaPrint failed:", err);
-  }
+  after(async () => {
+    try { await enqueueComandaPrint(comanda.toObject()); }
+    catch (err) { console.error("[printQueue] comanda nueva", err); }
+  });
 
   return NextResponse.json({ comanda }, { status: 201 });
 }
