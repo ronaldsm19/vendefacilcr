@@ -695,7 +695,11 @@ function PosPageInner() {
       }
       localStorage.removeItem(DRAFT_KEY);
       window.dispatchEvent(new CustomEvent("pos-cart-update"));
-      setTimeout(() => { setShowSuccess(false); setLastTableNote(null); setAutoPrintError(null); setNextTableToCharge(null); }, 10000);
+      setTimeout(() => { setShowSuccess(false); setLastTableNote(null); setAutoPrintError(null); }, 10000);
+      // "Cobrar a la siguiente persona" no se ata al toast de 10s: entre cobrar, dar el
+      // vuelto y decidir si reimprime, el cajero fácilmente tarda más que eso. Se le da
+      // su propia ventana, bastante más generosa, para que no desaparezca de golpe.
+      setTimeout(() => setNextTableToCharge(null), 120000);
     } finally {
       setSaving(false);
     }
@@ -1120,7 +1124,7 @@ function PosPageInner() {
                 {autoPrintError}
               </div>
             )}
-            {showSuccess && nextTableToCharge && (
+            {nextTableToCharge && (
               <Button type="button" variant="secondary" className="w-full" onClick={chargeNextPerson}>
                 Cobrar a la siguiente persona
               </Button>
@@ -1451,7 +1455,7 @@ function PosPageInner() {
                 {autoPrintError}
               </div>
             )}
-            {showSuccess && nextTableToCharge && (
+            {nextTableToCharge && (
               <Button type="button" variant="secondary" className="w-full" onClick={chargeNextPerson}>
                 Cobrar a la siguiente persona
               </Button>
