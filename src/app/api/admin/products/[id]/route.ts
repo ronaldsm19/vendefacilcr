@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { isStation } from "@/lib/station";
 
 export async function GET(
   request: NextRequest,
@@ -31,6 +32,10 @@ export async function PUT(
   const { id } = await params;
   await connectToDatabase();
   const body = await request.json();
+
+  if (body.station !== undefined && !isStation(body.station)) {
+    return NextResponse.json({ error: "Estación inválida" }, { status: 400 });
+  }
 
   const product = await Product.findOneAndUpdate(
     { _id: id, tenantId: session.tenantId },

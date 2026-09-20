@@ -20,6 +20,7 @@ import {
   UserCircle,
   LayoutGrid,
   Users,
+  ClipboardList,
 } from "lucide-react";
 import { can, ROLE_LABELS, type Role, type Feature } from "@/lib/permissions";
 
@@ -36,6 +37,7 @@ function buildNavItems(base: string): { href: string; label: string; icon: typeo
     { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck,    feature: "pos" },
     { href: `${base}/cierre-de-caja`,   label: "Cierre de caja", icon: BookCheck,       feature: "cierre-de-caja" },
     { href: `${base}/salon`,            label: "Salón",           icon: LayoutGrid,     feature: "salon" },
+    { href: `${base}/comandas`,         label: "Comandas",       icon: ClipboardList,   feature: "comandas", premium: true },
     { href: `${base}/usuarios`,         label: "Usuarios",       icon: Users,           feature: "usuarios", premium: true },
     { href: `${base}/configuracion`,    label: "Configuración",  icon: Settings,        feature: "configuracion" },
     { href: `${base}/perfil`,           label: "Perfil",         icon: UserCircle,      feature: "perfil" },
