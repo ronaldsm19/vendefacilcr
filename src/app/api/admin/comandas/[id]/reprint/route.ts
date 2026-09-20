@@ -28,7 +28,7 @@ export async function POST(
   }
 
   try {
-    const jobs = await enqueueComandaPrint(comanda);
+    const jobs = await enqueueComandaPrint(comanda, { isReprint: true });
     return NextResponse.json({ ok: true, jobs: jobs.map((j) => ({ id: String(j._id), station: j.station })) });
   } catch (err) {
     console.error("[POST /api/admin/comandas/[id]/reprint]", err);
