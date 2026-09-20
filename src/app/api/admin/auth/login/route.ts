@@ -10,32 +10,45 @@ import { isPremiumPlan, homePathFor, ERROR_PREMIUM, type Role } from "@/lib/perm
 
 // ── In-memory rate limiter ──────────────────────────────────────
 const attempts = new Map<string, { count: number; resetAt: number }>();
-const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutos
+
+// Login admin (correo + contraseña): normalmente una sola persona por tenant,
+// así que el límite por IP se queda en 5 cada 15 min, como siempre.
+const MAX_ATTEMPTS_IP_ADMIN = 5;
+// Login staff (usuario + PIN): se revisa PRIMERO el límite por (tenant, usuario)
+// —5 cada 15 min, el que le importa a quien se equivocó de PIN— y solo si eso
+// no lo bloquea se revisa el límite por IP. Ese límite por IP se sube a 30: en
+// un restaurante todo el equipo comparte una sola conexión a internet, y con
+// PINs de 4 dígitos escritos en el celular, 5 errores repartidos entre varios
+// meseros dejarían afuera al local entero (dueño incluido) por 15 minutos, y
+// eso pasaría a diario. 30 sigue frenando un ataque amplio sin castigar el uso
+// normal de un local con varias personas cobrando.
+const MAX_ATTEMPTS_USER = 5;
+const MAX_ATTEMPTS_IP_STAFF = 30;
 
 function getIp(req: NextRequest) {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 }
 
-function isBlocked(ip: string): boolean {
-  const rec = attempts.get(ip);
+function isBlocked(key: string, max: number): boolean {
+  const rec = attempts.get(key);
   if (!rec) return false;
-  if (Date.now() > rec.resetAt) { attempts.delete(ip); return false; }
-  return rec.count >= MAX_ATTEMPTS;
+  if (Date.now() > rec.resetAt) { attempts.delete(key); return false; }
+  return rec.count >= max;
 }
 
-function recordFail(ip: string) {
+function recordFail(key: string) {
   const now = Date.now();
-  const rec = attempts.get(ip);
+  const rec = attempts.get(key);
   if (!rec || now > rec.resetAt) {
-    attempts.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
   } else {
     rec.count++;
   }
 }
 
-function clearAttempts(ip: string) {
-  attempts.delete(ip);
+function clearAttempts(key: string) {
+  attempts.delete(key);
 }
 // ───────────────────────────────────────────────────────────────
 
@@ -68,13 +81,6 @@ interface IStaffUserLean {
 export async function POST(request: NextRequest) {
   const ip = getIp(request);
 
-  if (isBlocked(ip)) {
-    return NextResponse.json(
-      { error: "Demasiados intentos fallidos. Intenta de nuevo en 15 minutos." },
-      { status: 429 }
-    );
-  }
-
   try {
     const body = await request.json();
     const login = String(body.login ?? body.email ?? "").trim();
@@ -94,12 +100,21 @@ export async function POST(request: NextRequest) {
 
     // ── Rama ADMIN: correo + contraseña ──────────────────────────
     if (login.includes("@")) {
+      const adminIpKey = `admin-ip:${ip}`;
+
+      if (isBlocked(adminIpKey, MAX_ATTEMPTS_IP_ADMIN)) {
+        return NextResponse.json(
+          { error: "Demasiados intentos fallidos. Intenta de nuevo en 15 minutos." },
+          { status: 429 }
+        );
+      }
+
       const email = login.toLowerCase();
 
       const user = await User.findOne({ email }).lean() as IUserLean | null;
 
       if (!user) {
-        recordFail(ip);
+        recordFail(adminIpKey);
         if (tenantSlug) {
           Tenant.findOne({ slug: tenantSlug }).lean().then((t) => {
             if (t) AccessLog.create({ tenantId: (t as ITenantLean)._id.toString(), tenantSlug, userEmail: email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
@@ -111,7 +126,7 @@ export async function POST(request: NextRequest) {
 
       const passwordMatch = await bcrypt.compare(password, user.password);
       if (!passwordMatch) {
-        recordFail(ip);
+        recordFail(adminIpKey);
         if (user.tenantId) {
           Tenant.findById(user.tenantId).lean().then((t) => {
             if (t) AccessLog.create({ tenantId: (t as ITenantLean)._id.toString(), tenantSlug: (t as ITenantLean).slug, userEmail: user.email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
@@ -136,13 +151,13 @@ export async function POST(request: NextRequest) {
 
       // Validate that the URL tenant matches the user's tenant
       if (tenantSlug && tenantSlug !== tenant.slug) {
-        recordFail(ip);
+        recordFail(adminIpKey);
         AccessLog.create({ tenantId: tenant._id.toString(), tenantSlug: tenant.slug, userEmail: user.email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
         await new Promise((r) => setTimeout(r, 500));
         return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
       }
 
-      clearAttempts(ip);
+      clearAttempts(adminIpKey);
 
       // Record successful login — non-blocking
       AccessLog.create({
@@ -187,6 +202,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Rama STAFF: usuario + PIN ─────────────────────────────────
+    const staffIpKey = `staff-ip:${ip}`;
+
     if (!tenantSlug) {
       return NextResponse.json({ error: "Tenant requerido" }, { status: 400 });
     }
@@ -195,22 +212,33 @@ export async function POST(request: NextRequest) {
     const pin = String(password);
 
     if (!USERNAME_RE.test(username) || !PIN_RE.test(pin)) {
-      recordFail(ip);
+      recordFail(staffIpKey);
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
     const tenant = await Tenant.findOne({ slug: tenantSlug }).select("_id slug status plan").lean() as ITenantLean | null;
     if (!tenant) {
-      recordFail(ip);
+      recordFail(staffIpKey);
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
-    const key = `${tenant._id}:${username}`;
-    if (isBlocked(key)) {
+    const userKey = `staff-user:${tenant._id}:${username}`;
+
+    // Primero el límite específico de la cuenta (más chico), y solo si eso no
+    // bloquea, el límite compartido de la IP (más grande). Así una persona que
+    // se equivoca de PIN ve el mensaje de SU cuenta, no uno genérico que suene
+    // a que el sistema entero quedó bloqueado para todo el local.
+    if (isBlocked(userKey, MAX_ATTEMPTS_USER)) {
       return NextResponse.json(
         { error: "Demasiados intentos fallidos para este usuario. Intentá de nuevo en 15 minutos." },
+        { status: 429 }
+      );
+    }
+    if (isBlocked(staffIpKey, MAX_ATTEMPTS_IP_STAFF)) {
+      return NextResponse.json(
+        { error: "Demasiados intentos fallidos. Intenta de nuevo en 15 minutos." },
         { status: 429 }
       );
     }
@@ -226,15 +254,15 @@ export async function POST(request: NextRequest) {
     const staff = await StaffUser.findOne({ tenantId: tenant._id, username }).lean() as IStaffUserLean | null;
 
     if (!staff || !staff.active || !(await bcrypt.compare(pin, staff.pinHash))) {
-      recordFail(ip);
-      recordFail(key);
+      recordFail(staffIpKey);
+      recordFail(userKey);
       AccessLog.create({ tenantId: tenant._id.toString(), tenantSlug: tenant.slug, userEmail: username, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
-    clearAttempts(ip);
-    clearAttempts(key);
+    clearAttempts(staffIpKey);
+    clearAttempts(userKey);
 
     AccessLog.create({
       tenantId:   tenant._id.toString(),
