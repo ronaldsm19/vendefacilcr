@@ -249,13 +249,17 @@ export default function AdminOrdersPage() {
     if (!editSale) return;
     setSavingSale(true);
     try {
-      await fetch(`/api/admin/sales/${editSale._id}`, {
+      const id = editSale._id;
+      await fetch(`/api/admin/sales/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editSale),
       });
       setEditSale(null);
       await load();
+      // La venta ya quedó guardada; la impresión es best-effort y no bloquea el
+      // guardado. Si falla, el banner y el botón de la fila permiten reintentar.
+      runThermalPrint(id);
     } finally { setSavingSale(false); }
   }
 
