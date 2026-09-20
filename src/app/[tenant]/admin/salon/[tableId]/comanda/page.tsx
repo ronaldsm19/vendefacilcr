@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  ChevronLeft, Search, Plus, Minus, StickyNote, Loader2,
+  ChevronLeft, Search, Plus, Minus, StickyNote, Loader2, CheckCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAdminSession } from "@/components/admin/SessionContext";
@@ -13,6 +13,7 @@ import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaCon
 import { STATION_LABELS, type ProductStation } from "@/lib/station";
 import ComandaCard, { type ComandaRow } from "@/components/admin/ComandaCard";
 import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
+import ServeAllDialog from "@/components/admin/ServeAllDialog";
 
 interface CatalogProduct {
   _id: string;
@@ -81,6 +82,7 @@ export default function TomarComandaPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [versionConflict, setVersionConflict] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<ComandaRow | null>(null);
+  const [showServeAll, setShowServeAll] = useState(false);
 
   const load = useCallback(async () => {
     if (!isPremium) { setLoading(false); return; }
@@ -277,6 +279,7 @@ export default function TomarComandaPage() {
   }
 
   const totalItems = lines.reduce((s, l) => s + l.quantity, 0);
+  const pendingToServe = openComandas.filter((c) => c.status === "enviada");
   const categories = ["Todas", ...Array.from(new Set(catalog.map((p) => p.category)))];
   const visibleProducts = catalog.filter((p) =>
     (activeCategory === "Todas" || p.category === activeCategory) &&
@@ -504,6 +507,13 @@ export default function TomarComandaPage() {
           )
         ) : (
           <div className="p-4 space-y-3 pb-24">
+            {pendingToServe.length > 1 && (
+              <div className="flex justify-end">
+                <Button size="sm" variant="secondary" onClick={() => setShowServeAll(true)}>
+                  <CheckCheck className="w-3.5 h-3.5 mr-1" /> Servir todas ({pendingToServe.length})
+                </Button>
+              </div>
+            )}
             {openComandas.length === 0 ? (
               <p className="text-center text-sm text-brand-dark/40 py-6">Sin comandas abiertas en esta mesa</p>
             ) : (
@@ -537,6 +547,15 @@ export default function TomarComandaPage() {
           comanda={cancelTarget}
           onClose={() => setCancelTarget(null)}
           onDone={() => { setCancelTarget(null); refreshOpen(); }}
+        />
+      )}
+
+      {showServeAll && (
+        <ServeAllDialog
+          tableId={tableId}
+          pending={pendingToServe}
+          onClose={() => setShowServeAll(false)}
+          onDone={() => { setShowServeAll(false); refreshOpen(); }}
         />
       )}
     </div>
