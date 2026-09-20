@@ -6,7 +6,7 @@ import { Product } from "@/models/Product";
 import { getSession, requireRole } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
 import { effectiveStation } from "@/lib/station";
-import { enqueueComandaPrint } from "@/lib/printQueue";
+import { enqueueComandaPrint, changedStations } from "@/lib/printQueue";
 
 interface ItemInput {
   productId?: unknown;
@@ -141,8 +141,10 @@ export async function PUT(
     return NextResponse.json({ error: "La comanda fue modificada por otra persona. Recargá e intentá de nuevo." }, { status: 409 });
   }
 
+  const stationsToPrint = changedStations(comanda.items, updated.items);
   after(async () => {
-    try { await enqueueComandaPrint(updated); }
+    if (stationsToPrint.length === 0) return; // solo cambiaron datos que no le importan a cocina/bebidas (cliente, notas)
+    try { await enqueueComandaPrint(updated, { stations: stationsToPrint }); }
     catch (err) { console.error("[printQueue] comanda editada", err); }
   });
 
