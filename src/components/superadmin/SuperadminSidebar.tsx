@@ -33,12 +33,12 @@ export default function SuperadminSidebar({ onClose }: { onClose?: () => void })
 
   return (
     <aside
-      className="w-60 h-full min-h-screen flex flex-col"
+      className="w-60 h-screen flex flex-col overflow-hidden"
       style={{ background: "#06060A", borderRight: "1px solid rgba(255,255,255,0.06)" }}
     >
-      {/* Brand */}
+      {/* Brand — altura fija, nunca se achica ni se scrollea */}
       <div
-        className="px-6 py-6 flex items-center justify-between"
+        className="shrink-0 px-6 py-6 flex items-center justify-between"
         style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
       >
         <div className="flex items-center gap-2.5">
@@ -63,8 +63,9 @@ export default function SuperadminSidebar({ onClose }: { onClose?: () => void })
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+      {/* Nav — única zona que se scrollea (min-h-0 permite que este hijo flex se encoja
+          por debajo de su contenido en vez de estirar todo el <aside>) */}
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-0.5">
         {navItems.map((item) => {
           const isActive =
             item.href === "/superadmin"
@@ -88,8 +89,8 @@ export default function SuperadminSidebar({ onClose }: { onClose?: () => void })
         })}
       </nav>
 
-      {/* Logout */}
-      <div className="px-3 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+      {/* Logout — altura fija, nunca se achica ni se scrollea */}
+      <div className="shrink-0 px-3 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-white hover:bg-white/8 transition-all cursor-pointer"
