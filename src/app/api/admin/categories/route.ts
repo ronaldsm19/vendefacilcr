@@ -12,11 +12,26 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
 
   await connectToDatabase();
-  let cats = await Category.find({ tenantId: session.tenantId }).sort({ label: 1 }).lean();
+  let cats = await Category.find({ tenantId: session.tenantId }).sort({ order: 1, label: 1 }).lean();
   if (cats.length === 0) {
     await Category.insertMany(DEFAULTS.map((label) => ({ label, tenantId: session.tenantId })));
-    cats = await Category.find({ tenantId: session.tenantId }).sort({ label: 1 }).lean();
+    cats = await Category.find({ tenantId: session.tenantId }).sort({ order: 1, label: 1 }).lean();
   }
+
+  // Migración idempotente: mientras nadie haya tocado el orden (todas en 0, el default del
+  // schema), les asigna un correlativo siguiendo el alfabético que ya tenían, para que nadie
+  // note un cambio hasta que el admin arrastre algo. Una vez que se reordena de verdad, esto
+  // deja de aplicar (ya no todas quedan en 0).
+  if (cats.length > 0 && cats.every((c) => !c.order)) {
+    const alphabetical = [...cats].sort((a, b) => a.label.localeCompare(b.label));
+    await Category.bulkWrite(
+      alphabetical.map((c, index) => ({
+        updateOne: { filter: { _id: c._id, tenantId: session.tenantId }, update: { $set: { order: index } } },
+      }))
+    );
+    cats = alphabetical.map((c, index) => ({ ...c, order: index }));
+  }
+
   return NextResponse.json({ categories: JSON.parse(JSON.stringify(cats)) });
 }
 
@@ -40,6 +55,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ category: JSON.parse(JSON.stringify(existing)) });
   }
 
-  const cat = await Category.create({ tenantId: session.tenantId, label: label.trim() });
+  const last = await Category.findOne({ tenantId: session.tenantId }).sort({ order: -1 }).select("order").lean();
+  const nextOrder = (last?.order ?? -1) + 1;
+  const cat = await Category.create({ tenantId: session.tenantId, label: label.trim(), order: nextOrder });
   return NextResponse.json({ category: JSON.parse(JSON.stringify(cat)) }, { status: 201 });
 }
