@@ -118,8 +118,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   return (
     <AdminSessionProvider value={session}>
       <div className="flex h-screen overflow-hidden bg-brand-muted/20">
-        {/* Desktop sidebar */}
-        <div className="hidden lg:flex shrink-0 h-screen overflow-y-auto">
+        {/* Desktop sidebar — el propio AdminSidebar maneja su altura y su scroll interno */}
+        <div className="hidden lg:flex shrink-0 h-screen">
           <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} isPremium={session.isPremium} userName={session.name} />
         </div>
 
