@@ -6,6 +6,7 @@ import {
   Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
 } from "recharts";
 import StatsCard from "@/components/admin/StatsCard";
+import ServiceReportSection from "@/components/admin/ServiceReportSection";
 import { TrendingUp, TrendingDown, DollarSign, Percent } from "lucide-react";
 
 interface FinanceData {
@@ -253,6 +254,8 @@ export default function AdminFinancesPage() {
               </ResponsiveContainer>
             </div>
           )}
+
+          <ServiceReportSection />
         </>
       )}
     </div>
