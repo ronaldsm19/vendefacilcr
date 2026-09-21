@@ -14,7 +14,9 @@ import { Product } from "@/models/Product";
 import { SiteSettings } from "@/models/SiteSettings";
 import { Tenant } from "@/models/Tenant";
 import { AccessLog } from "@/models/AccessLog";
+import { Category } from "@/models/Category";
 import { SeedProduct } from "@/data/seed";
+import type { CategoryOrderEntry } from "@/lib/categories";
 
 async function getTenant(slug: string) {
   try {
@@ -59,6 +61,15 @@ async function getProducts(tenantId: string): Promise<(SeedProduct & { _id?: str
   }
 }
 
+async function getCategories(tenantId: string): Promise<CategoryOrderEntry[]> {
+  try {
+    const cats = await Category.find({ tenantId }).select("label order").lean();
+    return JSON.parse(JSON.stringify(cats)) as CategoryOrderEntry[];
+  } catch {
+    return [];
+  }
+}
+
 async function getSettings(tenantId: string) {
   try {
     const settings = await SiteSettings.findOne({ tenantId }).lean();
@@ -85,9 +96,10 @@ export default async function TenantStorefront({
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   AccessLog.create({ tenantId: tenant._id, tenantSlug: slug, ip, userAgent: hdrs.get("user-agent") ?? "", success: true, event: "visit", path: `/${slug}` }).catch(() => {});
 
-  const [products, settings] = await Promise.all([
+  const [products, settings, categories] = await Promise.all([
     getProducts(tenant._id),
     getSettings(tenant._id),
+    getCategories(tenant._id),
   ]);
 
   const featuredProducts = products.filter(
@@ -144,7 +156,7 @@ export default async function TenantStorefront({
         badge={settings?.hero?.badge || undefined}
       />
       <BestSellersSection products={featuredProducts} whatsappNumber={tenant.whatsappNumber} />
-      <ProductsSection products={products} whatsappNumber={tenant.whatsappNumber} />
+      <ProductsSection products={products} whatsappNumber={tenant.whatsappNumber} categories={categories} />
       <TrustSection />
       <AboutSection aboutData={settings?.about} whatsappNumber={tenant.whatsappNumber} />
       <Footer
