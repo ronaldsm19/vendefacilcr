@@ -97,9 +97,9 @@ export default function AdminSidebar({
   const displayName = tenantName || tenant;
 
   return (
-    <aside className="w-60 h-full min-h-screen bg-brand-dark flex flex-col">
-      {/* Brand */}
-      <div className="px-6 py-6 border-b border-white/10 flex items-center justify-between">
+    <aside className="w-60 h-screen bg-brand-dark flex flex-col overflow-hidden">
+      {/* Brand — altura fija, nunca se achica ni se scrollea */}
+      <div className="shrink-0 px-6 py-6 border-b border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           {logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -123,8 +123,11 @@ export default function AdminSidebar({
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      {/* Nav — única zona que se scrollea; min-h-0 es necesario para que un hijo flex
+          pueda encogerse por debajo de su contenido y así respetar overflow-y-auto en vez
+          de simplemente estirar todo el <aside> (lo que dejaba la marca o "Cerrar sesión"
+          fuera de pantalla, sin aviso, en pantallas de poca altura o con muchos ítems). */}
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1">
         {navItems.map((item) => {
           const isActive =
             item.href === base
@@ -154,8 +157,8 @@ export default function AdminSidebar({
         })}
       </nav>
 
-      {/* Logout */}
-      <div className="px-3 py-4 border-t border-white/10">
+      {/* Logout — altura fija, nunca se achica ni se scrollea */}
+      <div className="shrink-0 px-3 py-4 border-t border-white/10">
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-white hover:bg-white/8 transition-all cursor-pointer"

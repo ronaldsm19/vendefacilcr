@@ -50,8 +50,8 @@ export default function SuperadminShell({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#06060A" }}>
-      {/* Desktop sidebar */}
-      <div className="hidden md:flex shrink-0 h-screen overflow-y-auto">
+      {/* Desktop sidebar — el propio SuperadminSidebar maneja su altura y su scroll interno */}
+      <div className="hidden md:flex shrink-0 h-screen">
         <SuperadminSidebar />
       </div>
 
