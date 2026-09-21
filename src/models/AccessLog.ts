@@ -8,7 +8,7 @@ export interface IAccessLog {
   ip: string;
   userAgent?: string;
   success: boolean;
-  event: "login" | "visit" | "sale_delete";
+  event: "login" | "visit" | "sale_delete" | "work_shift_adjust";
   path?: string;
   createdAt: Date;
 }
@@ -21,7 +21,7 @@ const AccessLogSchema = new Schema(
     ip:         { type: String, required: true },
     userAgent:  { type: String },
     success:    { type: Boolean, required: true },
-    event:      { type: String, enum: ["login", "visit", "sale_delete"], default: "login" },
+    event:      { type: String, enum: ["login", "visit", "sale_delete", "work_shift_adjust"], default: "login" },
     path:       { type: String },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
