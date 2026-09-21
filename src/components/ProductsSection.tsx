@@ -4,10 +4,12 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import ProductCard from "@/components/ProductCard";
 import { SeedProduct } from "@/data/seed";
+import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 
 interface ProductsSectionProps {
   products: (SeedProduct & { _id?: string })[];
   whatsappNumber?: string;
+  categories?: CategoryOrderEntry[];
 }
 
 // Backward-compat display labels for old slug-based categories
@@ -17,23 +19,15 @@ const legacyLabels: Record<string, string> = {
   especial: "Edición Especial",
 };
 
-function ProductsGrid({ products, whatsappNumber }: ProductsSectionProps) {
+function ProductsGrid({ products, whatsappNumber, categories: categoryOrder }: ProductsSectionProps) {
   const [activeCategory, setActiveCategory] = useState("all");
 
-  // Derive tabs from actual product categories (handles both old slugs and new labels)
+  // Derive tabs from actual product categories (handles both old slugs and new labels),
+  // en el orden que configuró el admin — las que no están configuradas (o vienen de un slug
+  // viejo) quedan al final, alfabéticas.
   const categories = (() => {
-    const seen = new Set<string>();
-    const items: { key: string; label: string }[] = [];
-    for (const p of products) {
-      if (!seen.has(p.category)) {
-        seen.add(p.category);
-        items.push({
-          key: p.category,
-          label: legacyLabels[p.category] ?? p.category,
-        });
-      }
-    }
-    items.sort((a, b) => a.label.localeCompare(b.label));
+    const orderedKeys = orderCategories(categoryOrder ?? [], products.map((p) => p.category));
+    const items = orderedKeys.map((key) => ({ key, label: legacyLabels[key] ?? key }));
     return [{ key: "all", label: "Todos" }, ...items];
   })();
 
@@ -95,7 +89,7 @@ function ProductsGrid({ products, whatsappNumber }: ProductsSectionProps) {
   );
 }
 
-export default function ProductsSection({ products, whatsappNumber }: ProductsSectionProps) {
+export default function ProductsSection({ products, whatsappNumber, categories }: ProductsSectionProps) {
   return (
     <section id="productos" className="py-24 px-6 bg-surface-alt">
       <div className="max-w-6xl mx-auto">
@@ -148,7 +142,7 @@ export default function ProductsSection({ products, whatsappNumber }: ProductsSe
           </motion.p>
         </div>
 
-        <ProductsGrid products={products} whatsappNumber={whatsappNumber} />
+        <ProductsGrid products={products} whatsappNumber={whatsappNumber} categories={categories} />
       </div>
     </section>
   );

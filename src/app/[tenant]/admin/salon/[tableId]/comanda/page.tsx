@@ -14,6 +14,7 @@ import { STATION_LABELS, type ProductStation } from "@/lib/station";
 import ComandaCard, { type ComandaRow } from "@/components/admin/ComandaCard";
 import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
 import ServeAllDialog from "@/components/admin/ServeAllDialog";
+import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 
 interface CatalogProduct {
   _id: string;
@@ -62,6 +63,7 @@ export default function TomarComandaPage() {
   const [areaName, setAreaName] = useState("");
   const [comandaConfig, setComandaConfig] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
+  const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
   const [nextNumber, setNextNumber] = useState(1);
   const [openComandas, setOpenComandas] = useState<ComandaRow[]>([]);
 
@@ -87,9 +89,10 @@ export default function TomarComandaPage() {
   const load = useCallback(async () => {
     if (!isPremium) { setLoading(false); return; }
     setLoading(true);
-    const [liveRes, catalogRes, nextRes, openRes] = await Promise.all([
+    const [liveRes, catalogRes, categoriesRes, nextRes, openRes] = await Promise.all([
       fetch("/api/admin/salon/live").then((r) => r.json()),
       fetch("/api/admin/comandas/catalog").then((r) => r.json()),
+      fetch("/api/admin/categories").then((r) => r.json()).catch(() => ({})),
       fetch("/api/admin/comandas/next-number").then((r) => r.json()),
       fetch(`/api/admin/comandas?tableId=${tableId}&open=1&limit=50`).then((r) => r.json()),
     ]);
@@ -99,6 +102,7 @@ export default function TomarComandaPage() {
     setAreaName(area?.name ?? "");
     setComandaConfig(liveRes.comandaConfig ?? DEFAULT_COMANDA_CONFIG);
     setCatalog(catalogRes.products ?? []);
+    setCategoryOrder(categoriesRes.categories ?? []);
     setNextNumber(nextRes.nextNumber ?? 1);
     const open = openRes.comandas ?? [];
     setOpenComandas(open);
@@ -280,7 +284,7 @@ export default function TomarComandaPage() {
 
   const totalItems = lines.reduce((s, l) => s + l.quantity, 0);
   const pendingToServe = openComandas.filter((c) => c.status === "enviada");
-  const categories = ["Todas", ...Array.from(new Set(catalog.map((p) => p.category)))];
+  const categories = ["Todas", ...orderCategories(categoryOrder, catalog.map((p) => p.category))];
   const visibleProducts = catalog.filter((p) =>
     (activeCategory === "Todas" || p.category === activeCategory) &&
     (!search.trim() || p.name.toLowerCase().includes(search.toLowerCase()))

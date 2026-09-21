@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import {
-  Upload, X, Loader2, Check, Plus, Trash2, Phone, Palette,
+  Upload, X, Loader2, Check, Plus, Trash2, Phone, Palette, GripVertical, ChevronUp, ChevronDown, AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TicketPreview from "@/components/admin/TicketPreview";
@@ -14,10 +14,84 @@ import {
 } from "@/lib/ticket";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, verticalListSortingStrategy, useSortable, arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface Category {
   _id: string;
   label: string;
+  order: number;
+}
+
+function SortableCategoryRow({
+  category, onDelete, onMoveUp, onMoveDown, isFirst, isLast, deleting,
+}: {
+  category: Category;
+  onDelete: (id: string) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
+  isFirst: boolean;
+  isLast: boolean;
+  deleting: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: category._id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 px-3 py-2 rounded-xl border border-brand-muted bg-brand-muted/10"
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="p-1 -ml-1 text-brand-dark/30 hover:text-brand-dark/60 cursor-grab active:cursor-grabbing touch-none shrink-0"
+        aria-label="Arrastrar para reordenar"
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+      <span className="flex-1 min-w-0 text-sm text-brand-dark truncate">{category.label}</span>
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          type="button"
+          onClick={() => onMoveUp(category._id)}
+          disabled={isFirst}
+          className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/30 hover:text-brand-dark disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          aria-label="Subir"
+        >
+          <ChevronUp className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onMoveDown(category._id)}
+          disabled={isLast}
+          className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/30 hover:text-brand-dark disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          aria-label="Bajar"
+        >
+          <ChevronDown className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(category._id)}
+          disabled={deleting}
+          className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors disabled:opacity-50"
+        >
+          {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 interface HeroData {
@@ -284,6 +358,10 @@ export default function ConfiguracionPage() {
   const [newCatLabel, setNewCatLabel] = useState("");
   const [addingCat, setAddingCat] = useState(false);
   const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
+  const [savingCatOrder, setSavingCatOrder] = useState(false);
+  const [catOrderError, setCatOrderError] = useState<string | null>(null);
+  const [failedCatOrder, setFailedCatOrder] = useState<Category[] | null>(null);
+  const catSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const fileRefs = [
     useRef<HTMLInputElement>(null),
@@ -667,9 +745,9 @@ export default function ConfiguracionPage() {
       });
       const d = await r.json();
       if (d.category) {
-        setCategories((prev) =>
-          [...prev, d.category].sort((a, b) => a.label.localeCompare(b.label))
-        );
+        // Una categoría nueva ya viene con el order correcto (al final) desde la API —
+        // no hay que reordenar acá, solo agregarla donde corresponde.
+        setCategories((prev) => [...prev, d.category]);
         setNewCatLabel("");
       }
     } finally {
@@ -687,6 +765,54 @@ export default function ConfiguracionPage() {
     }
   }
 
+  // ── Handlers: orden de categorías ─────────────────────────────────
+  async function saveCategoryOrder(newList: Category[]) {
+    const previous = categories;
+    setCategories(newList);
+    setSavingCatOrder(true);
+    setCatOrderError(null);
+    setFailedCatOrder(null);
+    try {
+      const res = await fetch("/api/admin/categories/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: newList.map((c) => c._id) }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCategories(previous);
+        setFailedCatOrder(newList);
+        setCatOrderError(data.error ?? "No se pudo guardar el orden");
+      }
+    } catch {
+      setCategories(previous);
+      setFailedCatOrder(newList);
+      setCatOrderError("No se pudo guardar el orden — revisá tu conexión");
+    } finally {
+      setSavingCatOrder(false);
+    }
+  }
+
+  function retryCategoryOrder() {
+    if (failedCatOrder) saveCategoryOrder(failedCatOrder);
+  }
+
+  function moveCategory(id: string, direction: -1 | 1) {
+    const index = categories.findIndex((c) => c._id === id);
+    const target = index + direction;
+    if (index === -1 || target < 0 || target >= categories.length) return;
+    saveCategoryOrder(arrayMove(categories, index, target));
+  }
+
+  function handleCategoryDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = categories.findIndex((c) => c._id === active.id);
+    const newIndex = categories.findIndex((c) => c._id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    saveCategoryOrder(arrayMove(categories, oldIndex, newIndex));
+  }
+
   const saleTicketRows = useMemo(() => buildSaleRows(MOCK_SALE, ticketConfig), [ticketConfig]);
   const cashCloseTicketRows = useMemo(() => buildCashCloseRows(MOCK_CASH_CLOSE, ticketConfig), [ticketConfig]);
 
@@ -702,7 +828,7 @@ export default function ConfiguracionPage() {
     { key: "marca",    label: "Marca",    icon: "🎨", title: "Identidad de marca",      desc: "Logo, colores, tipografía y apariencia visual de tu tienda." },
     { key: "portada",  label: "Portada",  icon: "🏠", title: "Portada y contacto",       desc: "Texto principal de la tienda y redes sociales." },
     { key: "nosotros", label: "Nosotros", icon: "👥", title: "Sección Nosotros",          desc: "Texto e imágenes de la sección \"Nosotros\" en tu tienda." },
-    { key: "productos",label: "Productos",icon: "📦", title: "Categorías de productos",  desc: "Administrá las categorías para organizar tu catálogo." },
+    { key: "productos",label: "Productos",icon: "📦", title: "Familias de productos (categorías)",  desc: "Organizá tus familias de productos y el orden en que aparecen." },
     { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
     { key: "comandas", label: "Comandas", icon: "⏱️", title: "Comandas",                 desc: "Umbrales de tiempo para las mesas con comandas activas." },
     { key: "ticket",   label: "Ticket",   icon: "🧾", title: "Ticket electrónico",        desc: "Datos que aparecen en tus tickets impresos." },
@@ -1355,44 +1481,57 @@ export default function ConfiguracionPage() {
       {/* ── TAB: PRODUCTOS ── Categorías ────────────────────────────── */}
       {activeTab === "productos" && <>
 
-      {/* ── Categorías de productos ─────────────────────────────────── */}
+      {/* ── Familias de productos (categorías) ────────────────────────── */}
       <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
-        <div>
-          <h2 className="font-semibold text-brand-dark text-lg">Categorías de productos</h2>
-          <p className="text-sm text-brand-dark/50 mt-0.5">
-            Las categorías aparecen en el formulario de productos para organizar tu catálogo.
-          </p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="font-semibold text-brand-dark text-lg">Familias de productos (categorías)</h2>
+            <p className="text-sm text-brand-dark/50 mt-0.5">
+              Este orden es el que van a ver la caja, la pantalla de comandas del mesero, la
+              página de productos y tu tienda. Arrastrá para reordenar, o usá las flechas.
+            </p>
+          </div>
+          {savingCatOrder && (
+            <span className="flex items-center gap-1.5 text-xs text-brand-dark/40 shrink-0">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Guardando...
+            </span>
+          )}
         </div>
+
+        {catOrderError && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            <span className="flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" /> {catOrderError}</span>
+            <button type="button" onClick={retryCategoryOrder} className="font-semibold underline shrink-0 cursor-pointer">
+              Reintentar
+            </button>
+          </div>
+        )}
 
         {catsLoading ? (
           <div className="flex justify-center py-4">
             <Loader2 className="w-5 h-5 animate-spin text-brand-pink" />
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
             {categories.length === 0 && (
               <p className="text-sm text-brand-dark/40 italic">No hay categorías aún.</p>
             )}
-            {categories.map((cat) => (
-              <div
-                key={cat._id}
-                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-brand-muted bg-brand-muted/10"
-              >
-                <span className="text-sm text-brand-dark">{cat.label}</span>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteCategory(cat._id)}
-                  disabled={deletingCatId === cat._id}
-                  className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors disabled:opacity-50"
-                >
-                  {deletingCatId === cat._id ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-            ))}
+            <DndContext sensors={catSensors} collisionDetection={closestCenter} onDragEnd={handleCategoryDragEnd}>
+              <SortableContext items={categories.map((c) => c._id)} strategy={verticalListSortingStrategy}>
+                {categories.map((cat, index) => (
+                  <SortableCategoryRow
+                    key={cat._id}
+                    category={cat}
+                    onDelete={handleDeleteCategory}
+                    onMoveUp={(id) => moveCategory(id, -1)}
+                    onMoveDown={(id) => moveCategory(id, 1)}
+                    isFirst={index === 0}
+                    isLast={index === categories.length - 1}
+                    deleting={deletingCatId === cat._id}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           </div>
         )}
 
@@ -1401,7 +1540,7 @@ export default function ConfiguracionPage() {
             type="text"
             value={newCatLabel}
             onChange={(e) => setNewCatLabel(e.target.value)}
-            placeholder="Nueva categoría..."
+            placeholder="Nueva familia..."
             className="flex-1 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
           />
           <Button type="submit" disabled={addingCat || !newCatLabel.trim()} size="sm">
