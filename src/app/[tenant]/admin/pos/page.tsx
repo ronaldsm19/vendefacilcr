@@ -14,6 +14,7 @@ import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
+import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
   Dialog,
   DialogContent,
@@ -216,6 +217,7 @@ function PosPageInner() {
 
   // ── Data state ──────────────────────────────────────────────────
   const [products, setProducts]       = useState<ProductRow[]>([]);
+  const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
   const [tableGroups, setTableGroups] = useState<TableGroup[]>([]);
   const [businessName, setBusinessName] = useState("");
   const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
@@ -321,14 +323,16 @@ function PosPageInner() {
   useEffect(() => {
     async function load() {
       try { localStorage.removeItem("pos_cashUser"); } catch {}
-      const [productsRes, configRes, meRes, areasRes, salonTablesRes] = await Promise.all([
+      const [productsRes, categoriesRes, configRes, meRes, areasRes, salonTablesRes] = await Promise.all([
         fetch("/api/admin/products").then((r) => r.json()),
+        fetch("/api/admin/categories").then((r) => r.json()).catch(() => ({})),
         fetch("/api/admin/pos-config").then((r) => r.json()),
         fetch("/api/admin/auth/me").then((r) => r.json()).catch(() => ({})),
         fetch("/api/admin/salon/areas").then((r) => r.json()).catch(() => ({})),
         fetch("/api/admin/salon/tables").then((r) => r.json()).catch(() => ({})),
       ]);
       setProducts((productsRes.products ?? []).filter((p: ProductRow) => p.available));
+      setCategoryOrder(categoriesRes.categories ?? []);
       // `||` (no `??`): si tenantName viene como cadena vacía, igual caemos al
       // slug del tenant, para que el nombre del negocio nunca vaya vacío (el
       // agente de impresión lo exige como obligatorio).
@@ -412,7 +416,7 @@ function PosPageInner() {
   }, [draftLoaded, isPremium]);
 
   // ── Derived ──────────────────────────────────────────────────────
-  const categories = ["todos", ...Array.from(new Set(products.map((p) => p.category).filter(Boolean)))];
+  const categories = ["todos", ...orderCategories(categoryOrder, products.map((p) => p.category))];
   const visibleProducts = activeCategory === "todos"
     ? products
     : products.filter((p) => p.category === activeCategory);

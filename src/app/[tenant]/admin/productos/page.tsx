@@ -14,6 +14,7 @@ import ImportProductsModal from "@/components/admin/ImportProductsModal";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { can } from "@/lib/permissions";
 import { STATIONS, STATION_LABELS, effectiveStation, type ProductStation } from "@/lib/station";
+import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 
 type ProductRow = IProduct & { _id: string; stationAssigned?: boolean };
 
@@ -34,6 +35,7 @@ export default function AdminProductsPage() {
   const canEdit = can(session, "productos:editar");
   const isPremium = session.isPremium;
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -52,9 +54,16 @@ export default function AdminProductsPage() {
   const [migrateResult, setMigrateResult] = useState("");
 
   async function load() {
-    const r = await fetch("/api/admin/products");
+    const [r, catsRes] = await Promise.all([
+      fetch("/api/admin/products"),
+      fetch("/api/admin/categories").catch(() => null),
+    ]);
     const d = await r.json();
     setProducts(d.products ?? []);
+    if (catsRes) {
+      const catsData = await catsRes.json().catch(() => ({}));
+      setCategoryOrder(catsData.categories ?? []);
+    }
     setLoading(false);
   }
 
@@ -93,7 +102,7 @@ export default function AdminProductsPage() {
   function openCreate() { setEditing(null); setShowForm(true); }
   function openEdit(p: ProductRow) { setEditing(p); setShowForm(true); }
 
-  const categories = Array.from(new Set(products.map((p) => p.category))).sort();
+  const categories = orderCategories(categoryOrder, products.map((p) => p.category));
   const unassignedCount = products.filter((p) => p.stationAssigned === false).length;
 
   async function applyStationByCategory() {
