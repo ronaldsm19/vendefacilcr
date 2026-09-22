@@ -1,22 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import { connectToDatabase } from "@/lib/mongodb";
-import { StaffUser, type StaffRole } from "@/models/StaffUser";
-import { WorkShift } from "@/models/WorkShift";
 import { getSession, requireFeature } from "@/lib/auth";
 import { isDesktopRequest } from "@/lib/device";
-import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
-
-const PIN_MAX_ATTEMPTS = 5;
-const PIN_WINDOW_MS = 15 * 60 * 1000;
-
-interface StaffLean {
-  _id: { toString(): string };
-  name: string;
-  role: StaffRole;
-  pinHash: string;
-  active: boolean;
-}
+import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { startShift } from "@/server/services/workShifts";
 
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
@@ -31,8 +17,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await connectToDatabase();
-
   const body = await request.json().catch(() => ({}));
   const staffUserId = typeof body.staffUserId === "string" ? body.staffUserId : "";
   const pin = typeof body.pin === "string" ? body.pin : "";
@@ -40,53 +24,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Falta la persona o el PIN" }, { status: 400 });
   }
 
-  const staff = await StaffUser.findOne({ _id: staffUserId, tenantId: session.tenantId, active: true })
-    .select("name role pinHash active")
-    .lean<StaffLean | null>();
-  if (!staff) {
-    return NextResponse.json({ error: "Personal no encontrado" }, { status: 404 });
-  }
-
-  const rateKey = `shift-pin:${session.tenantId}:${staffUserId}`;
-  if (!(await consumeAttempt(rateKey, PIN_MAX_ATTEMPTS, PIN_WINDOW_MS))) {
-    return NextResponse.json(
-      { error: "Demasiados intentos fallidos. Esperá unos minutos e intentá de nuevo." },
-      { status: 429 }
-    );
-  }
-
-  const pinMatch = await bcrypt.compare(pin, staff.pinHash);
-  if (!pinMatch) {
-    return NextResponse.json({ error: "PIN incorrecto" }, { status: 403 });
-  }
-  await clearAttempts(rateKey);
-
-  const existingOpen = await WorkShift.findOne({
-    tenantId: session.tenantId,
-    staffUserId,
-    status: "abierta",
-  }).lean();
-  if (existingOpen) {
-    return NextResponse.json({ error: "Esta persona ya tiene una jornada abierta" }, { status: 409 });
-  }
-
   try {
-    const shift = await WorkShift.create({
-      tenantId: session.tenantId,
-      staffUserId,
-      staffName: staff.name,
-      staffRole: staff.role,
-      startedAt: new Date(),
-      status: "abierta",
-    });
-    return NextResponse.json(
-      { shift: { _id: shift._id, startedAt: shift.startedAt, staffUserId, staffName: staff.name, staffRole: staff.role } },
-      { status: 201 }
-    );
-  } catch (err: unknown) {
-    if (typeof err === "object" && err !== null && "code" in err && (err as { code?: number }).code === 11000) {
-      return NextResponse.json({ error: "Esta persona ya tiene una jornada abierta" }, { status: 409 });
-    }
-    throw err;
+    const shift = await startShift(session.tenantId, staffUserId, pin);
+    return NextResponse.json({ shift }, { status: 201 });
+  } catch (err) {
+    return serviceErrorResponse(err);
   }
 }
