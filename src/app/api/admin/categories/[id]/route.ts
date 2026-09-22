@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
-import { Category } from "@/models/Category";
 import { getSession, requireFeature } from "@/lib/auth";
+import { deleteCategory } from "@/server/services/categories";
 
 export async function DELETE(
   request: NextRequest,
@@ -13,7 +12,6 @@ export async function DELETE(
   if (denied) return denied;
 
   const { id } = await params;
-  await connectToDatabase();
-  await Category.findByIdAndDelete(id);
+  await deleteCategory(session.tenantId, id);
   return NextResponse.json({ ok: true });
 }

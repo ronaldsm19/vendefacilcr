@@ -14,9 +14,9 @@ import { Product } from "@/models/Product";
 import { SiteSettings } from "@/models/SiteSettings";
 import { Tenant } from "@/models/Tenant";
 import { AccessLog } from "@/models/AccessLog";
-import { Category } from "@/models/Category";
 import { SeedProduct } from "@/data/seed";
 import type { CategoryOrderEntry } from "@/lib/categories";
+import { getCategoryOrder } from "@/server/services/categories";
 
 async function getTenant(slug: string) {
   try {
@@ -63,8 +63,7 @@ async function getProducts(tenantId: string): Promise<(SeedProduct & { _id?: str
 
 async function getCategories(tenantId: string): Promise<CategoryOrderEntry[]> {
   try {
-    const cats = await Category.find({ tenantId }).select("label order").lean();
-    return JSON.parse(JSON.stringify(cats)) as CategoryOrderEntry[];
+    return await getCategoryOrder(tenantId);
   } catch {
     return [];
   }
