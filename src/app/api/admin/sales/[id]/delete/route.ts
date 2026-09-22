@@ -9,28 +9,10 @@ import { Tenant } from "@/models/Tenant";
 import { AccessLog } from "@/models/AccessLog";
 import { getSession, requireFeature } from "@/lib/auth";
 import { syncTableWithComandas } from "@/lib/tableSync";
+import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
 
-// ── Limitador en memoria (mismo patrón que /api/admin/auth/login) ────────────
-const attempts = new Map<string, { count: number; resetAt: number }>();
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutos
 const MAX_ATTEMPTS = 5;
-
-function isBlocked(key: string): boolean {
-  const rec = attempts.get(key);
-  if (!rec) return false;
-  if (Date.now() > rec.resetAt) { attempts.delete(key); return false; }
-  return rec.count >= MAX_ATTEMPTS;
-}
-function recordFail(key: string) {
-  const now = Date.now();
-  const rec = attempts.get(key);
-  if (!rec || now > rec.resetAt) attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-  else rec.count++;
-}
-function clearAttempts(key: string) {
-  attempts.delete(key);
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 interface SaleLean {
   _id: string;
@@ -55,14 +37,6 @@ export async function POST(
   const { id } = await params;
   await connectToDatabase();
 
-  const rateKey = `${session.tenantId}:${session.userId}`;
-  if (isBlocked(rateKey)) {
-    return NextResponse.json(
-      { error: "Demasiados intentos. Esperá unos minutos e intentá de nuevo." },
-      { status: 429 }
-    );
-  }
-
   const body = await request.json().catch(() => ({}));
   const { password } = body as { password?: unknown };
 
@@ -82,12 +56,19 @@ export async function POST(
     return NextResponse.json({ error: "Falta la contraseña" }, { status: 400 });
   }
 
+  const rateKey = `sale-delete:${session.tenantId}:${session.userId}`;
+  if (!(await consumeAttempt(rateKey, MAX_ATTEMPTS, WINDOW_MS))) {
+    return NextResponse.json(
+      { error: "Demasiados intentos. Esperá unos minutos e intentá de nuevo." },
+      { status: 429 }
+    );
+  }
+
   const match = await bcrypt.compare(password, tenant.saleDeletePasswordHash);
   if (!match) {
-    recordFail(rateKey);
     return NextResponse.json({ error: "Contraseña incorrecta" }, { status: 403 });
   }
-  clearAttempts(rateKey);
+  await clearAttempts(rateKey);
 
   const sale = await Sale.findOne({ _id: id, tenantId: session.tenantId }).lean() as SaleLean | null;
   if (!sale) return NextResponse.json({ error: "No encontrado" }, { status: 404 });

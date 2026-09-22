@@ -5,7 +5,10 @@ import { StaffUser, type StaffRole } from "@/models/StaffUser";
 import { WorkShift } from "@/models/WorkShift";
 import { getSession, requireFeature } from "@/lib/auth";
 import { isDesktopRequest } from "@/lib/device";
-import { isPinBlocked, recordPinFailure, clearPinAttempts } from "@/lib/workShiftPinLimiter";
+import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
+
+const PIN_MAX_ATTEMPTS = 5;
+const PIN_WINDOW_MS = 15 * 60 * 1000;
 
 interface StaffLean {
   _id: { toString(): string };
@@ -37,14 +40,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Falta la persona o el PIN" }, { status: 400 });
   }
 
-  const rateKey = `${session.tenantId}:${staffUserId}`;
-  if (isPinBlocked(rateKey)) {
-    return NextResponse.json(
-      { error: "Demasiados intentos fallidos. Esperá unos minutos e intentá de nuevo." },
-      { status: 429 }
-    );
-  }
-
   const staff = await StaffUser.findOne({ _id: staffUserId, tenantId: session.tenantId, active: true })
     .select("name role pinHash active")
     .lean<StaffLean | null>();
@@ -52,12 +47,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Personal no encontrado" }, { status: 404 });
   }
 
+  const rateKey = `shift-pin:${session.tenantId}:${staffUserId}`;
+  if (!(await consumeAttempt(rateKey, PIN_MAX_ATTEMPTS, PIN_WINDOW_MS))) {
+    return NextResponse.json(
+      { error: "Demasiados intentos fallidos. Esperá unos minutos e intentá de nuevo." },
+      { status: 429 }
+    );
+  }
+
   const pinMatch = await bcrypt.compare(pin, staff.pinHash);
   if (!pinMatch) {
-    recordPinFailure(rateKey);
     return NextResponse.json({ error: "PIN incorrecto" }, { status: 403 });
   }
-  clearPinAttempts(rateKey);
+  await clearAttempts(rateKey);
 
   const openShift = await WorkShift.findOne({
     tenantId: session.tenantId,
