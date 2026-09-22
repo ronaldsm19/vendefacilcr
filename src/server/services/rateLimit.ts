@@ -30,7 +30,7 @@ export async function consumeAttempt(key: string, max: number, windowMs: number)
           resetAt: { $cond: [active, "$resetAt", new Date(now.getTime() + windowMs)] },
         },
       }],
-      { upsert: true, new: true, updatePipeline: true }
+      { upsert: true, returnDocument: "after", updatePipeline: true }
     ).select("count").lean<{ count: number }>();
 
   let doc: { count: number } | null;
