@@ -86,13 +86,21 @@ function nonNegative(v: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** El servicio se cobra únicamente en pedidos en el local; en retiro y domicilio nunca. */
+export function appliesService(charges: PosCharges, orderType: OrderType): boolean {
+  return charges.serviceEnabled && orderType === "LOCAL";
+}
+
 /**
- * Impuesto, servicio, propina, envío y total de una venta a partir del subtotal. El monto de la
- * propina lo escribe el cajero; si la propina no está habilitada, vale cero.
+ * Impuesto, servicio, propina, envío y total de una venta a partir del subtotal. El impuesto se
+ * cobra en los tres tipos de pedido; el servicio, solo en LOCAL (en los demás queda apagado y en
+ * cero, así no aparece ni en el resumen ni en el tiquete). El monto de la propina lo escribe el
+ * cajero; si la propina no está habilitada, vale cero.
  */
 export function computeSaleTotals({ subtotal, charges, orderType, tipAmount, deliveryFee }: SaleTotalsInput): SaleTotals {
   const ivaAmount = charges.ivaEnabled ? Math.round((subtotal * charges.ivaRate) / 100) : 0;
-  const serviceAmount = charges.serviceEnabled ? Math.round((subtotal * charges.serviceRate) / 100) : 0;
+  const serviceEnabled = appliesService(charges, orderType);
+  const serviceAmount = serviceEnabled ? Math.round((subtotal * charges.serviceRate) / 100) : 0;
   const tip = charges.tipEnabled ? nonNegative(tipAmount) : 0;
   const delivery = orderType === "EXPRESS" ? nonNegative(deliveryFee) : 0;
   return {
@@ -100,7 +108,7 @@ export function computeSaleTotals({ subtotal, charges, orderType, tipAmount, del
     ivaEnabled: charges.ivaEnabled,
     ivaRate: charges.ivaRate,
     ivaAmount,
-    serviceEnabled: charges.serviceEnabled,
+    serviceEnabled,
     serviceRate: charges.serviceRate,
     serviceAmount,
     tipEnabled: charges.tipEnabled,
