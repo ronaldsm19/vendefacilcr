@@ -310,10 +310,15 @@ export default function TomarComandaPage() {
   const sheetLine = sheetKey ? lines.find((l) => l.key === sheetKey) ?? null : null;
   const pendingToServe = openComandas.filter((c) => c.status === "enviada");
   const categories = ["Todas", ...orderCategories(categoryOrder, catalog.map((p) => p.category))];
-  const visibleProducts = catalog.filter((p) =>
-    (activeCategory === "Todas" || p.category === activeCategory) &&
-    (!search.trim() || p.name.toLowerCase().includes(search.toLowerCase()))
-  );
+  // Con "Todas" se agrupan en el orden de las familias (Configuración → Productos); dentro de cada
+  // familia queda el orden del catálogo, que ya viene por nombre (el sort es estable).
+  const categoryRank = new Map(categories.map((c, i) => [c, i]));
+  const visibleProducts = catalog
+    .filter((p) =>
+      (activeCategory === "Todas" || p.category === activeCategory) &&
+      (!search.trim() || p.name.toLowerCase().includes(search.toLowerCase()))
+    )
+    .sort((a, b) => (categoryRank.get(a.category) ?? categories.length) - (categoryRank.get(b.category) ?? categories.length));
 
   if (!isPremium) {
     return (
