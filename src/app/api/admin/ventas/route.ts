@@ -3,12 +3,18 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { Sale } from "@/models/Sale";
 import { getSession, requireFeature } from "@/lib/auth";
+import { startOfDayCR, endOfDayExclusiveCR } from "@/lib/crDate";
 
+// El rango por defecto (cuando la pantalla no manda from/to) se calcula en hora
+// de Costa Rica. Con los getters locales de Date el servidor, que corre en UTC,
+// devolvía el día corrido seis horas.
 function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+  return startOfDayCR(d);
 }
 function endOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+  // Inclusivo: el último milisegundo del día en Costa Rica, porque las consultas
+  // de este endpoint usan $lte.
+  return new Date(endOfDayExclusiveCR(d).getTime() - 1);
 }
 
 export async function GET(request: NextRequest) {
