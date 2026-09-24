@@ -1,4 +1,4 @@
-import type { LineExtra } from "@/lib/pricing";
+import { extraQty, type LineExtra } from "@/lib/pricing";
 
 interface KitchenLine {
   quantity: number;
@@ -7,14 +7,15 @@ interface KitchenLine {
 }
 
 /**
- * Texto que ve cocina o bebidas debajo de un producto: los extras con su cantidad (nunca el precio)
- * y después la nota del mesero. Ej.: "+ Queso extra x2, + Tocineta x2 — sin cebolla".
+ * Texto que ve cocina o bebidas debajo de un producto: los extras con su cantidad total en esa
+ * línea (porciones por unidad × unidades; nunca el precio) y después la nota del mesero.
+ * Ej.: "+ Queso extra x2, + Tocineta x2 — sin cebolla".
  *
  * Viaja en el campo `nota` del ítem del ticket de comanda, así el contrato con el agente de
  * impresión ({ cantidad, nombre, nota }) no cambia.
  */
 export function kitchenNote(line: KitchenLine): string {
-  const extras = (line.extras ?? []).map((e) => `+ ${e.name} x${line.quantity}`).join(", ");
+  const extras = (line.extras ?? []).map((e) => `+ ${e.name} x${extraQty(e) * line.quantity}`).join(", ");
   const note = (line.note ?? "").trim();
   return [extras, note].filter(Boolean).join(" — ");
 }

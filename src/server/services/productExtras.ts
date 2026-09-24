@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
-import { MAX_EXTRA_NAME, normalizeExtras, type LineExtra } from "@/lib/pricing";
+import { MAX_EXTRA_NAME, MAX_EXTRA_QTY, normalizeExtras, type LineExtra } from "@/lib/pricing";
 
 // Negocios ya migrados en este proceso: después de la primera lectura no se vuelve a consultar.
 const migratedTenants = new Set<string>();
@@ -43,9 +43,10 @@ export async function ensureExtrasMigrated(tenantId: string): Promise<void> {
 }
 
 /**
- * Resuelve los extras que eligió el cliente (por nombre) contra los extras ACTUALES del producto y
- * devuelve la copia congelada con el precio del catálogo; el precio que mande el cliente no se usa.
- * Devuelve null si algún nombre no existe en el producto. Nombres repetidos cuentan una sola vez.
+ * Resuelve los extras que eligió el cliente contra los extras ACTUALES del producto y devuelve la
+ * copia congelada con el precio del catálogo; el precio que mande el cliente no se usa. Cada extra
+ * llega como nombre ("Queso extra" = 1 porción) o como { name, qty }; el mismo nombre repetido suma
+ * porciones. Devuelve null si algún nombre no existe en el producto o las porciones no son válidas.
  */
 export function resolveChosenExtras(productExtras: unknown, chosen: unknown): LineExtra[] | null {
   if (chosen === undefined || chosen === null) return [];
@@ -53,14 +54,15 @@ export function resolveChosenExtras(productExtras: unknown, chosen: unknown): Li
   const catalog = normalizeExtras(productExtras) ?? [];
   const byName = new Map(catalog.map((e) => [e.name, e]));
   const out: LineExtra[] = [];
-  const seen = new Set<string>();
   for (const c of chosen) {
     const name = typeof c === "string" ? c.trim() : typeof c?.name === "string" ? c.name.trim() : "";
+    const qty = typeof c === "string" || c?.qty === undefined ? 1 : c.qty;
     const extra = byName.get(name);
-    if (!extra) return null;
-    if (seen.has(name)) continue;
-    seen.add(name);
-    out.push({ name: extra.name, price: extra.price });
+    if (!extra || !Number.isInteger(qty) || qty < 1) return null;
+    const same = out.find((e) => e.name === name);
+    if (same) same.qty = (same.qty ?? 1) + qty;
+    else out.push({ name: extra.name, price: extra.price, qty });
+    if ((same?.qty ?? qty) > MAX_EXTRA_QTY) return null;
   }
   return out;
 }
