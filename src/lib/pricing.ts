@@ -17,10 +17,20 @@ export function isOrderType(v: unknown): v is OrderType {
  */
 export interface LineExtra {
   name: string;
+  /** Precio de UNA porción del extra. */
   price: number;
+  /** Porciones del extra por unidad de la línea (p. ej. 2 extras de camarones en un plato). Sin dato = 1. */
+  qty?: number;
 }
 
 export const MAX_EXTRA_NAME = 60;
+/** Tope de porciones de un mismo extra en una unidad. */
+export const MAX_EXTRA_QTY = 10;
+
+/** Porciones del extra por unidad (documentos viejos no traen qty: cuentan como 1). */
+export function extraQty(e: Pick<LineExtra, "qty">): number {
+  return e.qty ?? 1;
+}
 
 /** Lo mínimo de una línea de venta, carrito o comanda para calcular su dinero. */
 export interface PricedLine {
@@ -31,8 +41,9 @@ export interface PricedLine {
   extras?: LineExtra[];
 }
 
+/** Lo que suman los extras de UNA unidad: precio × porciones de cada uno. */
 export function extrasTotal(extras: LineExtra[] | undefined): number {
-  return (extras ?? []).reduce((sum, e) => sum + e.price, 0);
+  return (extras ?? []).reduce((sum, e) => sum + e.price * extraQty(e), 0);
 }
 
 /** Precio unitario efectivo: base + suma de los extras de la línea. */
@@ -65,8 +76,9 @@ export function offerLineTotal(
 
 /**
  * Valida y normaliza una lista de extras que llega de afuera (cuerpo de una petición, documento
- * viejo). Devuelve null si algo no es válido: nombre vacío o muy largo, o precio no numérico o
- * negativo. Sin lista, devuelve [].
+ * viejo). Devuelve null si algo no es válido: nombre vacío o muy largo, precio no numérico o
+ * negativo, o porciones fuera de 1..MAX_EXTRA_QTY. El mismo extra repetido se junta sumando sus
+ * porciones. Siempre devuelve `qty`. Sin lista, devuelve [].
  */
 export function normalizeExtras(raw: unknown): LineExtra[] | null {
   if (raw === undefined || raw === null) return [];
@@ -75,16 +87,31 @@ export function normalizeExtras(raw: unknown): LineExtra[] | null {
   for (const e of raw) {
     const name = typeof e?.name === "string" ? e.name.trim() : "";
     const price = e?.price;
+    const qty = e?.qty === undefined || e?.qty === null ? 1 : e.qty;
     if (!name || name.length > MAX_EXTRA_NAME) return null;
     if (typeof price !== "number" || !Number.isFinite(price) || price < 0) return null;
-    out.push({ name, price });
+    if (!Number.isInteger(qty) || qty < 1 || qty > MAX_EXTRA_QTY) return null;
+    const same = out.find((x) => x.name === name && x.price === price);
+    if (same) {
+      const total = extraQty(same) + qty;
+      if (total > MAX_EXTRA_QTY) return null;
+      same.qty = total;
+    } else {
+      out.push({ name, price, qty });
+    }
   }
   return out;
 }
 
 /** Clave estable de un conjunto de extras: dos líneas con la misma clave llevan lo mismo. */
 export function extrasKey(extras: LineExtra[] | undefined): string {
-  return (extras ?? []).map((e) => `${e.name}\u0000${e.price}`).sort().join("\u0001");
+  return (extras ?? []).map((e) => `${e.name}\u0000${e.price}\u0000${extraQty(e)}`).sort().join("\u0001");
+}
+
+/** Texto corto de un extra para pantallas: "Queso extra" o "2× Extra camarones". */
+export function extraLabel(e: LineExtra): string {
+  const q = extraQty(e);
+  return q > 1 ? `${q}× ${e.name}` : e.name;
 }
 
 /** Cobros del punto de venta, fijados por el dueño en Configuración → Caja (Tenant.posConfig). */

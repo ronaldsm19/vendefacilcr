@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCheck, Ban, Pencil, Eye } from "lucide-react";
 import type { IComanda } from "@/models/Comanda";
 import { comandaMinutes, badgeLevel, BADGE_COLORS, type ComandaThresholds } from "@/lib/comandaTime";
+import { extraLabel, extraQty } from "@/lib/pricing";
 
 export type ComandaRow = Omit<IComanda, "sentAt" | "servedAt" | "paidAt" | "cancelledAt" | "createdAt" | "updatedAt"> & {
   sentAt: string;
@@ -76,7 +77,7 @@ export default function ComandaCard({ comanda, thresholds, now, onServe, onCance
               <span className="text-brand-dark">{item.quantity} × {item.productName}</span>
               {item.extras?.map((e) => (
                 <p key={e.name} className="text-xs text-brand-dark/60 pl-4">
-                  + {e.name} <span className="text-brand-dark/40">₡{e.price.toLocaleString("es-CR")}</span>
+                  + {extraLabel(e)} <span className="text-brand-dark/40">₡{(e.price * extraQty(e)).toLocaleString("es-CR")}</span>
                 </p>
               ))}
               {item.note && <p className="text-xs text-brand-dark/60 pl-4">{item.note}</p>}

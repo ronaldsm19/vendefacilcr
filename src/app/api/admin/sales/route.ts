@@ -9,7 +9,8 @@ import { getSession, requireFeature } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
 import { syncTableWithComandas } from "@/lib/tableSync";
 import { computeSaleTotals, isOrderType, readPosCharges, subtotalOf } from "@/lib/pricing";
-import { parseSaleItems } from "@/server/services/saleItems";
+import { checkCatalogPrices, checkComandaLines, parseSaleItems, type SaleItemRecord } from "@/server/services/saleItems";
+import { serviceErrorResponse } from "@/lib/serviceResponse";
 import mongoose from "mongoose";
 
 export async function GET(request: NextRequest) {
@@ -72,20 +73,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Cada línea lleva su copia de los extras; el total de la línea lo calcula el helper compartido.
-  const saleItems = parseSaleItems(items);
-  if (!saleItems) {
+  // Los precios se verifican más abajo, cuando ya se cargaron las comandas.
+  const parsedItems = parseSaleItems(items);
+  if (!parsedItems) {
     return NextResponse.json({ error: "Ítems inválidos" }, { status: 400 });
   }
-
-  const tenantCfg = await Tenant.findById(session.tenantId).select("posConfig").lean() as { posConfig?: unknown } | null;
-  if (!tenantCfg) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
-  const totals = computeSaleTotals({
-    subtotal: subtotalOf(saleItems),
-    charges: readPosCharges(tenantCfg.posConfig),
-    orderType,
-    tipAmount,
-    deliveryFee,
-  });
 
   const selections: ComandaSelectionInput[] = Array.isArray(comandaSelections) ? comandaSelections : [];
 
@@ -131,11 +123,13 @@ export async function POST(request: NextRequest) {
     items: { index: number; qty: number }[];
   }
   const validated: ValidatedSelection[] = [];
+  const comandaItemsById = new Map<string, IComandaItem[]>();
 
   if (selections.length > 0) {
     const ids = selections.map((s) => s.comandaId as string);
     const comandas = await Comanda.find({ _id: { $in: ids }, tenantId: session.tenantId }).lean();
     const comandaById = new Map(comandas.map((c) => [String(c._id), c]));
+    for (const c of comandas) comandaItemsById.set(String(c._id), c.items as IComandaItem[]);
 
     for (const sel of selections) {
       const comandaId = sel.comandaId as string;
@@ -167,6 +161,30 @@ export async function POST(request: NextRequest) {
       validated.push({ comandaId, version: sel.version as number, number: c.number, items: selItems.map((it) => ({ index: it.index as number, qty: it.qty as number })) });
     }
   }
+
+  // Precios: nunca se cobra lo que diga el cliente. Las líneas de comandas tienen que coincidir con
+  // lo congelado en la comanda; las demás, con el catálogo actual del negocio.
+  const linked = parsedItems.filter((i) => i.comandaRef);
+  const direct = parsedItems.filter((i) => !i.comandaRef);
+  let saleItems: SaleItemRecord[];
+  try {
+    const checkedLinked = checkComandaLines(linked, validated, comandaItemsById);
+    const checkedDirect = await checkCatalogPrices(session.tenantId, direct);
+    let li = 0, di = 0;
+    saleItems = parsedItems.map((i) => (i.comandaRef ? checkedLinked[li++] : checkedDirect[di++]));
+  } catch (err) {
+    return serviceErrorResponse(err);
+  }
+
+  const tenantCfg = await Tenant.findById(session.tenantId).select("posConfig").lean() as { posConfig?: unknown } | null;
+  if (!tenantCfg) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
+  const totals = computeSaleTotals({
+    subtotal: subtotalOf(saleItems),
+    charges: readPosCharges(tenantCfg.posConfig),
+    orderType,
+    tipAmount,
+    deliveryFee,
+  });
 
   // Reclamo atómico (uno por comanda, secuencial, sin transacciones)
   const claimed: { id: string; number: number; inc: Record<string, number> }[] = [];

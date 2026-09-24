@@ -25,7 +25,8 @@ function colones(n: number): string {
   return `₡${n.toLocaleString("es-CR")}`;
 }
 
-export function buildWhatsAppMessage(order?: WhatsAppOrder, whatsappNumber?: string): string {
+/** `businessName`: el nombre del negocio de la tienda (Tenant.name); sin nombre, el saludo va sin él. */
+export function buildWhatsAppMessage(order?: WhatsAppOrder, whatsappNumber?: string, businessName?: string): string {
   const number = whatsappNumber ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
   let msg: string;
 
@@ -33,8 +34,9 @@ export function buildWhatsAppMessage(order?: WhatsAppOrder, whatsappNumber?: str
     const { product, quantity, extras, total } = order;
     const activeOffer = (product.offers ?? []).find((o) => o.qty === quantity);
     const offerLabel = activeOffer ? ` · Oferta ${activeOffer.qty}×${colones(activeOffer.price)}` : "";
+    const name = businessName?.trim();
     const lines = [
-      `Hola! Me interesa hacer un pedido de *Dulce Pecado* 🍮`,
+      name ? `Hola! Me interesa hacer un pedido de *${name}*` : `Hola! Me interesa hacer un pedido`,
       ``,
       `*Producto:* ${product.name}`,
       `*Cantidad:* ${quantity}${offerLabel}`,
@@ -60,13 +62,15 @@ export function buildWhatsAppMessage(order?: WhatsAppOrder, whatsappNumber?: str
 export function WhatsAppInlineButton({
   order,
   whatsappNumber,
+  businessName,
   className,
 }: {
   order: WhatsAppOrder;
   whatsappNumber?: string;
+  businessName?: string;
   className?: string;
 }) {
-  const url = buildWhatsAppMessage(order, whatsappNumber);
+  const url = buildWhatsAppMessage(order, whatsappNumber, businessName);
 
   return (
     <Button

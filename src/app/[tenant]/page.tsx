@@ -19,6 +19,7 @@ import type { CategoryOrderEntry } from "@/lib/categories";
 import { getCategoryOrder } from "@/server/services/categories";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
 import { normalizeExtras } from "@/lib/pricing";
+import { productsSectionForDisplay } from "@/lib/storeTexts";
 
 async function getTenant(slug: string) {
   try {
@@ -81,6 +82,7 @@ async function getSettings(tenantId: string) {
     return JSON.parse(JSON.stringify(settings)) as {
       hero?: { tagline: string; subtagline: string; badge: string };
       about?: { title: string; paragraph1: string; paragraph2: string; images: string[] };
+      productsSection?: unknown;
     };
   } catch {
     return null;
@@ -159,8 +161,14 @@ export default async function TenantStorefront({
         subtagline={settings?.hero?.subtagline || undefined}
         badge={settings?.hero?.badge || undefined}
       />
-      <BestSellersSection products={featuredProducts} whatsappNumber={tenant.whatsappNumber} />
-      <ProductsSection products={products} whatsappNumber={tenant.whatsappNumber} categories={categories} />
+      <BestSellersSection products={featuredProducts} whatsappNumber={tenant.whatsappNumber} businessName={tenant.name} />
+      <ProductsSection
+        products={products}
+        whatsappNumber={tenant.whatsappNumber}
+        businessName={tenant.name}
+        categories={categories}
+        texts={productsSectionForDisplay(settings?.productsSection)}
+      />
       <TrustSection />
       <AboutSection aboutData={settings?.about} whatsappNumber={tenant.whatsappNumber} />
       <Footer

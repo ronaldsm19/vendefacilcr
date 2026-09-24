@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
-  ChevronLeft, ChevronDown, Search, Plus, Minus, StickyNote, Loader2, CheckCheck, Check, CopyPlus, UtensilsCrossed,
+  ChevronLeft, ChevronDown, Search, Plus, Minus, StickyNote, Loader2, CheckCheck, CopyPlus, Trash2, UtensilsCrossed, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAdminSession } from "@/components/admin/SessionContext";
@@ -16,7 +16,9 @@ import ComandaCard, { type ComandaRow } from "@/components/admin/ComandaCard";
 import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
 import ServeAllDialog from "@/components/admin/ServeAllDialog";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
-import { lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
+import {
+  extraLabel, extraQty, extrasKey, extrasTotal, lineTotal, subtotalOf, MAX_EXTRA_QTY, type LineExtra,
+} from "@/lib/pricing";
 
 interface CatalogProduct {
   _id: string;
@@ -45,7 +47,14 @@ interface ComandaLine {
   station: ProductStation;
   quantity: number;
   note: string;
-  extras: LineExtra[];   // aplican a toda la línea; extras distintos van en otra línea
+  extras: LineExtra[];   // aplican a toda la línea; platos con otros extras u otra nota van en otra línea
+}
+
+/** Un plato en la hoja inferior: sus extras (con porciones) y su nota. */
+interface PlateDraft {
+  id: string;
+  extras: LineExtra[];
+  note: string;
 }
 
 function fmt(n: number) {
@@ -90,10 +99,13 @@ export default function TomarComandaPage() {
   const [cancelTarget, setCancelTarget] = useState<ComandaRow | null>(null);
   const [showServeAll, setShowServeAll] = useState(false);
 
-  // Toma con una mano: lo elegido arriba (plegable), hoja inferior para editar una línea.
+  // Toma con una mano: lo elegido arriba (plegable), hoja inferior para editar un producto plato
+  // por plato. La hoja trabaja sobre un borrador y lo aplica al cerrarse.
   const [linesOpen, setLinesOpen] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
-  const [sheetKey, setSheetKey] = useState<string | null>(null);
+  const [sheetProductId, setSheetProductId] = useState<string | null>(null);
+  const [plates, setPlates] = useState<PlateDraft[]>([]);
+  const [openPlateId, setOpenPlateId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!isPremium) { setLoading(false); return; }
@@ -121,13 +133,39 @@ export default function TomarComandaPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Escape cierra la hoja inferior.
+  /**
+   * Cierra la hoja aplicando el borrador: los platos iguales (mismos extras y nota) se juntan en una
+   * línea y las líneas del producto quedan donde estaba la primera. Sin platos, el producto se quita.
+   */
+  const closeSheet = useCallback(() => {
+    if (!sheetProductId) return;
+    const base = lines.find((l) => l.productId === sheetProductId);
+    if (base) {
+      const grouped: ComandaLine[] = [];
+      for (const p of plates) {
+        const key = `${extrasKey(p.extras)}|${p.note.trim()}`;
+        const same = grouped.find((g) => `${extrasKey(g.extras)}|${g.note.trim()}` === key);
+        if (same) same.quantity += 1;
+        else grouped.push({ ...base, key: crypto.randomUUID(), quantity: 1, note: p.note, extras: p.extras });
+      }
+      setLines((prev) => {
+        const at = prev.findIndex((l) => l.productId === sheetProductId);
+        const rest = prev.filter((l) => l.productId !== sheetProductId);
+        return [...rest.slice(0, at), ...grouped, ...rest.slice(at)];
+      });
+    }
+    setSheetProductId(null);
+    setPlates([]);
+    setOpenPlateId(null);
+  }, [sheetProductId, plates, lines]);
+
+  // Escape cierra la hoja inferior (y aplica lo editado, igual que "Listo").
   useEffect(() => {
-    if (!sheetKey) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSheetKey(null); };
+    if (!sheetProductId) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeSheet(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sheetKey]);
+  }, [sheetProductId, closeSheet]);
 
   const refreshOpen = useCallback(async () => {
     const r = await fetch(`/api/admin/comandas?tableId=${tableId}&open=1&limit=50`, { cache: "no-store" });
@@ -179,49 +217,92 @@ export default function TomarComandaPage() {
       .finally(() => setEditLoading(false));
   }, [editId, isPremium]);
 
-  // Sumar desde el catálogo va a la línea del producto SIN extras; las líneas con extras no se tocan.
+  /** Línea "simple" de un producto: sin extras ni nota. Ahí van los + y − de la tarjeta. */
+  const isPlainLine = (l: ComandaLine) => l.extras.length === 0 && !l.note.trim();
+
+  // Sumar desde el catálogo va a la línea simple del producto; las personalizadas no se tocan.
   function incrementCatalog(p: CatalogProduct) {
     setLines((prev) => {
-      const idx = prev.findIndex((l) => l.productId === p._id && l.extras.length === 0);
+      const idx = prev.findIndex((l) => l.productId === p._id && isPlainLine(l));
       if (idx === -1) {
         return [...prev, { key: crypto.randomUUID(), productId: p._id, productName: p.name, unitPrice: p.price, station: p.station, quantity: 1, note: "", extras: [] }];
       }
       return prev.map((l, i) => (i === idx ? { ...l, quantity: l.quantity + 1 } : l));
     });
   }
+  /** Una unidad menos: primero de la línea simple; si no hay, de la última personalizada. */
+  function decrementCatalog(productId: string) {
+    setLines((prev) => {
+      let idx = prev.findIndex((l) => l.productId === productId && isPlainLine(l));
+      if (idx === -1) idx = prev.findLastIndex((l) => l.productId === productId);
+      if (idx === -1) return prev;
+      if (prev[idx].quantity <= 1) return prev.filter((_, i) => i !== idx);
+      return prev.map((l, i) => (i === idx ? { ...l, quantity: l.quantity - 1 } : l));
+    });
+  }
+  /** Tocar la tarjeta: si no está, agrega 1; si ya está, lo quita (confirma si tiene extras o notas). */
+  function toggleCatalog(p: CatalogProduct) {
+    const own = lines.filter((l) => l.productId === p._id);
+    if (own.length === 0) { incrementCatalog(p); return; }
+    const customized = own.some((l) => !isPlainLine(l));
+    if (customized && !window.confirm(`¿Quitar ${p.name} de la comanda? Tiene extras o notas que se van a perder.`)) return;
+    setLines((prev) => prev.filter((l) => l.productId !== p._id));
+  }
   function quantityFor(productId: string): number {
     return lines.filter((l) => l.productId === productId).reduce((s, l) => s + l.quantity, 0);
   }
-  function toggleLineExtra(key: string, extra: LineExtra) {
-    setLines((prev) => prev.map((l) => {
-      if (l.key !== key) return l;
-      const has = l.extras.some((e) => e.name === extra.name);
-      return { ...l, extras: has ? l.extras.filter((e) => e.name !== extra.name) : [...l.extras, { name: extra.name, price: extra.price }] };
-    }));
+  // ── Hoja inferior: un producto, plato por plato ───────────────────
+  /** Abre la hoja con un plato por cada unidad de ese producto en la comanda. */
+  function openSheet(productId: string) {
+    const drafts = lines
+      .filter((l) => l.productId === productId)
+      .flatMap((l) => Array.from({ length: l.quantity }, () => ({
+        id: crypto.randomUUID(),
+        extras: l.extras.map((e) => ({ ...e })),
+        note: l.note,
+      })));
+    setPlates(drafts);
+    setOpenPlateId(drafts[0]?.id ?? null);
+    setSheetProductId(productId);
   }
-  /** Extras que se pueden elegir en una línea: los del catálogo + los ya elegidos que hayan salido del catálogo. */
-  function extraOptionsFor(line: ComandaLine): LineExtra[] {
-    const fromCatalog = catalog.find((p) => p._id === line.productId)?.extras ?? [];
-    return [...fromCatalog, ...line.extras.filter((e) => !fromCatalog.some((c) => c.name === e.name))];
+  function updatePlate(id: string, fn: (p: PlateDraft) => PlateDraft) {
+    setPlates((prev) => prev.map((p) => (p.id === id ? fn(p) : p)));
   }
-  // En la hoja inferior la cantidad no baja de 1; para sacar la línea está "Quitar".
-  function updateLineQty(key: string, delta: number) {
-    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, quantity: Math.min(99, Math.max(1, l.quantity + delta)) } : l)));
+  /** Porciones de un extra en un plato; 0 lo saca. */
+  function setPlateExtraQty(id: string, extra: LineExtra, qty: number) {
+    const q = Math.min(MAX_EXTRA_QTY, Math.max(0, qty));
+    updatePlate(id, (p) => {
+      const has = p.extras.some((e) => e.name === extra.name);
+      const extras = q === 0
+        ? p.extras.filter((e) => e.name !== extra.name)
+        : has
+          ? p.extras.map((e) => (e.name === extra.name ? { ...e, qty: q } : e))
+          : [...p.extras, { name: extra.name, price: extra.price, qty: q }];
+      return { ...p, extras };
+    });
   }
-  function updateLineNote(key: string, note: string) {
-    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, note } : l)));
+  function addPlate() {
+    if (plates.length >= 99) return;
+    const id = crypto.randomUUID();
+    setPlates((prev) => [...prev, { id, extras: [], note: "" }]);
+    setOpenPlateId(id);
   }
-  function removeLine(key: string) {
-    setLines((prev) => prev.filter((l) => l.key !== key));
-    setSheetKey(null);
+  function removePlate(id: string) {
+    setPlates((prev) => prev.filter((p) => p.id !== id));
+    if (openPlateId === id) setOpenPlateId(null);
   }
-  /** Línea nueva del mismo producto (otros extras u otra nota); se abre en la hoja para elegirlos. */
-  function duplicateLine(key: string) {
-    const src = lines.find((l) => l.key === key);
+  /** Pone los extras y la nota de este plato en todos los platos del producto. */
+  function copyPlateToAll(id: string) {
+    const src = plates.find((p) => p.id === id);
     if (!src) return;
-    const newKey = crypto.randomUUID();
-    setLines((prev) => [...prev, { ...src, key: newKey, quantity: 1, note: "", extras: [] }]);
-    setSheetKey(newKey);
+    setPlates((prev) => prev.map((p) => ({ ...p, extras: src.extras.map((e) => ({ ...e })), note: src.note })));
+  }
+  /** Saca el producto entero de la comanda. */
+  function removeSheetProduct() {
+    setLines((prev) => prev.filter((l) => l.productId !== sheetProductId));
+    setSheetProductId(null);
+    setPlates([]);
+    setOpenPlateId(null);
   }
 
   function resetForm() {
@@ -244,8 +325,11 @@ export default function TomarComandaPage() {
       const payload = {
         tableId,
         customerName: customerName.trim(),
-        // Los extras viajan por nombre: el precio lo congela el servidor desde el catálogo.
-        items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, note: l.note, extras: l.extras.map((e) => e.name) })),
+        // Los extras viajan por nombre y porciones: el precio lo congela el servidor desde el catálogo.
+        items: lines.map((l) => ({
+          productId: l.productId, quantity: l.quantity, note: l.note,
+          extras: l.extras.map((e) => ({ name: e.name, qty: extraQty(e) })),
+        })),
         notes: notesText.trim(),
       };
       const res = editId
@@ -307,13 +391,27 @@ export default function TomarComandaPage() {
 
   const totalItems = lines.reduce((s, l) => s + l.quantity, 0);
   const totalAmount = subtotalOf(lines);
-  const sheetLine = sheetKey ? lines.find((l) => l.key === sheetKey) ?? null : null;
+  // Datos del producto abierto en la hoja. Si ya no está en el catálogo (p. ej. al editar), se usa
+  // lo congelado en su línea; los extras a elegir son los del catálogo más los ya elegidos.
+  const sheetBase = sheetProductId ? lines.find((l) => l.productId === sheetProductId) ?? null : null;
+  const sheetCatalogExtras = sheetProductId ? catalog.find((p) => p._id === sheetProductId)?.extras ?? [] : [];
+  const sheetExtraOptions: LineExtra[] = [...sheetCatalogExtras];
+  for (const p of plates) for (const e of p.extras) {
+    if (!sheetExtraOptions.some((o) => o.name === e.name)) sheetExtraOptions.push({ name: e.name, price: e.price });
+  }
+  const plateTotal = (p: PlateDraft) => (sheetBase?.unitPrice ?? 0) + extrasTotal(p.extras);
+  const sheetTotal = plates.reduce((s, p) => s + plateTotal(p), 0);
   const pendingToServe = openComandas.filter((c) => c.status === "enviada");
   const categories = ["Todas", ...orderCategories(categoryOrder, catalog.map((p) => p.category))];
-  const visibleProducts = catalog.filter((p) =>
-    (activeCategory === "Todas" || p.category === activeCategory) &&
-    (!search.trim() || p.name.toLowerCase().includes(search.toLowerCase()))
-  );
+  // Con "Todas" se agrupan en el orden de las familias (Configuración → Productos); dentro de cada
+  // familia queda el orden del catálogo, que ya viene por nombre (el sort es estable).
+  const categoryRank = new Map(categories.map((c, i) => [c, i]));
+  const visibleProducts = catalog
+    .filter((p) =>
+      (activeCategory === "Todas" || p.category === activeCategory) &&
+      (!search.trim() || p.name.toLowerCase().includes(search.toLowerCase()))
+    )
+    .sort((a, b) => (categoryRank.get(a.category) ?? categories.length) - (categoryRank.get(b.category) ?? categories.length));
 
   if (!isPremium) {
     return (
@@ -413,7 +511,7 @@ export default function TomarComandaPage() {
                         <li key={l.key}>
                           <button
                             type="button"
-                            onClick={() => setSheetKey(l.key)}
+                            onClick={() => openSheet(l.productId)}
                             className="w-full flex items-start gap-2 rounded-xl border border-brand-muted bg-gray-50 px-3 py-2 text-left active:bg-gray-100"
                           >
                             <span className="text-sm font-bold text-brand-dark w-7 shrink-0">{l.quantity}×</span>
@@ -421,15 +519,20 @@ export default function TomarComandaPage() {
                               <span className="block text-sm font-medium text-brand-dark truncate">{l.productName}</span>
                               {l.extras.length > 0 && (
                                 <span className="block text-xs text-brand-dark/60 truncate">
-                                  {l.extras.map((e) => `+ ${e.name}`).join(" · ")}
+                                  {l.extras.map((e) => `+ ${extraLabel(e)}`).join(" · ")}
                                 </span>
                               )}
                               {l.note && <span className="block text-xs text-brand-dark/50 italic truncate">{l.note}</span>}
                             </span>
-                            <span className="text-xs font-semibold text-brand-pink shrink-0">{fmt(lineTotal(l))}</span>
+                            <span className="flex flex-col items-end gap-1 shrink-0">
+                              <span className="text-xs font-semibold text-brand-pink">{fmt(lineTotal(l))}</span>
+                              <Pencil className="w-3.5 h-3.5 text-brand-dark/40" aria-hidden />
+                              <span className="sr-only">Editar extras y notas</span>
+                            </span>
                           </button>
                         </li>
                       ))}
+                      <li className="text-[11px] text-brand-dark/45 px-1">Tocá un producto para agregarle extras o notas para cocina.</li>
                     </ul>
                   )}
                   <button
@@ -508,7 +611,8 @@ export default function TomarComandaPage() {
                   </div>
                 )}
 
-                {/* Catálogo: tocar una tarjeta suma una unidad */}
+                {/* Catálogo: el primer toque agrega 1; con el producto ya agregado, tocar la tarjeta
+                    lo quita y la cantidad se ajusta con − / + abajo a la derecha. */}
                 {visibleProducts.length === 0 ? (
                   <p className="text-center text-sm text-brand-dark/40 py-6">
                     {catalog.length === 0 ? "No hay productos disponibles. Agregalos en Productos." : "Sin resultados."}
@@ -518,34 +622,55 @@ export default function TomarComandaPage() {
                     {visibleProducts.map((p) => {
                       const qty = quantityFor(p._id);
                       return (
-                        <button
+                        <div
                           key={p._id}
-                          type="button"
-                          onClick={() => incrementCatalog(p)}
-                          aria-label={`Agregar ${p.name}${qty > 0 ? ` (llevás ${qty})` : ""}`}
-                          className={`relative text-left bg-white rounded-xl border overflow-hidden transition active:scale-[0.97] ${
-                            qty > 0 ? "border-brand-pink" : "border-brand-muted"
+                          className={`relative bg-white rounded-xl border overflow-hidden ${
+                            qty > 0 ? "border-brand-pink ring-1 ring-brand-pink" : "border-brand-muted"
                           }`}
                         >
-                          <div className="relative h-20 bg-gray-100">
-                            {p.image ? (
-                              <Image src={p.image} alt="" fill className="object-cover" sizes="(max-width: 640px) 50vw, 220px" />
-                            ) : (
-                              <div className="h-full flex items-center justify-center text-gray-300">
-                                <UtensilsCrossed className="w-6 h-6" aria-hidden />
-                              </div>
-                            )}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleCatalog(p)}
+                            aria-pressed={qty > 0}
+                            aria-label={qty > 0 ? `Quitar ${p.name} (llevás ${qty})` : `Agregar ${p.name}`}
+                            className="block w-full text-left transition active:scale-[0.97]"
+                          >
+                            <div className="relative h-20 bg-gray-100">
+                              {p.image ? (
+                                <Image src={p.image} alt="" fill className="object-cover" sizes="(max-width: 640px) 50vw, 220px" />
+                              ) : (
+                                <div className="h-full flex items-center justify-center text-gray-300">
+                                  <UtensilsCrossed className="w-6 h-6" aria-hidden />
+                                </div>
+                              )}
+                            </div>
+                            <div className="px-2.5 pt-2 pb-2.5">
+                              <p className="text-sm font-medium text-brand-dark leading-tight line-clamp-2 min-h-[2.5em]">{p.name}</p>
+                              <p className="text-xs font-semibold text-brand-pink mt-1 h-8 flex items-center">{fmt(p.price)}</p>
+                            </div>
+                          </button>
                           {qty > 0 && (
-                            <span className="absolute top-1.5 right-1.5 min-w-6 h-6 px-1.5 rounded-full bg-brand-pink text-white text-xs font-bold flex items-center justify-center shadow">
-                              {qty}
-                            </span>
+                            <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => decrementCatalog(p._id)}
+                                aria-label={`Uno menos de ${p.name}`}
+                                className="w-8 h-8 rounded-full border-2 border-brand-pink bg-white text-brand-pink flex items-center justify-center active:scale-90 transition"
+                              >
+                                <Minus className="w-4 h-4" />
+                              </button>
+                              <span className="min-w-5 text-center text-sm font-bold text-brand-dark" aria-live="polite">{qty}</span>
+                              <button
+                                type="button"
+                                onClick={() => incrementCatalog(p)}
+                                aria-label={`Uno más de ${p.name}`}
+                                className="w-8 h-8 rounded-full bg-brand-pink text-white flex items-center justify-center active:scale-90 transition"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
                           )}
-                          <div className="px-2.5 py-2">
-                            <p className="text-sm font-medium text-brand-dark leading-tight line-clamp-2">{p.name}</p>
-                            <p className="text-xs font-semibold text-brand-pink mt-0.5">{fmt(p.price)}</p>
-                          </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -598,10 +723,10 @@ export default function TomarComandaPage() {
         </div>
       )}
 
-      {/* Hoja inferior: cantidad, extras con precio y nota de una línea */}
-      {sheetLine && (
+      {/* Hoja inferior: un producto, plato por plato (extras con porciones y nota de cada uno) */}
+      {sheetProductId && sheetBase && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
-          <button type="button" aria-label="Cerrar" className="absolute inset-0 bg-black/40" onClick={() => setSheetKey(null)} />
+          <button type="button" aria-label="Cerrar" className="absolute inset-0 bg-black/40" onClick={closeSheet} />
           <div
             role="dialog"
             aria-modal="true"
@@ -611,73 +736,123 @@ export default function TomarComandaPage() {
             <div className="mx-auto -mt-2 h-1.5 w-10 rounded-full bg-gray-200" aria-hidden />
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p id="linea-titulo" className="font-brand text-lg font-bold text-brand-dark leading-tight">{sheetLine.productName}</p>
-                <p className="text-sm text-brand-dark/50">{fmt(sheetLine.unitPrice)} c/u</p>
+                <p id="linea-titulo" className="font-brand text-lg font-bold text-brand-dark leading-tight">{sheetBase.productName}</p>
+                <p className="text-sm text-brand-dark/50">{fmt(sheetBase.unitPrice)} c/u</p>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <button type="button" aria-label="Una unidad menos" onClick={() => updateLineQty(sheetLine.key, -1)}
-                  disabled={sheetLine.quantity <= 1}
-                  className="w-11 h-11 rounded-full border border-brand-muted flex items-center justify-center text-brand-dark/70 disabled:opacity-30">
-                  <Minus className="w-4 h-4" />
-                </button>
-                <span className="w-6 text-center text-lg font-bold" aria-live="polite">{sheetLine.quantity}</span>
-                <button type="button" aria-label="Una unidad más" onClick={() => updateLineQty(sheetLine.key, 1)}
-                  className="w-11 h-11 rounded-full border border-brand-muted flex items-center justify-center text-brand-dark/70">
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
+              <span className="shrink-0 text-sm font-semibold text-brand-dark/70">
+                {plates.length} plato{plates.length !== 1 ? "s" : ""}
+              </span>
             </div>
 
-            {extraOptionsFor(sheetLine).length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-brand-dark/60 mb-1.5">
-                  Extras{sheetLine.quantity > 1 ? ` · para las ${sheetLine.quantity} unidades` : ""}
-                </p>
-                <div className="space-y-1.5">
-                  {extraOptionsFor(sheetLine).map((e) => {
-                    const selected = sheetLine.extras.some((x) => x.name === e.name);
-                    return (
-                      <button key={e.name} type="button" role="checkbox" aria-checked={selected}
-                        onClick={() => toggleLineExtra(sheetLine.key, e)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left text-sm transition-colors ${
-                          selected ? "border-brand-pink bg-brand-pink/10" : "border-brand-muted"
-                        }`}>
-                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${selected ? "bg-brand-pink border-brand-pink text-white" : "border-brand-dark/20"}`}>
-                          {selected && <Check className="w-3.5 h-3.5" />}
-                        </span>
-                        <span className="flex-1 text-brand-dark">{e.name}</span>
-                        <span className="font-semibold text-brand-dark/60">{e.price > 0 ? `+${fmt(e.price)}` : "Sin costo"}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            {plates.length === 0 && (
+              <p className="text-sm text-brand-dark/50">Sin platos: al tocar Listo se quita de la comanda.</p>
             )}
 
-            <div>
-              <label htmlFor="linea-nota" className="block text-xs font-semibold text-brand-dark/60 mb-1.5">Nota para cocina</label>
-              <textarea
-                id="linea-nota"
-                rows={2}
-                maxLength={200}
-                value={sheetLine.note}
-                onChange={(e) => updateLineNote(sheetLine.key, e.target.value)}
-                placeholder="Ej: sin cebolla, término medio"
-                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink resize-none"
-              />
+            <div className="space-y-2">
+              {plates.map((p, i) => {
+                const open = openPlateId === p.id;
+                const summary = [
+                  ...p.extras.map((e) => `+ ${extraLabel(e)}`),
+                  ...(p.note.trim() ? [p.note.trim()] : []),
+                ].join(" · ") || "Sin extras";
+                return (
+                  <div key={p.id} className={`rounded-xl border ${open ? "border-brand-pink" : "border-brand-muted"}`}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenPlateId(open ? null : p.id)}
+                      aria-expanded={open}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                    >
+                      <span className="text-sm font-semibold text-brand-dark shrink-0">Plato {i + 1}</span>
+                      <span className="flex-1 min-w-0 text-xs text-brand-dark/50 truncate">{summary}</span>
+                      <span className="text-sm font-semibold text-brand-pink shrink-0">{fmt(plateTotal(p))}</span>
+                      <ChevronDown className={`w-4 h-4 text-brand-dark/40 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+                    </button>
+
+                    {open && (
+                      <div className="px-3 pb-3 pt-1 space-y-3 border-t border-brand-muted">
+                        {sheetExtraOptions.length > 0 && (
+                          <div className="space-y-1.5 pt-2">
+                            {sheetExtraOptions.map((e) => {
+                              const qty = extraQty(p.extras.find((x) => x.name === e.name) ?? { qty: 0 });
+                              return (
+                                <div key={e.name} className={`flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-xl border text-sm ${
+                                  qty > 0 ? "border-brand-pink bg-brand-pink/10" : "border-brand-muted"
+                                }`}>
+                                  <span className="flex-1 min-w-0">
+                                    <span className="block text-brand-dark">{e.name}</span>
+                                    <span className="block text-xs text-brand-dark/50">{e.price > 0 ? `+${fmt(e.price)} c/u` : "Sin costo"}</span>
+                                  </span>
+                                  {qty === 0 ? (
+                                    <button type="button" onClick={() => setPlateExtraQty(p.id, e, 1)}
+                                      aria-label={`Agregar ${e.name} al plato ${i + 1}`}
+                                      className="h-9 px-3 rounded-full border border-brand-muted bg-white flex items-center gap-1 text-xs font-semibold text-brand-dark/70">
+                                      <Plus className="w-3.5 h-3.5" /> Agregar
+                                    </button>
+                                  ) : (
+                                    <span className="flex items-center gap-1.5 shrink-0">
+                                      <button type="button" onClick={() => setPlateExtraQty(p.id, e, qty - 1)}
+                                        aria-label={`Una porción menos de ${e.name}`}
+                                        className="w-9 h-9 rounded-full border border-brand-muted bg-white flex items-center justify-center text-brand-dark/70">
+                                        <Minus className="w-4 h-4" />
+                                      </button>
+                                      <span className="w-5 text-center font-bold" aria-live="polite">{qty}</span>
+                                      <button type="button" onClick={() => setPlateExtraQty(p.id, e, qty + 1)}
+                                        disabled={qty >= MAX_EXTRA_QTY}
+                                        aria-label={`Una porción más de ${e.name}`}
+                                        className="w-9 h-9 rounded-full border border-brand-muted bg-white flex items-center justify-center text-brand-dark/70 disabled:opacity-30">
+                                        <Plus className="w-4 h-4" />
+                                      </button>
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div>
+                          <label htmlFor={`nota-${p.id}`} className="block text-xs font-semibold text-brand-dark/60 mb-1.5">Nota para cocina</label>
+                          <textarea
+                            id={`nota-${p.id}`}
+                            rows={2}
+                            maxLength={200}
+                            value={p.note}
+                            onChange={(ev) => updatePlate(p.id, (x) => ({ ...x, note: ev.target.value }))}
+                            placeholder="Ej: sin cebolla, término medio"
+                            className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink resize-none"
+                          />
+                        </div>
+
+                        {plates.length > 1 && (
+                          <div className="flex items-center gap-2">
+                            <Button type="button" size="sm" variant="secondary" className="flex-1" onClick={() => copyPlateToAll(p.id)}>
+                              <CopyPlus className="w-4 h-4" /> Igual en todos
+                            </Button>
+                            <Button type="button" size="sm" variant="destructive" onClick={() => removePlate(p.id)}>
+                              <Trash2 className="w-4 h-4" /> Quitar plato
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
+            <Button type="button" variant="secondary" className="w-full" onClick={addPlate} disabled={plates.length >= 99}>
+              <Plus className="w-4 h-4" /> Agregar plato
+            </Button>
+
             <p className="flex items-center justify-between text-sm">
-              <span className="text-brand-dark/60">Total de la línea</span>
-              <span className="font-bold text-brand-pink">{fmt(lineTotal(sheetLine))}</span>
+              <span className="text-brand-dark/60">Total de {sheetBase.productName}</span>
+              <span className="font-bold text-brand-pink">{fmt(sheetTotal)}</span>
             </p>
 
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant="destructive" onClick={() => removeLine(sheetLine.key)}>Quitar</Button>
-              <Button type="button" variant="secondary" onClick={() => duplicateLine(sheetLine.key)}>
-                <CopyPlus className="w-4 h-4" /> Otra línea
-              </Button>
-              <Button type="button" className="col-span-2" onClick={() => setSheetKey(null)}>Listo</Button>
+            <div className="grid grid-cols-3 gap-2">
+              <Button type="button" variant="destructive" onClick={removeSheetProduct}>Quitar todo</Button>
+              <Button type="button" className="col-span-2" onClick={closeSheet}>Listo</Button>
             </div>
           </div>
         </div>

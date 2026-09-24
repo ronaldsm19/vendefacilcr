@@ -12,6 +12,7 @@ interface ProductCardProps {
   product: SeedProduct & { _id?: string };
   index?: number;
   whatsappNumber?: string;
+  businessName?: string;
 }
 
 // Backward-compat map for old slug-based categories
@@ -27,7 +28,7 @@ function trackClick(productId?: string) {
   fetch(`/api/products/${productId}/click`, { method: "POST" }).catch(() => {});
 }
 
-export default function ProductCard({ product, index = 0, whatsappNumber }: ProductCardProps) {
+export default function ProductCard({ product, index = 0, whatsappNumber, businessName }: ProductCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const extras = product.extras ?? [];
   const cat = legacyCategoryLabels[product.category] ?? {
@@ -140,6 +141,7 @@ export default function ProductCard({ product, index = 0, whatsappNumber }: Prod
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         whatsappNumber={whatsappNumber}
+        businessName={businessName}
       />
     </>
   );

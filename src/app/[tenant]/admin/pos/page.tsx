@@ -16,7 +16,7 @@ import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } fro
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
-  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey,
+  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty,
   DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra,
 } from "@/lib/pricing";
 import {
@@ -63,7 +63,7 @@ function LineExtras({ extras, className = "" }: { extras?: LineExtra[]; classNam
   return (
     <span className={`block text-xs text-gray-500 ${className}`}>
       {extras.map((e) => (
-        <span key={e.name} className="block">+ {e.name} {e.price > 0 ? fmt(e.price) : "(sin costo)"}</span>
+        <span key={e.name} className="block">+ {extraLabel(e)} {e.price > 0 ? fmt(e.price * extraQty(e)) : "(sin costo)"}</span>
       ))}
     </span>
   );
@@ -471,9 +471,15 @@ function PosPageInner() {
 
   // ── Derived ──────────────────────────────────────────────────────
   const categories = ["todos", ...orderCategories(categoryOrder, products.map((p) => p.category))];
-  const visibleProducts = activeCategory === "todos"
-    ? products
-    : products.filter((p) => p.category === activeCategory);
+  // Igual que la pantalla de comandas: agrupados en el orden de las familias (Configuración →
+  // Productos) y, dentro de cada familia, por nombre.
+  const categoryRank = new Map(categories.map((c, i) => [c, i]));
+  const visibleProducts = products
+    .filter((p) => activeCategory === "todos" || p.category === activeCategory)
+    .sort((a, b) =>
+      ((categoryRank.get(a.category) ?? categories.length) - (categoryRank.get(b.category) ?? categories.length)) ||
+      a.name.localeCompare(b.name, "es")
+    );
 
   // Misma fórmula que usa el servidor al guardar la venta (src/lib/pricing.ts).
   const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), charges, orderType, tipAmount, deliveryFee });
@@ -541,6 +547,49 @@ function PosPageInner() {
     setTableId("");
     setSaleError(null);
     setIsPartialCharge(false);
+  }
+
+  /**
+   * El servidor rechazó la venta porque algún precio del catálogo cambió desde que se abrió el POS:
+   * recarga el catálogo y re-precia las líneas directas del carrito (las de comandas no se tocan,
+   * esas se cobran a lo comandado). Lo que ya no existe se saca. El cajero revisa el total y cobra.
+   */
+  async function refreshCartPrices() {
+    const res = await fetch("/api/admin/products");
+    if (!res.ok) return;
+    const all: ProductRow[] = (await res.json()).products ?? [];
+    setProducts(all.filter((p) => p.available));
+    const byId = new Map(all.map((p) => [p._id, p]));
+    const merged = new Map<string, CartLine>();
+    let dropped = 0;
+    for (const l of cart) {
+      let next: CartLine | null = l;
+      if (!l.comandaId) {
+        const p = byId.get(l.productId);
+        if (!p) {
+          next = null;
+        } else {
+          const extras = (l.extras ?? []).flatMap((e) => {
+            const c = p.extras?.find((x) => x.name === e.name);
+            return c ? [{ name: c.name, price: c.price, qty: extraQty(e) }] : [];
+          });
+          if (extras.length !== (l.extras ?? []).length) dropped++;
+          next = { ...l, productName: p.name, unitPrice: p.price, extras };
+        }
+      }
+      if (!next) { dropped++; continue; }
+      // Si al re-preciar dos líneas quedaron iguales, se juntan.
+      const key = lineKey(next);
+      const prev = merged.get(key);
+      merged.set(key, prev ? { ...prev, quantity: prev.quantity + next.quantity } : next);
+    }
+    setCart(Array.from(merged.values()));
+    setSaleError({
+      message: dropped > 0
+        ? "Precios actualizados. Algunos productos o extras ya no existen y se quitaron del pedido: revisalo antes de cobrar."
+        : "Precios actualizados. Revisá el total antes de cobrar.",
+      code: "PRICES_REFRESHED",
+    });
   }
 
   function handleTableChange(v: string) {
@@ -649,6 +698,8 @@ function PosPageInner() {
     setSaving(true);
     setSaleError(null);
     try {
+      // El servidor verifica cada precio: las líneas de comandas contra lo congelado en la comanda
+      // (por eso viajan comandaId y comandaIndex) y las demás contra el catálogo actual.
       const items = cart.map((l) => ({
         productId:   l.productId,
         productName: l.productName,
@@ -656,6 +707,7 @@ function PosPageInner() {
         quantity:    l.quantity,
         extras:      l.extras ?? [],
         lineTotal:   lineTotal(l),
+        ...(l.comandaId ? { comandaId: l.comandaId, comandaIndex: l.itemIndex } : {}),
       }));
       // Impuesto, servicio, subtotal y total los recalcula el servidor con la configuración del
       // negocio; acá solo viaja lo que decide el cajero (ítems, propina, envío, pago).
@@ -768,6 +820,26 @@ function PosPageInner() {
     setPicked({});
     if (!t) setPanelNotice("La mesa ya no tiene comandas abiertas.");
     setNextTableToCharge(null);
+  }
+
+  /** Aviso bajo el carrito (escritorio y celular): error de la venta o precios recién actualizados. */
+  function renderSaleError() {
+    if (!saleError) return null;
+    const refreshed = saleError.code === "PRICES_REFRESHED";
+    return (
+      <div className={`rounded-xl border px-3 py-2.5 text-xs space-y-2 ${
+        refreshed ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-600"
+      }`}>
+        <p>{saleError.message}</p>
+        {["VERSION_MISMATCH", "QTY_EXCEEDED", "CONCURRENT_PAYMENT", "COMANDA_NOT_OPEN", "COMANDA_NOT_FOUND", "TABLE_MISMATCH", "COMANDA_ITEMS_MISMATCH"].includes(saleError.code ?? "") && (
+          <button type="button" onClick={() => { const tid = tableId; clearComandas(); setShowTablesPanel(true); loadOpenTables(tid); }}
+            className="font-semibold underline">Recargar mesas</button>
+        )}
+        {saleError.code === "PRICE_CHANGED" && (
+          <button type="button" onClick={refreshCartPrices} className="font-semibold underline">Actualizar precios</button>
+        )}
+      </div>
+    );
   }
 
   // ── Render ───────────────────────────────────────────────────────
@@ -1055,15 +1127,7 @@ function PosPageInner() {
             </div>
 
             {/* Error de venta */}
-            {saleError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600 space-y-2">
-                <p>{saleError.message}</p>
-                {["VERSION_MISMATCH", "QTY_EXCEEDED", "CONCURRENT_PAYMENT", "COMANDA_NOT_OPEN", "COMANDA_NOT_FOUND", "TABLE_MISMATCH"].includes(saleError.code ?? "") && (
-                  <button type="button" onClick={() => { const tid = tableId; clearComandas(); setShowTablesPanel(true); loadOpenTables(tid); }}
-                    className="font-semibold underline">Recargar mesas</button>
-                )}
-              </div>
-            )}
+            {renderSaleError()}
 
             {/* Register button */}
             <Button
@@ -1351,15 +1415,7 @@ function PosPageInner() {
                 </button>
               ))}
             </div>
-            {saleError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600 space-y-2">
-                <p>{saleError.message}</p>
-                {["VERSION_MISMATCH", "QTY_EXCEEDED", "CONCURRENT_PAYMENT", "COMANDA_NOT_OPEN", "COMANDA_NOT_FOUND", "TABLE_MISMATCH"].includes(saleError.code ?? "") && (
-                  <button type="button" onClick={() => { const tid = tableId; clearComandas(); setShowTablesPanel(true); loadOpenTables(tid); }}
-                    className="font-semibold underline">Recargar mesas</button>
-                )}
-              </div>
-            )}
+            {renderSaleError()}
             <Button className="w-full py-3 text-base" disabled={cart.length === 0 || saving} onClick={openPaymentModal}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {saving ? "Registrando..." : "Registrar venta"}

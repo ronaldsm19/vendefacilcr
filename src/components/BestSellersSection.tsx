@@ -7,9 +7,10 @@ import { SeedProduct } from "@/data/seed";
 interface BestSellersSectionProps {
   products: (SeedProduct & { _id?: string })[];
   whatsappNumber?: string;
+  businessName?: string;
 }
 
-export default function BestSellersSection({ products, whatsappNumber }: BestSellersSectionProps) {
+export default function BestSellersSection({ products, whatsappNumber, businessName }: BestSellersSectionProps) {
   if (products.length === 0) return null;
 
   return (
@@ -50,7 +51,7 @@ export default function BestSellersSection({ products, whatsappNumber }: BestSel
               key={product._id ?? product.name}
               className="min-w-[280px] md:min-w-0 snap-start"
             >
-              <ProductCard product={product} index={i} whatsappNumber={whatsappNumber} />
+              <ProductCard product={product} index={i} whatsappNumber={whatsappNumber} businessName={businessName} />
             </div>
           ))}
         </div>
