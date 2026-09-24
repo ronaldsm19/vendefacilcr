@@ -4,6 +4,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Sale } from "@/models/Sale";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { computeSaleTotals, isOrderType, lineTotal, subtotalOf } from "@/lib/pricing";
 
 export async function GET(
   request: NextRequest,
@@ -37,7 +38,6 @@ export async function PUT(
   const {
     customerName, tableNumber,
     items, paymentMethod, mixedPayment,
-    ivaEnabled, ivaRate, serviceEnabled, serviceRate, tipEnabled, tipAmount,
     notes,
   } = body;
 
@@ -45,19 +45,52 @@ export async function PUT(
     return NextResponse.json({ error: "La venta debe tener al menos un producto" }, { status: 400 });
   }
 
+  interface ItemInput { productId?: unknown; productName?: unknown; unitPrice?: unknown; quantity?: unknown }
+  if (!Array.isArray(items) || !(items as ItemInput[]).every((i) =>
+    typeof i?.productName === "string" && i.productName.trim() !== "" &&
+    typeof i.unitPrice === "number" && Number.isFinite(i.unitPrice) && i.unitPrice >= 0 &&
+    Number.isInteger(i.quantity) && (i.quantity as number) >= 1
+  )) {
+    return NextResponse.json({ error: "Ítems inválidos" }, { status: 400 });
+  }
+
+  // Tasas, tipo de pedido, envío y propina salen de la venta guardada: editar corrige productos,
+  // cliente o pago, pero no cambia los cobros con los que se hizo la venta (ni se pueden cambiar
+  // mandándolos en el cuerpo).
   const existing = await Sale.findOne({ _id: id, tenantId: session.tenantId })
-    .select("items")
-    .lean() as { items?: { productId: string; quantity: number }[] } | null;
+    .select("items orderType ivaEnabled ivaRate serviceEnabled serviceRate tipEnabled tipAmount deliveryFee")
+    .lean() as {
+      items?: { productId: string; quantity: number }[];
+      orderType?: string;
+      ivaEnabled?: boolean; ivaRate?: number;
+      serviceEnabled?: boolean; serviceRate?: number;
+      tipEnabled?: boolean; tipAmount?: number;
+      deliveryFee?: number;
+    } | null;
   if (!existing) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  const subtotal = items.reduce(
-    (s: number, i: { unitPrice: number; quantity: number }) => s + i.unitPrice * i.quantity,
-    0
-  );
-  const ivaAmount     = (ivaEnabled     && ivaRate)     ? Math.round(subtotal * ivaRate     / 100) : 0;
-  const serviceAmount = (serviceEnabled && serviceRate)  ? Math.round(subtotal * serviceRate / 100) : 0;
-  const tipAmt        = tipEnabled ? (tipAmount ?? 0) : 0;
-  const total         = subtotal + ivaAmount + serviceAmount + tipAmt;
+  const saleItems = (items as ItemInput[]).map((i) => {
+    const line = {
+      productId:   typeof i.productId === "string" ? i.productId : "",
+      productName: (i.productName as string).trim(),
+      unitPrice:   i.unitPrice as number,
+      quantity:    i.quantity as number,
+    };
+    return { ...line, lineTotal: lineTotal(line) };
+  });
+  const totals = computeSaleTotals({
+    subtotal: subtotalOf(saleItems),
+    charges: {
+      ivaEnabled:     existing.ivaEnabled ?? false,
+      ivaRate:        existing.ivaRate ?? 13,
+      serviceEnabled: existing.serviceEnabled ?? false,
+      serviceRate:    existing.serviceRate ?? 10,
+      tipEnabled:     existing.tipEnabled ?? false,
+    },
+    orderType: isOrderType(existing.orderType) ? existing.orderType : "LOCAL",
+    tipAmount: existing.tipAmount,
+    deliveryFee: existing.deliveryFee,
+  });
 
   const sale = await Sale.findOneAndUpdate(
     { _id: id, tenantId: session.tenantId },
@@ -65,26 +98,18 @@ export async function PUT(
       $set: {
         customerName:  customerName  ?? "",
         tableNumber:   tableNumber   ?? "",
-        items:         items.map((i: { productId: string; productName: string; unitPrice: number; quantity: number }) => ({
-          ...i,
-          lineTotal: i.unitPrice * i.quantity,
-        })),
+        items:         saleItems,
         paymentMethod,
         mixedPayment:  mixedPayment  ?? { efectivo: 0, sinpe: 0, tarjeta: 0 },
-        ivaEnabled:    ivaEnabled    ?? false,
-        ivaRate:       ivaRate       ?? 13,
-        ivaAmount,
-        serviceEnabled: serviceEnabled ?? false,
-        serviceRate:   serviceRate   ?? 10,
-        serviceAmount,
-        tipEnabled:    tipEnabled    ?? false,
-        tipAmount:     tipAmt,
+        ivaAmount:     totals.ivaAmount,
+        serviceAmount: totals.serviceAmount,
+        tipAmount:     totals.tipAmount,
         notes:         notes         ?? "",
-        subtotal,
-        total,
+        subtotal:      totals.subtotal,
+        total:         totals.total,
       },
     },
-    { new: true }
+    { returnDocument: "after" }
   ).lean();
 
   if (!sale) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -97,7 +122,7 @@ export async function PUT(
       if (!i.productId) continue;
       diffByProduct.set(i.productId, (diffByProduct.get(i.productId) ?? 0) - i.quantity);
     }
-    for (const i of items as { productId: string; quantity: number }[]) {
+    for (const i of saleItems) {
       if (!i.productId) continue;
       diffByProduct.set(i.productId, (diffByProduct.get(i.productId) ?? 0) + i.quantity);
     }

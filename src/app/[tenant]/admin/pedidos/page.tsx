@@ -10,6 +10,7 @@ import { IOrder } from "@/models/Order";
 import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle } from "lucide-react";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
+import { computeSaleTotals, isOrderType, lineTotal, subtotalOf } from "@/lib/pricing";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -55,6 +56,8 @@ interface FullSale {
   serviceEnabled: boolean; serviceRate: number; serviceAmount: number;
   tipEnabled: boolean; tipAmount: number;
   subtotal: number; total: number;
+  orderType?: string;
+  deliveryFee?: number;
   notes?: string;
   saleDate?: string;
 }
@@ -662,11 +665,20 @@ export default function AdminOrdersPage() {
             <DialogTitle>Editar venta POS</DialogTitle>
           </DialogHeader>
           {editSale && (() => {
-            const subtotal = editSale.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
-            const ivaAmt   = editSale.ivaEnabled ? Math.round(subtotal * editSale.ivaRate / 100) : 0;
-            const svcAmt   = editSale.serviceEnabled ? Math.round(subtotal * editSale.serviceRate / 100) : 0;
-            const tipAmt   = editSale.tipEnabled ? (editSale.tipAmount ?? 0) : 0;
-            const total    = subtotal + ivaAmt + svcAmt + tipAmt;
+            // Mismo cálculo que hace el servidor al guardar: cobros y envío de la venta original.
+            const t = computeSaleTotals({
+              subtotal: subtotalOf(editSale.items),
+              charges: {
+                ivaEnabled: editSale.ivaEnabled, ivaRate: editSale.ivaRate,
+                serviceEnabled: editSale.serviceEnabled, serviceRate: editSale.serviceRate,
+                tipEnabled: editSale.tipEnabled,
+              },
+              orderType: isOrderType(editSale.orderType) ? editSale.orderType : "LOCAL",
+              tipAmount: editSale.tipAmount,
+              deliveryFee: editSale.deliveryFee,
+            });
+            const { subtotal, total } = t;
+            const ivaAmt = t.ivaAmount, svcAmt = t.serviceAmount, tipAmt = t.tipAmount;
             const filteredProducts = saleProducts
               .filter((p) => p.name.toLowerCase().includes(productSearch.toLowerCase()))
               .slice(0, 8);
@@ -725,7 +737,7 @@ export default function AdminOrdersPage() {
                             <Plus className="w-3 h-3" />
                           </button>
                         </div>
-                        <span className="text-sm font-bold text-brand-pink w-20 text-right">{fmt(item.unitPrice * item.quantity)}</span>
+                        <span className="text-sm font-bold text-brand-pink w-20 text-right">{fmt(lineTotal(item))}</span>
                         <button type="button" onClick={() => updateSaleItem(item.productId, -item.quantity)}
                           className="text-gray-300 hover:text-red-400">
                           <X className="w-3.5 h-3.5" />
@@ -791,6 +803,7 @@ export default function AdminOrdersPage() {
                   {ivaAmt > 0 && <div className="flex justify-between"><span className="text-gray-500">IVA ({editSale.ivaRate}%)</span><span>{fmt(ivaAmt)}</span></div>}
                   {svcAmt > 0 && <div className="flex justify-between"><span className="text-gray-500">Servicio ({editSale.serviceRate}%)</span><span>{fmt(svcAmt)}</span></div>}
                   {tipAmt > 0 && <div className="flex justify-between"><span className="text-gray-500">Propina</span><span>{fmt(tipAmt)}</span></div>}
+                  {t.deliveryFee > 0 && <div className="flex justify-between"><span className="text-gray-500">Envío</span><span>{fmt(t.deliveryFee)}</span></div>}
                   <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-1.5"><span>Total</span><span className="text-brand-pink">{fmt(total)}</span></div>
                 </div>
 

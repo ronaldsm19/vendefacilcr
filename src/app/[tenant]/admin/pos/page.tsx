@@ -16,6 +16,10 @@ import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } fro
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
+  computeSaleTotals, readPosCharges, subtotalOf, lineTotal,
+  DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals,
+} from "@/lib/pricing";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -23,8 +27,6 @@ import {
 } from "@/components/ui/dialog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-type OrderType = "LOCAL" | "PICKUP" | "EXPRESS";
 
 interface ProductRow {
   _id: string;
@@ -88,13 +90,6 @@ function pendingItemCount(t: OpenTable): number {
 }
 
 const MIN_TEXT: Record<BadgeLevel, string> = { ok: "text-emerald-600", warn: "text-amber-600", alert: "text-red-600" };
-
-interface PosConfig {
-  ivaEnabled: boolean;
-  ivaRate: number;
-  tipEnabled: boolean;
-  serviceRate: number;
-}
 
 interface TableGroup {
   area: string;
@@ -164,6 +159,55 @@ function ProductCard({
         <p className="text-sm font-semibold text-brand-pink mt-1">{fmt(product.price)}</p>
       </div>
     </button>
+  );
+}
+
+// ── Cobros del negocio (solo lectura) ─────────────────────────────────────────
+// El impuesto, el servicio y si hay propina los fija el dueño en Configuración → Caja; acá solo
+// se muestran. Lo único editable es el MONTO de la propina, que cambia con cada cliente.
+
+function ChargeLines({
+  totals,
+  tipAmount,
+  onTipChange,
+  tipInputClassName,
+}: {
+  totals: SaleTotals;
+  tipAmount: number;
+  onTipChange: (n: number) => void;
+  tipInputClassName: string;
+}) {
+  return (
+    <>
+      {totals.ivaEnabled && (
+        <div className="flex justify-between text-sm">
+          <span className="text-brand-dark/60">IVA ({totals.ivaRate}%)</span>
+          <span className="font-semibold">{fmt(totals.ivaAmount)}</span>
+        </div>
+      )}
+      {totals.serviceEnabled && (
+        <div className="flex justify-between text-sm">
+          <span className="text-brand-dark/60">Servicio ({totals.serviceRate}%)</span>
+          <span className="font-semibold">{fmt(totals.serviceAmount)}</span>
+        </div>
+      )}
+      {totals.tipEnabled && (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-brand-dark/60">Propina</span>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-400">₡</span>
+            <input
+              type="number"
+              min={0}
+              value={tipAmount || ""}
+              placeholder="0"
+              onChange={(e) => onTipChange(Math.max(0, Number(e.target.value)))}
+              className={tipInputClassName}
+            />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -276,26 +320,22 @@ function PosPageInner() {
   const [amountPaid, setAmountPaid]             = useState(0);
   const payAmountRef = useRef<HTMLInputElement>(null);
 
-  // ── IVA / Servicio / Propina (siempre off al abrir) ──────────────
-  const [ivaEnabled, setIvaEnabled]         = useState(false);
-  const [ivaRate, setIvaRate]               = useState(13);
-  const [serviceEnabled, setServiceEnabled] = useState(false);
-  const [serviceRate, setServiceRate]       = useState(10);
-  const [tipEnabled, setTipEnabled]         = useState(false);
+  // ── Cobros del negocio (Configuración → Caja), de solo lectura ──
+  const [charges, setCharges] = useState<PosCharges>(DEFAULT_POS_CHARGES);
 
   // Flag: solo persistir DESPUÉS de que el draft haya sido restaurado
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-  // ── Persist draft cart (solo rates y carrito, NO los enabled flags) ─
+  // ── Persist draft cart (carrito y datos del pedido; los cobros vienen siempre de la configuración) ─
   useEffect(() => {
     if (!draftLoaded || !tenantSlug) return;
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType,
+      cart, paymentMethod, tipAmount, orderType,
       tableId, tableNumber, customerName, comandaSelections,
     }));
     window.dispatchEvent(new CustomEvent("pos-cart-update"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections]);
+  }, [cart, paymentMethod, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections]);
 
   async function loadOpenTables(focusTableId?: string): Promise<OpenTable[]> {
     setTablesLoading(true);
@@ -338,7 +378,7 @@ function PosPageInner() {
       // agente de impresión lo exige como obligatorio).
       setBusinessName(meRes.tenantName || tenantSlug);
       if (meRes.ticketConfig) setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...meRes.ticketConfig });
-      const cfg: PosConfig = configRes;
+      setCharges(readPosCharges(configRes));
 
       // Mesas reales del Salón → dropdown del POS, agrupadas por zona
       const salonAreas: { _id: string; name: string; order?: number }[] = areasRes.areas ?? [];
@@ -362,10 +402,8 @@ function PosPageInner() {
         }))
         .filter((g) => g.tables.length > 0);
       setTableGroups(groups);
-      // Tomar solo las TASAS del config (los toggles siempre arrancan off)
-      if (typeof cfg.ivaRate     === "number") setIvaRate(cfg.ivaRate);
-      if (typeof cfg.serviceRate === "number") setServiceRate(cfg.serviceRate);
-      // Restaurar borrador del carrito si existe (solo carrito y tasas, nunca enabled flags)
+      // Restaurar borrador del carrito si existe. Borradores viejos pueden traer ivaRate o
+      // serviceRate: se ignoran, los cobros salen siempre de la configuración del negocio.
       try {
         const raw = localStorage.getItem(`pos_cart_${pathname.split("/")[1]}`);
         if (raw) {
@@ -373,8 +411,6 @@ function PosPageInner() {
           if (Array.isArray(draft.cart) && draft.cart.length > 0) {
             setCart(draft.cart);
             if (draft.paymentMethod) setPaymentMethod(draft.paymentMethod);
-            if (typeof draft.ivaRate     === "number") setIvaRate(draft.ivaRate);
-            if (typeof draft.serviceRate === "number") setServiceRate(draft.serviceRate);
             if (typeof draft.tipAmount   === "number") setTipAmount(draft.tipAmount);
             if (draft.orderType) setOrderType(draft.orderType);
             if (typeof draft.tableId === "string") setTableId(draft.tableId);
@@ -421,12 +457,9 @@ function PosPageInner() {
     ? products
     : products.filter((p) => p.category === activeCategory);
 
-  const subtotal     = cart.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
-  const ivaAmt       = ivaEnabled     ? Math.round(subtotal * ivaRate     / 100) : 0;
-  const serviceAmt   = serviceEnabled ? Math.round(subtotal * serviceRate / 100) : 0;
-  const tipAmt       = tipEnabled     ? tipAmount : 0;
-  const deliveryFeeAmt = orderType === "EXPRESS" ? deliveryFee : 0;
-  const total        = subtotal + ivaAmt + serviceAmt + tipAmt + deliveryFeeAmt;
+  // Misma fórmula que usa el servidor al guardar la venta (src/lib/pricing.ts).
+  const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), charges, orderType, tipAmount, deliveryFee });
+  const { subtotal, total } = totals;
   const mixedSum     = mixedAmounts.efectivo + mixedAmounts.sinpe + mixedAmounts.tarjeta;
   const mixedRemainder = total - mixedSum;
   const cashPortion    = paymentMethod === "efectivo" ? total : mixedAmounts.efectivo;
@@ -547,14 +580,6 @@ function PosPageInner() {
     });
   }
 
-  async function saveRatesConfig() {
-    await fetch("/api/admin/pos-config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ivaRate, serviceRate }),
-    });
-  }
-
   function openPaymentModal() {
     if (cart.length === 0) return;
     setAmountPaid(0);
@@ -603,8 +628,10 @@ function PosPageInner() {
         productName: l.productName,
         unitPrice:   l.unitPrice,
         quantity:    l.quantity,
-        lineTotal:   l.unitPrice * l.quantity,
+        lineTotal:   lineTotal(l),
       }));
+      // Impuesto, servicio, subtotal y total los recalcula el servidor con la configuración del
+      // negocio; acá solo viaja lo que decide el cajero (ítems, propina, envío, pago).
       const res = await fetch("/api/admin/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -613,23 +640,14 @@ function PosPageInner() {
           tableNumber,
           notes: observaciones,
           items,
-          subtotal,
-          ivaEnabled,
-          ivaRate,
-          ivaAmount:      ivaAmt,
-          serviceEnabled,
-          serviceRate,
-          serviceAmount:  serviceAmt,
-          tipEnabled,
-          tipAmount:      tipAmt,
-          total,
+          tipAmount:      totals.tipAmount,
           paymentMethod,
           mixedPayment:   paymentMethod === "mixto" ? mixedAmounts : undefined,
           orderType,
           pickupTime:     orderType === "PICKUP"  ? pickupTime  : undefined,
           deliveryAddress: orderType === "EXPRESS" ? deliveryAddress : undefined,
           deliveryPhone:  orderType === "EXPRESS" ? deliveryPhone  : undefined,
-          deliveryFee:    orderType === "EXPRESS" ? deliveryFeeAmt : undefined,
+          deliveryFee:    orderType === "EXPRESS" ? totals.deliveryFee : undefined,
           tableId: tableId || undefined,
           comandaSelections: comandaSelections.map(({ comandaId, version, items: selItems }) => ({ comandaId, version, items: selItems })),
         }),
@@ -967,102 +985,12 @@ function PosPageInner() {
               </div>
             )}
 
-            {/* IVA */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setIvaEnabled((v) => !v); }}
-                  onBlur={saveRatesConfig}
-                  style={{ background: ivaEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none"
-                >
-                  <div
-                    className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
-                    style={{ left: ivaEnabled ? "22px" : "2px" }}
-                  />
-                </button>
-                <span className="text-sm text-gray-600">IVA</span>
-                <input
-                  type="number"
-                  min={0} max={100} step={0.5}
-                  value={ivaRate}
-                  disabled={!ivaEnabled}
-                  onChange={(e) => setIvaRate(Number(e.target.value))}
-                  onBlur={saveRatesConfig}
-                  className="w-9 text-center text-sm font-semibold bg-transparent border-b border-gray-300 focus:outline-none disabled:opacity-30"
-                />
-                <span className="text-sm text-gray-600">%</span>
-              </div>
-              <span className={`text-sm font-semibold ${ivaEnabled ? "text-gray-800" : "text-gray-300"}`}>
-                {fmt(ivaAmt)}
-              </span>
-            </div>
-
-            {/* Servicio */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setServiceEnabled((v) => !v); }}
-                  onBlur={saveRatesConfig}
-                  style={{ background: serviceEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none"
-                >
-                  <div
-                    className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
-                    style={{ left: serviceEnabled ? "22px" : "2px" }}
-                  />
-                </button>
-                <span className="text-sm text-gray-600">Servicio</span>
-                <input
-                  type="number"
-                  min={0} max={100} step={0.5}
-                  value={serviceRate}
-                  disabled={!serviceEnabled}
-                  onChange={(e) => setServiceRate(Number(e.target.value))}
-                  onBlur={saveRatesConfig}
-                  className="w-9 text-center text-sm font-semibold bg-transparent border-b border-gray-300 focus:outline-none disabled:opacity-30"
-                />
-                <span className="text-sm text-gray-600">%</span>
-              </div>
-              <span className={`text-sm font-semibold ${serviceEnabled ? "text-gray-800" : "text-gray-300"}`}>
-                {fmt(serviceAmt)}
-              </span>
-            </div>
-
-            {/* Propina */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setTipEnabled((v) => !v); }}
-                  onBlur={saveRatesConfig}
-                  style={{ background: tipEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none"
-                >
-                  <div
-                    className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
-                    style={{ left: tipEnabled ? "22px" : "2px" }}
-                  />
-                </button>
-                <span className="text-sm text-gray-600">Propina</span>
-              </div>
-              {tipEnabled ? (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-400">₡</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={tipAmount}
-                    onChange={(e) => setTipAmount(Number(e.target.value))}
-                    className="w-20 text-right border border-gray-200 rounded-lg px-2 py-0.5 text-sm font-semibold focus:outline-none focus:border-brand-pink"
-                  />
-                </div>
-              ) : (
-                <span className="text-sm font-semibold text-gray-300">{fmt(0)}</span>
-              )}
-            </div>
+            <ChargeLines
+              totals={totals}
+              tipAmount={tipAmount}
+              onTipChange={setTipAmount}
+              tipInputClassName="w-20 text-right border border-gray-200 rounded-lg px-2 py-0.5 text-sm font-semibold focus:outline-none focus:border-brand-pink"
+            />
 
             {/* Total */}
             <div className="flex justify-between text-base font-bold border-t border-gray-100 pt-2">
@@ -1365,58 +1293,12 @@ function PosPageInner() {
                 <span className="font-semibold">{fmt(deliveryFee)}</span>
               </div>
             )}
-            {/* IVA */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setIvaEnabled((v) => !v)} onBlur={saveRatesConfig}
-                  style={{ background: ivaEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none">
-                  <div className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200" style={{ left: ivaEnabled ? "22px" : "2px" }} />
-                </button>
-                <span className="text-sm text-gray-600">IVA</span>
-                <input type="number" min={0} max={100} step={0.5} value={ivaRate} disabled={!ivaEnabled}
-                  onChange={(e) => setIvaRate(Number(e.target.value))} onBlur={saveRatesConfig}
-                  className="w-9 text-center text-sm font-semibold bg-transparent border-b border-gray-300 focus:outline-none disabled:opacity-30" />
-                <span className="text-sm text-gray-600">%</span>
-              </div>
-              <span className={`text-sm font-semibold ${ivaEnabled ? "text-gray-800" : "text-gray-300"}`}>{fmt(ivaAmt)}</span>
-            </div>
-            {/* Servicio */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setServiceEnabled((v) => !v)} onBlur={saveRatesConfig}
-                  style={{ background: serviceEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none">
-                  <div className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200" style={{ left: serviceEnabled ? "22px" : "2px" }} />
-                </button>
-                <span className="text-sm text-gray-600">Servicio</span>
-                <input type="number" min={0} max={100} step={0.5} value={serviceRate} disabled={!serviceEnabled}
-                  onChange={(e) => setServiceRate(Number(e.target.value))} onBlur={saveRatesConfig}
-                  className="w-9 text-center text-sm font-semibold bg-transparent border-b border-gray-300 focus:outline-none disabled:opacity-30" />
-                <span className="text-sm text-gray-600">%</span>
-              </div>
-              <span className={`text-sm font-semibold ${serviceEnabled ? "text-gray-800" : "text-gray-300"}`}>{fmt(serviceAmt)}</span>
-            </div>
-            {/* Propina */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setTipEnabled((v) => !v)} onBlur={saveRatesConfig}
-                  style={{ background: tipEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none">
-                  <div className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200" style={{ left: tipEnabled ? "22px" : "2px" }} />
-                </button>
-                <span className="text-sm text-gray-600">Propina</span>
-              </div>
-              {tipEnabled ? (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-400">₡</span>
-                  <input type="number" min={0} value={tipAmount} onChange={(e) => setTipAmount(Number(e.target.value))}
-                    className="w-24 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none focus:border-brand-pink" />
-                </div>
-              ) : (
-                <span className="text-sm font-semibold text-gray-300">{fmt(0)}</span>
-              )}
-            </div>
+            <ChargeLines
+              totals={totals}
+              tipAmount={tipAmount}
+              onTipChange={setTipAmount}
+              tipInputClassName="w-24 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none focus:border-brand-pink"
+            />
             <div className="flex justify-between text-base font-bold border-t border-gray-100 pt-2">
               <span>Total</span>
               <span className="text-brand-pink text-lg">{fmt(total)}</span>

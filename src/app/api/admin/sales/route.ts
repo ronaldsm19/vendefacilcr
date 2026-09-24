@@ -8,6 +8,7 @@ import { SalonTable } from "@/models/SalonTable";
 import { getSession, requireFeature } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
 import { syncTableWithComandas } from "@/lib/tableSync";
+import { computeSaleTotals, isOrderType, lineTotal, readPosCharges, subtotalOf } from "@/lib/pricing";
 import mongoose from "mongoose";
 
 export async function GET(request: NextRequest) {
@@ -56,18 +57,46 @@ export async function POST(request: NextRequest) {
   await connectToDatabase();
   const body = await request.json();
 
+  // Las tasas, montos de impuesto/servicio, subtotal y total que mande el cliente se ignoran: se
+  // recalculan acá con la configuración del negocio (Configuración → Caja) y src/lib/pricing.ts.
   const { customerName, tableNumber,
-          items, subtotal,
-          ivaEnabled, ivaRate, ivaAmount,
-          serviceEnabled, serviceRate, serviceAmount,
-          tipEnabled, tipAmount,
-          total, paymentMethod, mixedPayment, notes,
-          orderType, pickupTime, deliveryAddress, deliveryPhone, deliveryFee,
+          items, tipAmount,
+          paymentMethod, mixedPayment, notes,
+          pickupTime, deliveryAddress, deliveryPhone, deliveryFee,
           tableId, comandaSelections } = body;
+  const orderType = isOrderType(body.orderType) ? body.orderType : "LOCAL";
 
   if (!items?.length || !paymentMethod) {
     return NextResponse.json({ error: "Faltan campos requeridos (items, paymentMethod)" }, { status: 400 });
   }
+
+  interface ItemInput { productId?: unknown; productName?: unknown; unitPrice?: unknown; quantity?: unknown }
+  if (!Array.isArray(items) || !(items as ItemInput[]).every((i) =>
+    typeof i?.productName === "string" && i.productName.trim() !== "" &&
+    typeof i.unitPrice === "number" && Number.isFinite(i.unitPrice) && i.unitPrice >= 0 &&
+    Number.isInteger(i.quantity) && (i.quantity as number) >= 1
+  )) {
+    return NextResponse.json({ error: "Ítems inválidos" }, { status: 400 });
+  }
+  const saleItems = (items as ItemInput[]).map((i) => {
+    const line = {
+      productId:   typeof i.productId === "string" ? i.productId : "",
+      productName: (i.productName as string).trim(),
+      unitPrice:   i.unitPrice as number,
+      quantity:    i.quantity as number,
+    };
+    return { ...line, lineTotal: lineTotal(line) };
+  });
+
+  const tenantCfg = await Tenant.findById(session.tenantId).select("posConfig").lean() as { posConfig?: unknown } | null;
+  if (!tenantCfg) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
+  const totals = computeSaleTotals({
+    subtotal: subtotalOf(saleItems),
+    charges: readPosCharges(tenantCfg.posConfig),
+    orderType,
+    tipAmount,
+    deliveryFee,
+  });
 
   const selections: ComandaSelectionInput[] = Array.isArray(comandaSelections) ? comandaSelections : [];
 
@@ -211,25 +240,25 @@ export async function POST(request: NextRequest) {
       cashUserName: session.name,
       customerName: customerName ?? "",
       tableNumber:  tableNumber  ?? "",
-      orderType:       ["LOCAL", "PICKUP", "EXPRESS"].includes(orderType) ? orderType : "LOCAL",
+      orderType,
       pickupTime:      pickupTime      ?? "",
       deliveryAddress: deliveryAddress ?? "",
       deliveryPhone:   deliveryPhone   ?? "",
-      deliveryFee:     Number(deliveryFee) || 0,
+      deliveryFee:     totals.deliveryFee,
       tableId:         typeof tableId === "string" ? tableId : "",
       comandaIds:      claimedIds,
       comandaClaims:   validated.map((v) => ({ comandaId: v.comandaId, items: v.items })),
-      items,
-      subtotal,
-      ivaEnabled:     ivaEnabled     ?? false,
-      ivaRate:        ivaRate        ?? 13,
-      ivaAmount:      ivaAmount      ?? 0,
-      serviceEnabled: serviceEnabled ?? false,
-      serviceRate:    serviceRate    ?? 10,
-      serviceAmount:  serviceAmount  ?? 0,
-      tipEnabled:     tipEnabled     ?? false,
-      tipAmount:      tipAmount      ?? 0,
-      total,
+      items:          saleItems,
+      subtotal:       totals.subtotal,
+      ivaEnabled:     totals.ivaEnabled,
+      ivaRate:        totals.ivaRate,
+      ivaAmount:      totals.ivaAmount,
+      serviceEnabled: totals.serviceEnabled,
+      serviceRate:    totals.serviceRate,
+      serviceAmount:  totals.serviceAmount,
+      tipEnabled:     totals.tipEnabled,
+      tipAmount:      totals.tipAmount,
+      total:          totals.total,
       paymentMethod,
       mixedPayment: mixedPayment ?? { efectivo: 0, sinpe: 0, tarjeta: 0 },
       notes: notes ?? "",
@@ -245,9 +274,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Actualizar stock y sold en los productos vendidos (igual que en Orders)
-  const bulkOps = items
-    .filter((item: { productId: string }) => item.productId)
-    .map((item: { productId: string; quantity: number }) => ({
+  const bulkOps = saleItems
+    .filter((item) => mongoose.isValidObjectId(item.productId))
+    .map((item) => ({
       updateOne: {
         filter: { _id: new mongoose.Types.ObjectId(item.productId), tenantId: session.tenantId },
         update: [
