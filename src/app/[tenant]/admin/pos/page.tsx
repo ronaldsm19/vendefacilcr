@@ -471,9 +471,15 @@ function PosPageInner() {
 
   // ── Derived ──────────────────────────────────────────────────────
   const categories = ["todos", ...orderCategories(categoryOrder, products.map((p) => p.category))];
-  const visibleProducts = activeCategory === "todos"
-    ? products
-    : products.filter((p) => p.category === activeCategory);
+  // Igual que la pantalla de comandas: agrupados en el orden de las familias (Configuración →
+  // Productos) y, dentro de cada familia, por nombre.
+  const categoryRank = new Map(categories.map((c, i) => [c, i]));
+  const visibleProducts = products
+    .filter((p) => activeCategory === "todos" || p.category === activeCategory)
+    .sort((a, b) =>
+      ((categoryRank.get(a.category) ?? categories.length) - (categoryRank.get(b.category) ?? categories.length)) ||
+      a.name.localeCompare(b.name, "es")
+    );
 
   // Misma fórmula que usa el servidor al guardar la venta (src/lib/pricing.ts).
   const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), charges, orderType, tipAmount, deliveryFee });
