@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { SeedProduct } from "@/data/seed";
+import type { LineExtra } from "@/lib/pricing";
 
 interface WhatsAppButtonProps {
   product?: SeedProduct & { _id?: string };
@@ -11,71 +12,43 @@ interface WhatsAppButtonProps {
   className?: string;
 }
 
-export function buildWhatsAppMessage(
-  product?: WhatsAppButtonProps["product"],
-  selectedToppings?: string[],
-  finalPrice?: number,
-  quantity?: number,
-  itemToppings?: string[][],
-  whatsappNumber?: string,
-): string {
+/** Lo que el cliente armó en el modal del producto: cantidad, extras elegidos y total. */
+export interface WhatsAppOrder {
+  product: NonNullable<WhatsAppButtonProps["product"]>;
+  quantity: number;
+  extras: LineExtra[];
+  /** Total de la línea calculado con offerLineTotal (src/lib/pricing.ts). */
+  total: number;
+}
+
+function colones(n: number): string {
+  return `₡${n.toLocaleString("es-CR")}`;
+}
+
+export function buildWhatsAppMessage(order?: WhatsAppOrder, whatsappNumber?: string): string {
   const number = whatsappNumber ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
   let msg: string;
 
-  if (product) {
-    const price = finalPrice ?? product.price;
-    const qty   = quantity ?? 1;
-
-    if (qty > 1 && itemToppings && itemToppings.length > 1) {
-      // Multi-item order
-      const offers = [...(product.offers ?? [])].sort((a, b) => a.qty - b.qty);
-      const activeOffer = offers.find(o => o.qty === qty);
-      const offerLabel  = activeOffer
-        ? ` · Oferta ${activeOffer.qty}×₡${activeOffer.price.toLocaleString("es-CR")}`
-        : "";
-      const FREE_TOPPINGS = 2;
-      const EXTRA_PRICE   = 150;
-
-      const itemLines = itemToppings.map((tops, i) => {
-        const extraCount = Math.max(0, tops.length - FREE_TOPPINGS);
-        const extraLabel = extraCount > 0
-          ? ` (+₡${(extraCount * EXTRA_PRICE).toLocaleString("es-CR")})`
-          : "";
-        const toppingStr = tops.length > 0 ? tops.join(", ") : "sin toppings";
-        return `• ${product.name.split(" ").slice(-1)[0]} #${i + 1}: ${toppingStr}${extraLabel}`;
-      });
-
-      const lines = [
-        `Hola! Me interesa hacer un pedido de *Dulce Pecado* 🍮`,
-        ``,
-        `*Producto:* ${product.name}`,
-        `*Cantidad:* ${qty}${offerLabel}`,
-        `*Total:* ₡${price.toLocaleString("es-CR")}`,
-        ``,
-        `*Detalle por unidad:*`,
-        ...itemLines,
-        ``,
-        `¿Podría confirmar disponibilidad? Gracias! 😊`,
-      ];
-      msg = lines.join("\n");
-    } else {
-      // Single item order (original behavior)
-      const toppingLine =
-        selectedToppings && selectedToppings.length > 0
-          ? `*Toppings elegidos:* ${selectedToppings.join(", ")}`
-          : null;
-
-      const lines = [
-        `Hola! Me interesa hacer un pedido de *Dulce Pecado* 🍮`,
-        ``,
-        `*Producto:* ${product.name}`,
-        `*Precio:* ₡${price.toLocaleString("es-CR")}`,
-        toppingLine,
-        ``,
-        `¿Podría darme más información y disponibilidad? Gracias! 😊`,
-      ].filter((l) => l !== null);
-      msg = lines.join("\n");
-    }
+  if (order) {
+    const { product, quantity, extras, total } = order;
+    const activeOffer = (product.offers ?? []).find((o) => o.qty === quantity);
+    const offerLabel = activeOffer ? ` · Oferta ${activeOffer.qty}×${colones(activeOffer.price)}` : "";
+    const lines = [
+      `Hola! Me interesa hacer un pedido de *Dulce Pecado* 🍮`,
+      ``,
+      `*Producto:* ${product.name}`,
+      `*Cantidad:* ${quantity}${offerLabel}`,
+      ...(extras.length > 0
+        ? [
+            quantity > 1 ? `*Extras (en cada unidad):*` : `*Extras:*`,
+            ...extras.map((e) => `• ${e.name} ${e.price > 0 ? `+${colones(e.price)}` : "(sin costo)"}`),
+          ]
+        : []),
+      `*Total:* ${colones(total)}`,
+      ``,
+      `¿Podría confirmar disponibilidad? Gracias! 😊`,
+    ];
+    msg = lines.join("\n");
   } else {
     msg = `Hola! Quiero hacer un pedido 😊`;
   }
@@ -85,23 +58,15 @@ export function buildWhatsAppMessage(
 
 // ── Inline button (used inside ProductModal) ─────────────────────
 export function WhatsAppInlineButton({
-  product,
-  selectedToppings,
-  finalPrice,
-  quantity,
-  itemToppings,
+  order,
   whatsappNumber,
   className,
 }: {
-  product: WhatsAppButtonProps["product"];
-  selectedToppings?: string[];
-  finalPrice?: number;
-  quantity?: number;
-  itemToppings?: string[][];
+  order: WhatsAppOrder;
   whatsappNumber?: string;
   className?: string;
 }) {
-  const url = buildWhatsAppMessage(product, selectedToppings, finalPrice, quantity, itemToppings, whatsappNumber);
+  const url = buildWhatsAppMessage(order, whatsappNumber);
 
   return (
     <Button

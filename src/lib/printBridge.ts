@@ -15,7 +15,7 @@
  * distribución que el PDF. El cajón se abre con openDrawer:true en el payload.
  */
 
-import type { SaleTicketData, CashCloseTicketData, TicketConfigData } from "./ticket";
+import { ticketItemRows, type SaleTicketData, type CashCloseTicketData, type TicketConfigData } from "./ticket";
 
 // ── Configuración (variables de entorno NEXT_PUBLIC_) ────────────────────────
 
@@ -199,8 +199,18 @@ export function buildSalePayload(
   // no configuró el ticket, ese campo viene "", así que garantizamos un valor
   // en AMBOS lugares tomando el nombre del ticket (o un genérico de respaldo).
   const businessName = cfg.businessName || sale.businessName || "Mi negocio";
+  // El agente imprime una fila por ítem (Uds | Descripción | P.U. | Total). Cada extra viaja como
+  // fila propia "+ Nombre" con su precio justo debajo de su producto, igual que en el PDF; las filas
+  // suman el total de la línea. El agente recorta espacios, por eso la marca es el "+".
+  const items = ticketItemRows(sale.items).map((r) => ({
+    productName: r.isExtra ? `+ ${r.name}` : r.name,
+    quantity: r.quantity,
+    unitPrice: r.unitPrice,
+    lineTotal: r.total,
+  }));
   return {
     ...sale,
+    items,
     businessName,
     config: { ...cfg, businessName },
     // Booleano explícito: `openDrawer || undefined` mandaba `undefined` cuando se

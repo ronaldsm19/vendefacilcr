@@ -14,6 +14,7 @@ import {
 } from "@/lib/ticket";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
+import { DEFAULT_POS_CHARGES, readPosCharges, type PosCharges } from "@/lib/pricing";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
 } from "@dnd-kit/core";
@@ -26,6 +27,21 @@ interface Category {
   _id: string;
   label: string;
   order: number;
+}
+
+function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 ${checked ? "gradient-bg" : "bg-brand-muted"}`}
+    >
+      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
+    </button>
+  );
 }
 
 function SortableCategoryRow({
@@ -81,14 +97,17 @@ function SortableCategoryRow({
         >
           <ChevronDown className="w-4 h-4" />
         </button>
-        <button
+        <Button
           type="button"
+          size="icon-sm"
+          variant="destructive"
+          title="Eliminar categoría"
+          aria-label="Eliminar categoría"
           onClick={() => onDelete(category._id)}
           disabled={deleting}
-          className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors disabled:opacity-50"
         >
           {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -349,6 +368,15 @@ export default function ConfiguracionPage() {
   const [saleDeletePwError, setSaleDeletePwError] = useState<string | null>(null);
   const [savedSaleDeletePw, setSavedSaleDeletePw] = useState(false);
 
+  // ── Cobros del punto de venta (impuesto, servicio, propina) ──────
+  const [posCharges, setPosCharges] = useState<PosCharges>(DEFAULT_POS_CHARGES);
+  const [ivaRateInput, setIvaRateInput] = useState(String(DEFAULT_POS_CHARGES.ivaRate));
+  const [serviceRateInput, setServiceRateInput] = useState(String(DEFAULT_POS_CHARGES.serviceRate));
+  const [loadingPosCharges, setLoadingPosCharges] = useState(true);
+  const [savingPosCharges, setSavingPosCharges] = useState(false);
+  const [savedPosCharges, setSavedPosCharges] = useState(false);
+  const [posChargesError, setPosChargesError] = useState<string | null>(null);
+
   // ── Tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "ticket" | "comandas" | "caja">("marca");
 
@@ -421,6 +449,18 @@ export default function ConfiguracionPage() {
     fetch("/api/admin/comanda-config")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setComandaConfig(readComandaConfig(d)); });
+
+    // Cobros del punto de venta
+    fetch("/api/admin/pos-config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        const c = readPosCharges(d);
+        setPosCharges(c);
+        setIvaRateInput(String(c.ivaRate));
+        setServiceRateInput(String(c.serviceRate));
+      })
+      .finally(() => setLoadingPosCharges(false));
 
     // Contraseña de eliminación de ventas — nunca trae la contraseña, solo si está configurada
     fetch("/api/admin/sale-delete-password")
@@ -716,6 +756,35 @@ export default function ConfiguracionPage() {
     } finally { setSavingSaleDeletePw(false); }
   }
 
+  async function handleSavePosCharges(e: React.FormEvent) {
+    e.preventDefault();
+    setPosChargesError(null);
+    const ivaRate = Number(ivaRateInput);
+    const serviceRate = Number(serviceRateInput);
+    for (const [label, v] of [["impuesto", ivaRate], ["servicio", serviceRate]] as const) {
+      if (!Number.isFinite(v) || v < 0 || v > 100) {
+        setPosChargesError(`El porcentaje de ${label} debe estar entre 0 y 100.`);
+        return;
+      }
+    }
+    setSavingPosCharges(true);
+    try {
+      const res = await fetch("/api/admin/pos-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...posCharges, ivaRate, serviceRate }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setPosChargesError(data.error ?? "No se pudo guardar"); return; }
+      const c = readPosCharges(data);
+      setPosCharges(c);
+      setIvaRateInput(String(c.ivaRate));
+      setServiceRateInput(String(c.serviceRate));
+      setSavedPosCharges(true);
+      setTimeout(() => setSavedPosCharges(false), 3000);
+    } finally { setSavingPosCharges(false); }
+  }
+
   async function handleRemoveSaleDeletePassword() {
     setSaleDeletePwError(null);
     setRemovingSaleDeletePw(true);
@@ -832,7 +901,7 @@ export default function ConfiguracionPage() {
     { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
     { key: "comandas", label: "Comandas", icon: "⏱️", title: "Comandas",                 desc: "Umbrales de tiempo para las mesas con comandas activas." },
     { key: "ticket",   label: "Ticket",   icon: "🧾", title: "Ticket electrónico",        desc: "Datos que aparecen en tus tickets impresos." },
-    { key: "caja",     label: "Caja",     icon: "🔒", title: "Caja",                     desc: "Contraseña para autorizar la eliminación de ventas." },
+    { key: "caja",     label: "Caja",     icon: "🔒", title: "Caja",                     desc: "Impuesto, servicio y propina del punto de venta, y la contraseña para eliminar ventas." },
   ] as const;
 
   const TABS = ALL_TABS.filter((t) => t.key !== "comandas" || showComandas);
@@ -932,13 +1001,10 @@ export default function ConfiguracionPage() {
                 {uploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 Cambiar logo
               </Button>
-              <button
-                type="button"
-                onClick={handleRemoveLogo}
-                className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
-              >
+              <Button type="button" variant="destructive" size="sm" onClick={handleRemoveLogo}>
+                <Trash2 className="w-4 h-4" />
                 Eliminar logo
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
@@ -1144,13 +1210,10 @@ export default function ConfiguracionPage() {
                     {uploadingHero ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                     Cambiar
                   </Button>
-                  <button
-                    type="button"
-                    onClick={handleRemoveHero}
-                    className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
-                  >
+                  <Button type="button" variant="destructive" size="sm" onClick={handleRemoveHero}>
+                    <Trash2 className="w-4 h-4" />
                     Eliminar imagen
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -1422,13 +1485,17 @@ export default function ConfiguracionPage() {
                         >
                           <Upload className="w-3.5 h-3.5 text-brand-dark" />
                         </button>
-                        <button
+                        <Button
                           type="button"
+                          size="icon-sm"
+                          variant="destructive"
+                          className="rounded-lg"
+                          title="Eliminar foto"
+                          aria-label={`Eliminar foto ${idx + 1}`}
                           onClick={() => removeImage(idx)}
-                          className="p-1.5 bg-white rounded-lg"
                         >
-                          <X className="w-3.5 h-3.5 text-red-500" />
-                        </button>
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
                     </>
                   ) : (
@@ -1769,13 +1836,10 @@ export default function ConfiguracionPage() {
                     {uploadingMenuBg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                     Cambiar imagen
                   </Button>
-                  <button
-                    type="button"
-                    onClick={handleRemoveMenuBg}
-                    className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
-                  >
+                  <Button type="button" variant="destructive" size="sm" onClick={handleRemoveMenuBg}>
+                    <Trash2 className="w-4 h-4" />
                     Eliminar fondo
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -2049,8 +2113,79 @@ export default function ConfiguracionPage() {
         <div className="mt-6"><PrintQueueSection /></div>
       </div>}
 
-      {/* ── TAB: CAJA ── Contraseña de eliminación de ventas ─────────── */}
-      {activeTab === "caja" && <div className="max-w-xl">
+      {/* ── TAB: CAJA ── Cobros del punto de venta + contraseña de eliminación ─ */}
+      {activeTab === "caja" && <div className="max-w-xl space-y-6">
+        <form onSubmit={handleSavePosCharges}>
+          <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
+            <div>
+              <h2 className="font-semibold text-brand-dark text-lg">Cobros del punto de venta</h2>
+              <p className="text-sm text-brand-dark/50 mt-0.5">
+                Se aplican igual en todas las ventas y para todo el personal. En el punto de venta se ven, pero nadie los puede cambiar desde ahí.
+              </p>
+            </div>
+            {loadingPosCharges ? (
+              <p className="text-sm text-brand-dark/40">Cargando...</p>
+            ) : (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-brand-dark">Impuesto (IVA)</p>
+                    <p className="text-xs text-brand-dark/50">Se cobra en mesa, para llevar y a domicilio.</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number" min={0} max={100} step={0.5}
+                        value={ivaRateInput}
+                        disabled={!posCharges.ivaEnabled}
+                        onChange={(e) => setIvaRateInput(e.target.value)}
+                        aria-label="Porcentaje de impuesto"
+                        className="w-16 border border-brand-muted rounded-xl px-2 py-1.5 text-sm text-right focus:outline-none focus:border-brand-pink disabled:opacity-40"
+                      />
+                      <span className="text-sm text-brand-dark/60">%</span>
+                    </div>
+                    <Switch label="Cobrar impuesto" checked={posCharges.ivaEnabled} onChange={(v) => setPosCharges((p) => ({ ...p, ivaEnabled: v }))} />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-brand-dark">Servicio</p>
+                    <p className="text-xs text-brand-dark/50">Solo en pedidos en el local; en retiro y domicilio no se cobra.</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number" min={0} max={100} step={0.5}
+                        value={serviceRateInput}
+                        disabled={!posCharges.serviceEnabled}
+                        onChange={(e) => setServiceRateInput(e.target.value)}
+                        aria-label="Porcentaje de servicio"
+                        className="w-16 border border-brand-muted rounded-xl px-2 py-1.5 text-sm text-right focus:outline-none focus:border-brand-pink disabled:opacity-40"
+                      />
+                      <span className="text-sm text-brand-dark/60">%</span>
+                    </div>
+                    <Switch label="Cobrar servicio" checked={posCharges.serviceEnabled} onChange={(v) => setPosCharges((p) => ({ ...p, serviceEnabled: v }))} />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-brand-dark">Propina</p>
+                    <p className="text-xs text-brand-dark/50">Si está activa, el cajero escribe el monto en cada venta.</p>
+                  </div>
+                  <Switch label="Permitir propina" checked={posCharges.tipEnabled} onChange={(v) => setPosCharges((p) => ({ ...p, tipEnabled: v }))} />
+                </div>
+              </div>
+            )}
+            {posChargesError && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{posChargesError}</p>}
+            <div className="flex items-center gap-3">
+              <Button type="submit" disabled={savingPosCharges || loadingPosCharges}>{savingPosCharges ? "Guardando..." : "Guardar cobros"}</Button>
+              {savedPosCharges && <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium"><Check className="w-4 h-4" /> Guardado</span>}
+            </div>
+          </section>
+        </form>
+
         <form onSubmit={handleSaveSaleDeletePassword}>
           <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
             <div>
@@ -2090,7 +2225,7 @@ export default function ConfiguracionPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <Button type="submit" disabled={savingSaleDeletePw}>{savingSaleDeletePw ? "Guardando..." : "Guardar contraseña"}</Button>
               {saleDeleteConfigured && (
-                <Button type="button" variant="outline" disabled={removingSaleDeletePw} onClick={handleRemoveSaleDeletePassword}>
+                <Button type="button" variant="destructive" disabled={removingSaleDeletePw} onClick={handleRemoveSaleDeletePassword}>
                   {removingSaleDeletePw ? "Quitando..." : "Quitar contraseña"}
                 </Button>
               )}

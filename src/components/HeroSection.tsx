@@ -143,7 +143,7 @@ export default function HeroSection({
           {...fadeUp(0.55)}
         >
           <a
-            href={buildWhatsAppMessage(undefined, undefined, undefined, undefined, undefined, whatsappNumber)}
+            href={buildWhatsAppMessage(undefined, whatsappNumber)}
             target="_blank"
             rel="noopener noreferrer"
           >

@@ -16,6 +16,10 @@ import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } fro
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
+  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey,
+  DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra,
+} from "@/lib/pricing";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -24,8 +28,6 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type OrderType = "LOCAL" | "PICKUP" | "EXPRESS";
-
 interface ProductRow {
   _id: string;
   name: string;
@@ -33,13 +35,15 @@ interface ProductRow {
   image?: string;
   category: string;
   available: boolean;
+  extras?: LineExtra[];
 }
 
 interface CartLine {
   productId: string;
   productName: string;
-  unitPrice: number;
+  unitPrice: number;      // precio base; los extras van aparte y el total sale de lineTotal()
   quantity: number;
+  extras?: LineExtra[];
   // Solo en líneas que vienen de una comanda (bloqueadas)
   comandaId?: string;
   comandaNumber?: number;
@@ -47,8 +51,22 @@ interface CartLine {
   note?: string;
 }
 
+/** Mismo producto con extras distintos = líneas distintas. */
 function lineKey(l: CartLine) {
-  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : l.productId;
+  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : `${l.productId}|${extrasKey(l.extras)}`;
+}
+
+/** Extras de una línea, cada uno con su precio, debajo del nombre del producto. */
+function LineExtras({ extras, className = "" }: { extras?: LineExtra[]; className?: string }) {
+  if (!extras?.length) return null;
+  // Spans (no <ul>): también se usa dentro de <label>.
+  return (
+    <span className={`block text-xs text-gray-500 ${className}`}>
+      {extras.map((e) => (
+        <span key={e.name} className="block">+ {e.name} {e.price > 0 ? fmt(e.price) : "(sin costo)"}</span>
+      ))}
+    </span>
+  );
 }
 
 interface ComandaSelection {
@@ -61,6 +79,7 @@ interface ComandaSelection {
 interface OpenComandaItem {
   index: number; productId: string; productName: string; unitPrice: number;
   quantity: number; paidQty: number; pendingQty: number; note: string; station: string;
+  extras?: LineExtra[];
 }
 interface OpenComanda {
   _id: string; number: number; status: "enviada" | "servida"; version: number;
@@ -88,13 +107,6 @@ function pendingItemCount(t: OpenTable): number {
 }
 
 const MIN_TEXT: Record<BadgeLevel, string> = { ok: "text-emerald-600", warn: "text-amber-600", alert: "text-red-600" };
-
-interface PosConfig {
-  ivaEnabled: boolean;
-  ivaRate: number;
-  tipEnabled: boolean;
-  serviceRate: number;
-}
 
 interface TableGroup {
   area: string;
@@ -167,6 +179,55 @@ function ProductCard({
   );
 }
 
+// ── Cobros del negocio (solo lectura) ─────────────────────────────────────────
+// El impuesto, el servicio y si hay propina los fija el dueño en Configuración → Caja; acá solo
+// se muestran. Lo único editable es el MONTO de la propina, que cambia con cada cliente.
+
+function ChargeLines({
+  totals,
+  tipAmount,
+  onTipChange,
+  tipInputClassName,
+}: {
+  totals: SaleTotals;
+  tipAmount: number;
+  onTipChange: (n: number) => void;
+  tipInputClassName: string;
+}) {
+  return (
+    <>
+      {totals.ivaEnabled && (
+        <div className="flex justify-between text-sm">
+          <span className="text-brand-dark/60">IVA ({totals.ivaRate}%)</span>
+          <span className="font-semibold">{fmt(totals.ivaAmount)}</span>
+        </div>
+      )}
+      {totals.serviceEnabled && (
+        <div className="flex justify-between text-sm">
+          <span className="text-brand-dark/60">Servicio ({totals.serviceRate}%)</span>
+          <span className="font-semibold">{fmt(totals.serviceAmount)}</span>
+        </div>
+      )}
+      {totals.tipEnabled && (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-brand-dark/60">Propina</span>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-400">₡</span>
+            <input
+              type="number"
+              min={0}
+              value={tipAmount || ""}
+              placeholder="0"
+              onChange={(e) => onTipChange(Math.max(0, Number(e.target.value)))}
+              className={tipInputClassName}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── Shared order-type segmented control ───────────────────────────────────────
 
 function OrderTypeSelector({
@@ -227,6 +288,7 @@ function PosPageInner() {
   const [activeCategory, setActiveCategory] = useState("todos");
   const [qtyModal, setQtyModal]             = useState<ProductRow | null>(null);
   const [qtyInput, setQtyInput]             = useState(1);
+  const [qtyExtras, setQtyExtras]           = useState<string[]>([]);   // extras elegidos en el modal
 
   // ── Cart state ───────────────────────────────────────────────────
   const [cart, setCart]             = useState<CartLine[]>([]);
@@ -276,26 +338,22 @@ function PosPageInner() {
   const [amountPaid, setAmountPaid]             = useState(0);
   const payAmountRef = useRef<HTMLInputElement>(null);
 
-  // ── IVA / Servicio / Propina (siempre off al abrir) ──────────────
-  const [ivaEnabled, setIvaEnabled]         = useState(false);
-  const [ivaRate, setIvaRate]               = useState(13);
-  const [serviceEnabled, setServiceEnabled] = useState(false);
-  const [serviceRate, setServiceRate]       = useState(10);
-  const [tipEnabled, setTipEnabled]         = useState(false);
+  // ── Cobros del negocio (Configuración → Caja), de solo lectura ──
+  const [charges, setCharges] = useState<PosCharges>(DEFAULT_POS_CHARGES);
 
   // Flag: solo persistir DESPUÉS de que el draft haya sido restaurado
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-  // ── Persist draft cart (solo rates y carrito, NO los enabled flags) ─
+  // ── Persist draft cart (carrito y datos del pedido; los cobros vienen siempre de la configuración) ─
   useEffect(() => {
     if (!draftLoaded || !tenantSlug) return;
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType,
+      cart, paymentMethod, tipAmount, orderType,
       tableId, tableNumber, customerName, comandaSelections,
     }));
     window.dispatchEvent(new CustomEvent("pos-cart-update"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, paymentMethod, ivaRate, serviceRate, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections]);
+  }, [cart, paymentMethod, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections]);
 
   async function loadOpenTables(focusTableId?: string): Promise<OpenTable[]> {
     setTablesLoading(true);
@@ -338,7 +396,7 @@ function PosPageInner() {
       // agente de impresión lo exige como obligatorio).
       setBusinessName(meRes.tenantName || tenantSlug);
       if (meRes.ticketConfig) setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...meRes.ticketConfig });
-      const cfg: PosConfig = configRes;
+      setCharges(readPosCharges(configRes));
 
       // Mesas reales del Salón → dropdown del POS, agrupadas por zona
       const salonAreas: { _id: string; name: string; order?: number }[] = areasRes.areas ?? [];
@@ -362,10 +420,8 @@ function PosPageInner() {
         }))
         .filter((g) => g.tables.length > 0);
       setTableGroups(groups);
-      // Tomar solo las TASAS del config (los toggles siempre arrancan off)
-      if (typeof cfg.ivaRate     === "number") setIvaRate(cfg.ivaRate);
-      if (typeof cfg.serviceRate === "number") setServiceRate(cfg.serviceRate);
-      // Restaurar borrador del carrito si existe (solo carrito y tasas, nunca enabled flags)
+      // Restaurar borrador del carrito si existe. Borradores viejos pueden traer ivaRate o
+      // serviceRate: se ignoran, los cobros salen siempre de la configuración del negocio.
       try {
         const raw = localStorage.getItem(`pos_cart_${pathname.split("/")[1]}`);
         if (raw) {
@@ -373,8 +429,6 @@ function PosPageInner() {
           if (Array.isArray(draft.cart) && draft.cart.length > 0) {
             setCart(draft.cart);
             if (draft.paymentMethod) setPaymentMethod(draft.paymentMethod);
-            if (typeof draft.ivaRate     === "number") setIvaRate(draft.ivaRate);
-            if (typeof draft.serviceRate === "number") setServiceRate(draft.serviceRate);
             if (typeof draft.tipAmount   === "number") setTipAmount(draft.tipAmount);
             if (draft.orderType) setOrderType(draft.orderType);
             if (typeof draft.tableId === "string") setTableId(draft.tableId);
@@ -421,12 +475,9 @@ function PosPageInner() {
     ? products
     : products.filter((p) => p.category === activeCategory);
 
-  const subtotal     = cart.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
-  const ivaAmt       = ivaEnabled     ? Math.round(subtotal * ivaRate     / 100) : 0;
-  const serviceAmt   = serviceEnabled ? Math.round(subtotal * serviceRate / 100) : 0;
-  const tipAmt       = tipEnabled     ? tipAmount : 0;
-  const deliveryFeeAmt = orderType === "EXPRESS" ? deliveryFee : 0;
-  const total        = subtotal + ivaAmt + serviceAmt + tipAmt + deliveryFeeAmt;
+  // Misma fórmula que usa el servidor al guardar la venta (src/lib/pricing.ts).
+  const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), charges, orderType, tipAmount, deliveryFee });
+  const { subtotal, total } = totals;
   const mixedSum     = mixedAmounts.efectivo + mixedAmounts.sinpe + mixedAmounts.tarjeta;
   const mixedRemainder = total - mixedSum;
   const cashPortion    = paymentMethod === "efectivo" ? total : mixedAmounts.efectivo;
@@ -444,25 +495,30 @@ function PosPageInner() {
   function openQtyModal(product: ProductRow) {
     setQtyModal(product);
     setQtyInput(1);
+    setQtyExtras([]);
   }
+
+  // Extras elegidos en el modal, con el precio del catálogo en este momento (copia congelada).
+  const qtyChosenExtras: LineExtra[] = (qtyModal?.extras ?? [])
+    .filter((e) => qtyExtras.includes(e.name))
+    .map((e) => ({ name: e.name, price: e.price }));
 
   function addToCart() {
     if (!qtyModal || qtyInput < 1) return;
+    const newLine: CartLine = {
+      productId:   qtyModal._id,
+      productName: qtyModal.name,
+      unitPrice:   qtyModal.price,
+      quantity:    qtyInput,
+      extras:      qtyChosenExtras,
+    };
+    const key = lineKey(newLine);
     setCart((prev) => {
-      const existing = prev.find((l) => !l.comandaId && l.productId === qtyModal._id);
-      if (existing) {
-        return prev.map((l) =>
-          !l.comandaId && l.productId === qtyModal._id
-            ? { ...l, quantity: l.quantity + qtyInput }
-            : l
-        );
+      // Solo se suma a una línea existente si lleva exactamente los mismos extras.
+      if (prev.some((l) => !l.comandaId && lineKey(l) === key)) {
+        return prev.map((l) => (!l.comandaId && lineKey(l) === key ? { ...l, quantity: l.quantity + qtyInput } : l));
       }
-      return [...prev, {
-        productId:   qtyModal._id,
-        productName: qtyModal.name,
-        unitPrice:   qtyModal.price,
-        quantity:    qtyInput,
-      }];
+      return [...prev, newLine];
     });
     setQtyModal(null);
   }
@@ -500,7 +556,7 @@ function PosPageInner() {
     let selectedTotal = 0;
     let tablePendingTotal = 0;
     for (const c of t.comandas) {
-      for (const it of c.items) tablePendingTotal += it.pendingQty * it.unitPrice;
+      for (const it of c.items) tablePendingTotal += lineTotal({ ...it, quantity: it.pendingQty });
       const selItems = c.items
         .filter((it) => (picked[`${c._id}:${it.index}`] ?? 0) > 0)
         .map((it) => ({ index: it.index, qty: Math.min(picked[`${c._id}:${it.index}`], it.pendingQty) }));
@@ -508,11 +564,14 @@ function PosPageInner() {
       selections.push({ comandaId: c._id, number: c.number, version: c.version, items: selItems });
       for (const it of selItems) {
         const src = c.items[it.index];
-        selectedTotal += src.unitPrice * it.qty;
-        lines.push({
+        // La parte cobrada (total o parcial) lleva los mismos extras que la línea de la comanda.
+        const line: CartLine = {
           productId: src.productId, productName: src.productName, unitPrice: src.unitPrice,
-          quantity: it.qty, comandaId: c._id, comandaNumber: c.number, itemIndex: it.index, note: src.note,
-        });
+          quantity: it.qty, extras: src.extras ?? [],
+          comandaId: c._id, comandaNumber: c.number, itemIndex: it.index, note: src.note,
+        };
+        selectedTotal += lineTotal(line);
+        lines.push(line);
       }
     }
     if (selections.length === 0) return;
@@ -544,14 +603,6 @@ function PosPageInner() {
         else next[key] = it.pendingQty;
       }
       return next;
-    });
-  }
-
-  async function saveRatesConfig() {
-    await fetch("/api/admin/pos-config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ivaRate, serviceRate }),
     });
   }
 
@@ -603,8 +654,11 @@ function PosPageInner() {
         productName: l.productName,
         unitPrice:   l.unitPrice,
         quantity:    l.quantity,
-        lineTotal:   l.unitPrice * l.quantity,
+        extras:      l.extras ?? [],
+        lineTotal:   lineTotal(l),
       }));
+      // Impuesto, servicio, subtotal y total los recalcula el servidor con la configuración del
+      // negocio; acá solo viaja lo que decide el cajero (ítems, propina, envío, pago).
       const res = await fetch("/api/admin/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -613,23 +667,14 @@ function PosPageInner() {
           tableNumber,
           notes: observaciones,
           items,
-          subtotal,
-          ivaEnabled,
-          ivaRate,
-          ivaAmount:      ivaAmt,
-          serviceEnabled,
-          serviceRate,
-          serviceAmount:  serviceAmt,
-          tipEnabled,
-          tipAmount:      tipAmt,
-          total,
+          tipAmount:      totals.tipAmount,
           paymentMethod,
           mixedPayment:   paymentMethod === "mixto" ? mixedAmounts : undefined,
           orderType,
           pickupTime:     orderType === "PICKUP"  ? pickupTime  : undefined,
           deliveryAddress: orderType === "EXPRESS" ? deliveryAddress : undefined,
           deliveryPhone:  orderType === "EXPRESS" ? deliveryPhone  : undefined,
-          deliveryFee:    orderType === "EXPRESS" ? deliveryFeeAmt : undefined,
+          deliveryFee:    orderType === "EXPRESS" ? totals.deliveryFee : undefined,
           tableId: tableId || undefined,
           comandaSelections: comandaSelections.map(({ comandaId, version, items: selItems }) => ({ comandaId, version, items: selItems })),
         }),
@@ -900,6 +945,7 @@ function PosPageInner() {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 leading-tight">{line.productName}</p>
+                      <LineExtras extras={line.extras} className="mt-0.5" />
                       {line.comandaId && (
                         <span className="inline-block mt-1 text-[10px] font-semibold text-brand-pink bg-brand-pink/10 rounded-full px-1.5 py-0.5">
                           Comanda #{line.comandaNumber}
@@ -908,13 +954,17 @@ function PosPageInner() {
                       {line.note && <p className="text-xs text-gray-400 italic">{line.note}</p>}
                     </div>
                     {!line.comandaId && (
-                      <button
+                      <Button
                         type="button"
+                        size="icon-xs"
+                        variant="destructive"
+                        className="shrink-0"
+                        title="Quitar del carrito"
+                        aria-label="Quitar del carrito"
                         onClick={() => removeLine(lineKey(line))}
-                        className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                        <X className="w-3 h-3" />
+                      </Button>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
@@ -940,11 +990,11 @@ function PosPageInner() {
                       </div>
                     )}
                     <span className="text-sm font-bold text-brand-pink">
-                      {fmt(line.unitPrice * line.quantity)}
+                      {fmt(lineTotal(line))}
                     </span>
                   </div>
                   {line.quantity > 1 && (
-                    <p className="text-xs text-gray-400 mt-1">{fmt(line.unitPrice)} c/u</p>
+                    <p className="text-xs text-gray-400 mt-1">{fmt(effectiveUnitPrice(line))} c/u</p>
                   )}
                 </div>
               ))
@@ -967,102 +1017,12 @@ function PosPageInner() {
               </div>
             )}
 
-            {/* IVA */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setIvaEnabled((v) => !v); }}
-                  onBlur={saveRatesConfig}
-                  style={{ background: ivaEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none"
-                >
-                  <div
-                    className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
-                    style={{ left: ivaEnabled ? "22px" : "2px" }}
-                  />
-                </button>
-                <span className="text-sm text-gray-600">IVA</span>
-                <input
-                  type="number"
-                  min={0} max={100} step={0.5}
-                  value={ivaRate}
-                  disabled={!ivaEnabled}
-                  onChange={(e) => setIvaRate(Number(e.target.value))}
-                  onBlur={saveRatesConfig}
-                  className="w-9 text-center text-sm font-semibold bg-transparent border-b border-gray-300 focus:outline-none disabled:opacity-30"
-                />
-                <span className="text-sm text-gray-600">%</span>
-              </div>
-              <span className={`text-sm font-semibold ${ivaEnabled ? "text-gray-800" : "text-gray-300"}`}>
-                {fmt(ivaAmt)}
-              </span>
-            </div>
-
-            {/* Servicio */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setServiceEnabled((v) => !v); }}
-                  onBlur={saveRatesConfig}
-                  style={{ background: serviceEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none"
-                >
-                  <div
-                    className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
-                    style={{ left: serviceEnabled ? "22px" : "2px" }}
-                  />
-                </button>
-                <span className="text-sm text-gray-600">Servicio</span>
-                <input
-                  type="number"
-                  min={0} max={100} step={0.5}
-                  value={serviceRate}
-                  disabled={!serviceEnabled}
-                  onChange={(e) => setServiceRate(Number(e.target.value))}
-                  onBlur={saveRatesConfig}
-                  className="w-9 text-center text-sm font-semibold bg-transparent border-b border-gray-300 focus:outline-none disabled:opacity-30"
-                />
-                <span className="text-sm text-gray-600">%</span>
-              </div>
-              <span className={`text-sm font-semibold ${serviceEnabled ? "text-gray-800" : "text-gray-300"}`}>
-                {fmt(serviceAmt)}
-              </span>
-            </div>
-
-            {/* Propina */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setTipEnabled((v) => !v); }}
-                  onBlur={saveRatesConfig}
-                  style={{ background: tipEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none"
-                >
-                  <div
-                    className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
-                    style={{ left: tipEnabled ? "22px" : "2px" }}
-                  />
-                </button>
-                <span className="text-sm text-gray-600">Propina</span>
-              </div>
-              {tipEnabled ? (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-400">₡</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={tipAmount}
-                    onChange={(e) => setTipAmount(Number(e.target.value))}
-                    className="w-20 text-right border border-gray-200 rounded-lg px-2 py-0.5 text-sm font-semibold focus:outline-none focus:border-brand-pink"
-                  />
-                </div>
-              ) : (
-                <span className="text-sm font-semibold text-gray-300">{fmt(0)}</span>
-              )}
-            </div>
+            <ChargeLines
+              totals={totals}
+              tipAmount={tipAmount}
+              onTipChange={setTipAmount}
+              tipInputClassName="w-20 text-right border border-gray-200 rounded-lg px-2 py-0.5 text-sm font-semibold focus:outline-none focus:border-brand-pink"
+            />
 
             {/* Total */}
             <div className="flex justify-between text-base font-bold border-t border-gray-100 pt-2">
@@ -1317,6 +1277,7 @@ function PosPageInner() {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 leading-tight">{line.productName}</p>
+                      <LineExtras extras={line.extras} className="mt-0.5" />
                       {line.comandaId && (
                         <span className="inline-block mt-1 text-[10px] font-semibold text-brand-pink bg-brand-pink/10 rounded-full px-1.5 py-0.5">
                           Comanda #{line.comandaNumber}
@@ -1325,9 +1286,11 @@ function PosPageInner() {
                       {line.note && <p className="text-xs text-gray-400 italic">{line.note}</p>}
                     </div>
                     {!line.comandaId && (
-                      <button type="button" onClick={() => removeLine(lineKey(line))} className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      <Button type="button" size="icon-xs" variant="destructive" className="shrink-0"
+                        title="Quitar del carrito" aria-label="Quitar del carrito"
+                        onClick={() => removeLine(lineKey(line))}>
+                        <X className="w-3 h-3" />
+                      </Button>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
@@ -1344,9 +1307,9 @@ function PosPageInner() {
                         </button>
                       </div>
                     )}
-                    <span className="text-sm font-bold text-brand-pink">{fmt(line.unitPrice * line.quantity)}</span>
+                    <span className="text-sm font-bold text-brand-pink">{fmt(lineTotal(line))}</span>
                   </div>
-                  {line.quantity > 1 && <p className="text-xs text-gray-400 mt-1">{fmt(line.unitPrice)} c/u</p>}
+                  {line.quantity > 1 && <p className="text-xs text-gray-400 mt-1">{fmt(effectiveUnitPrice(line))} c/u</p>}
                 </div>
               ))
             )}
@@ -1365,58 +1328,12 @@ function PosPageInner() {
                 <span className="font-semibold">{fmt(deliveryFee)}</span>
               </div>
             )}
-            {/* IVA */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setIvaEnabled((v) => !v)} onBlur={saveRatesConfig}
-                  style={{ background: ivaEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none">
-                  <div className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200" style={{ left: ivaEnabled ? "22px" : "2px" }} />
-                </button>
-                <span className="text-sm text-gray-600">IVA</span>
-                <input type="number" min={0} max={100} step={0.5} value={ivaRate} disabled={!ivaEnabled}
-                  onChange={(e) => setIvaRate(Number(e.target.value))} onBlur={saveRatesConfig}
-                  className="w-9 text-center text-sm font-semibold bg-transparent border-b border-gray-300 focus:outline-none disabled:opacity-30" />
-                <span className="text-sm text-gray-600">%</span>
-              </div>
-              <span className={`text-sm font-semibold ${ivaEnabled ? "text-gray-800" : "text-gray-300"}`}>{fmt(ivaAmt)}</span>
-            </div>
-            {/* Servicio */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setServiceEnabled((v) => !v)} onBlur={saveRatesConfig}
-                  style={{ background: serviceEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none">
-                  <div className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200" style={{ left: serviceEnabled ? "22px" : "2px" }} />
-                </button>
-                <span className="text-sm text-gray-600">Servicio</span>
-                <input type="number" min={0} max={100} step={0.5} value={serviceRate} disabled={!serviceEnabled}
-                  onChange={(e) => setServiceRate(Number(e.target.value))} onBlur={saveRatesConfig}
-                  className="w-9 text-center text-sm font-semibold bg-transparent border-b border-gray-300 focus:outline-none disabled:opacity-30" />
-                <span className="text-sm text-gray-600">%</span>
-              </div>
-              <span className={`text-sm font-semibold ${serviceEnabled ? "text-gray-800" : "text-gray-300"}`}>{fmt(serviceAmt)}</span>
-            </div>
-            {/* Propina */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setTipEnabled((v) => !v)} onBlur={saveRatesConfig}
-                  style={{ background: tipEnabled ? "var(--color-brand-pink)" : "#d1d5db" }}
-                  className="relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none">
-                  <div className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200" style={{ left: tipEnabled ? "22px" : "2px" }} />
-                </button>
-                <span className="text-sm text-gray-600">Propina</span>
-              </div>
-              {tipEnabled ? (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-400">₡</span>
-                  <input type="number" min={0} value={tipAmount} onChange={(e) => setTipAmount(Number(e.target.value))}
-                    className="w-24 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none focus:border-brand-pink" />
-                </div>
-              ) : (
-                <span className="text-sm font-semibold text-gray-300">{fmt(0)}</span>
-              )}
-            </div>
+            <ChargeLines
+              totals={totals}
+              tipAmount={tipAmount}
+              onTipChange={setTipAmount}
+              tipInputClassName="w-24 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none focus:border-brand-pink"
+            />
             <div className="flex justify-between text-base font-bold border-t border-gray-100 pt-2">
               <span>Total</span>
               <span className="text-brand-pink text-lg">{fmt(total)}</span>
@@ -1571,13 +1488,14 @@ function PosPageInner() {
 
             {/* Acciones */}
             <div className="flex gap-3">
-              <button
+              <Button
                 type="button"
+                variant="cancel"
+                className="flex-1 h-auto py-2.5 rounded-xl"
                 onClick={() => setShowPaymentModal(false)}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 Cancelar
-              </button>
+              </Button>
               <button
                 type="button"
                 disabled={saving || (needsChangeCalc && amountPaid < cashPortion && amountPaid > 0)}
@@ -1638,12 +1556,40 @@ function PosPageInner() {
 
       {/* ── Modal de cantidad ── */}
       <Dialog open={!!qtyModal} onOpenChange={(open) => !open && setQtyModal(null)}>
-        <DialogContent className="max-w-xs">
+        <DialogContent className={qtyModal?.extras?.length ? "max-w-sm" : "max-w-xs"}>
           <DialogHeader>
             <DialogTitle className="text-base">{qtyModal?.name}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 px-6 pb-6 pt-2">
             <p className="text-brand-pink font-bold text-lg">{qtyModal ? fmt(qtyModal.price) : ""}</p>
+            {qtyModal?.extras && qtyModal.extras.length > 0 && (
+              <div className="w-full">
+                <p className="text-xs font-semibold text-gray-500 mb-1.5">Extras (para cada unidad)</p>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {qtyModal.extras.map((extra) => {
+                    const selected = qtyExtras.includes(extra.name);
+                    return (
+                      <button
+                        key={extra.name}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={selected}
+                        onClick={() => setQtyExtras((prev) => selected ? prev.filter((n) => n !== extra.name) : [...prev, extra.name])}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-left text-sm transition-colors ${
+                          selected ? "border-brand-pink bg-brand-pink/10" : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selected ? "bg-brand-pink border-brand-pink text-white" : "border-gray-300"}`}>
+                          {selected && <Check className="w-3 h-3" />}
+                        </span>
+                        <span className="flex-1 text-gray-800">{extra.name}</span>
+                        <span className="font-semibold text-gray-600">{extra.price > 0 ? `+${fmt(extra.price)}` : "Sin costo"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-4">
               <button
                 type="button"
@@ -1668,7 +1614,7 @@ function PosPageInner() {
               </button>
             </div>
             <p className="text-sm text-gray-400">
-              Subtotal: <span className="font-bold text-gray-700">{qtyModal ? fmt(qtyModal.price * qtyInput) : ""}</span>
+              Subtotal: <span className="font-bold text-gray-700">{qtyModal ? fmt(lineTotal({ unitPrice: qtyModal.price, quantity: qtyInput, extras: qtyChosenExtras })) : ""}</span>
             </p>
             <button
               type="button"
@@ -1837,6 +1783,7 @@ function PosPageInner() {
                                       />
                                       <span className="min-w-0">
                                         <span className="block">{it.productName}</span>
+                                        <LineExtras extras={it.extras} />
                                         {it.note && <span className="block text-xs text-gray-400 italic">{it.note}</span>}
                                         <span className="block text-xs text-brand-dark/40">pendiente {it.pendingQty} de {it.quantity}</span>
                                       </span>
@@ -1852,7 +1799,7 @@ function PosPageInner() {
                                           className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                                           <Plus className="w-3 h-3" />
                                         </button>
-                                        <span className="text-xs font-semibold text-brand-pink w-14 text-right">{fmt(it.unitPrice * qty)}</span>
+                                        <span className="text-xs font-semibold text-brand-pink w-14 text-right">{fmt(lineTotal({ ...it, quantity: qty }))}</span>
                                       </div>
                                     )}
                                   </div>
@@ -1873,9 +1820,9 @@ function PosPageInner() {
                   let tablePendingTotal = 0;
                   for (const c of activeTable.comandas) {
                     for (const it of c.items) {
-                      tablePendingTotal += it.pendingQty * it.unitPrice;
+                      tablePendingTotal += lineTotal({ ...it, quantity: it.pendingQty });
                       const q = picked[`${c._id}:${it.index}`] ?? 0;
-                      sum += Math.min(q, it.pendingQty) * it.unitPrice;
+                      sum += lineTotal({ ...it, quantity: Math.min(q, it.pendingQty) });
                     }
                   }
                   const willRemain = Math.max(0, tablePendingTotal - sum);
@@ -1885,7 +1832,7 @@ function PosPageInner() {
                         Seleccionado: {count} ítem{count !== 1 ? "s" : ""} · {fmt(sum)} · Quedará pendiente: {fmt(willRemain)}
                       </span>
                       <div className="flex gap-2 shrink-0">
-                        <Button type="button" variant="secondary" className="flex-1 sm:flex-none" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }}>Cancelar</Button>
+                        <Button type="button" variant="cancel" className="flex-1 sm:flex-none" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }}>Cancelar</Button>
                         <Button type="button" className="flex-1 sm:flex-none" disabled={count === 0} onClick={applySelection}>Cobrar seleccionado</Button>
                       </div>
                     </div>

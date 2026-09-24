@@ -74,6 +74,11 @@ export default function ComandaCard({ comanda, thresholds, now, onServe, onCance
           {comanda.items.map((item, i) => (
             <div key={i} className="text-sm">
               <span className="text-brand-dark">{item.quantity} × {item.productName}</span>
+              {item.extras?.map((e) => (
+                <p key={e.name} className="text-xs text-brand-dark/60 pl-4">
+                  + {e.name} <span className="text-brand-dark/40">₡{e.price.toLocaleString("es-CR")}</span>
+                </p>
+              ))}
               {item.note && <p className="text-xs text-brand-dark/60 pl-4">{item.note}</p>}
             </div>
           ))}
@@ -106,7 +111,7 @@ export default function ComandaCard({ comanda, thresholds, now, onServe, onCance
             </Button>
           )}
           {onCancel && isOpen && !hasPaidItems && (
-            <Button size="sm" variant="ghost" className="bg-red-50 text-red-600 hover:bg-red-100" onClick={onCancel}>
+            <Button size="sm" variant="destructive" onClick={onCancel}>
               <Ban className="w-3.5 h-3.5" /> Anular
             </Button>
           )}

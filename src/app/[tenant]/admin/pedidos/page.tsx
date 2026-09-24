@@ -10,6 +10,7 @@ import { IOrder } from "@/models/Order";
 import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle } from "lucide-react";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
+import { computeSaleTotals, isOrderType, lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -40,7 +41,7 @@ interface VentaStats {
 
 type OrderRow = IOrder & { _id: string };
 
-interface SaleItem { productId: string; productName: string; unitPrice: number; quantity: number; }
+interface SaleItem { productId: string; productName: string; unitPrice: number; quantity: number; extras?: LineExtra[]; }
 interface FullSale {
   _id: string;
   ticketNumber?: number;
@@ -55,6 +56,8 @@ interface FullSale {
   serviceEnabled: boolean; serviceRate: number; serviceAmount: number;
   tipEnabled: boolean; tipAmount: number;
   subtotal: number; total: number;
+  orderType?: string;
+  deliveryFee?: number;
   notes?: string;
   saleDate?: string;
 }
@@ -237,6 +240,12 @@ export default function AdminOrdersPage() {
       paymentMethod: s.paymentMethod,
       mixedPayment: s.mixedPayment,
       notes: s.notes,
+      // Igual que el tiquete original: sin esto la reimpresión de un express no mostraba el envío.
+      orderType: s.orderType,
+      pickupTime: s.pickupTime,
+      deliveryAddress: s.deliveryAddress,
+      deliveryPhone: s.deliveryPhone,
+      deliveryFee: s.deliveryFee,
     };
   }
 
@@ -312,11 +321,12 @@ export default function AdminOrdersPage() {
     } finally { setSavingSale(false); }
   }
 
-  function updateSaleItem(productId: string, delta: number) {
+  // Por posición y no por producto: el mismo producto puede estar en dos líneas con extras distintos.
+  function updateSaleItem(index: number, delta: number) {
     setEditSale((prev) => {
       if (!prev) return prev;
       const items = prev.items
-        .map((i) => i.productId === productId ? { ...i, quantity: i.quantity + delta } : i)
+        .map((i, idx) => idx === index ? { ...i, quantity: i.quantity + delta } : i)
         .filter((i) => i.quantity > 0);
       return { ...prev, items };
     });
@@ -325,11 +335,12 @@ export default function AdminOrdersPage() {
   function addSaleProduct(p: ProductOption) {
     setEditSale((prev) => {
       if (!prev) return prev;
-      const existing = prev.items.find((i) => i.productId === p._id);
-      if (existing) {
-        return { ...prev, items: prev.items.map((i) => i.productId === p._id ? { ...i, quantity: i.quantity + 1 } : i) };
+      // Se suma a la línea del mismo producto sin extras; si solo hay líneas con extras, va en una nueva.
+      const existingIdx = prev.items.findIndex((i) => i.productId === p._id && !(i.extras?.length));
+      if (existingIdx >= 0) {
+        return { ...prev, items: prev.items.map((i, idx) => idx === existingIdx ? { ...i, quantity: i.quantity + 1 } : i) };
       }
-      return { ...prev, items: [...prev.items, { productId: p._id, productName: p.name, unitPrice: p.price, quantity: 1 }] };
+      return { ...prev, items: [...prev.items, { productId: p._id, productName: p.name, unitPrice: p.price, quantity: 1, extras: [] }] };
     });
     setProductSearch("");
     setShowProductDrop(false);
@@ -555,13 +566,9 @@ export default function AdminOrdersPage() {
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => openDeleteSale(item)}
-                              title="Eliminar venta"
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
-                            >
+                            <Button size="icon-sm" variant="destructive" onClick={() => openDeleteSale(item)} title="Eliminar venta" aria-label="Eliminar venta">
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </Button>
                           </>
                         )}
                         {item.source === "manual" && (
@@ -584,12 +591,9 @@ export default function AdminOrdersPage() {
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => setConfirmDelete(item.id)}
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
-                            >
+                            <Button size="icon-sm" variant="destructive" onClick={() => setConfirmDelete(item.id)} title="Eliminar pedido" aria-label="Eliminar pedido">
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </Button>
                           </>
                         )}
                       </div>
@@ -662,11 +666,20 @@ export default function AdminOrdersPage() {
             <DialogTitle>Editar venta POS</DialogTitle>
           </DialogHeader>
           {editSale && (() => {
-            const subtotal = editSale.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
-            const ivaAmt   = editSale.ivaEnabled ? Math.round(subtotal * editSale.ivaRate / 100) : 0;
-            const svcAmt   = editSale.serviceEnabled ? Math.round(subtotal * editSale.serviceRate / 100) : 0;
-            const tipAmt   = editSale.tipEnabled ? (editSale.tipAmount ?? 0) : 0;
-            const total    = subtotal + ivaAmt + svcAmt + tipAmt;
+            // Mismo cálculo que hace el servidor al guardar: cobros y envío de la venta original.
+            const t = computeSaleTotals({
+              subtotal: subtotalOf(editSale.items),
+              charges: {
+                ivaEnabled: editSale.ivaEnabled, ivaRate: editSale.ivaRate,
+                serviceEnabled: editSale.serviceEnabled, serviceRate: editSale.serviceRate,
+                tipEnabled: editSale.tipEnabled,
+              },
+              orderType: isOrderType(editSale.orderType) ? editSale.orderType : "LOCAL",
+              tipAmount: editSale.tipAmount,
+              deliveryFee: editSale.deliveryFee,
+            });
+            const { subtotal, total } = t;
+            const ivaAmt = t.ivaAmount, svcAmt = t.serviceAmount, tipAmt = t.tipAmount;
             const filteredProducts = saleProducts
               .filter((p) => p.name.toLowerCase().includes(productSearch.toLowerCase()))
               .slice(0, 8);
@@ -710,26 +723,32 @@ export default function AdminOrdersPage() {
                 <div>
                   <label className="block text-xs font-medium text-brand-dark/60 mb-2">Productos</label>
                   <div className="space-y-2 mb-2">
-                    {editSale.items.map((item) => (
-                      <div key={item.productId} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
-                        <span className="flex-1 text-sm font-medium text-gray-900 truncate">{item.productName}</span>
+                    {editSale.items.map((item, idx) => (
+                      <div key={`${item.productId}-${idx}`} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-medium text-gray-900 truncate">{item.productName}</span>
+                          {item.extras?.map((e) => (
+                            <span key={e.name} className="block text-xs text-gray-500 truncate">+ {e.name} {fmt(e.price)}</span>
+                          ))}
+                        </span>
                         <span className="text-xs text-gray-400">{fmt(item.unitPrice)}</span>
                         <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => updateSaleItem(item.productId, -1)}
+                          <button type="button" onClick={() => updateSaleItem(idx, -1)}
                             className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                             <Minus className="w-3 h-3" />
                           </button>
                           <span className="w-6 text-center text-sm font-bold">{item.quantity}</span>
-                          <button type="button" onClick={() => updateSaleItem(item.productId, 1)}
+                          <button type="button" onClick={() => updateSaleItem(idx, 1)}
                             className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                             <Plus className="w-3 h-3" />
                           </button>
                         </div>
-                        <span className="text-sm font-bold text-brand-pink w-20 text-right">{fmt(item.unitPrice * item.quantity)}</span>
-                        <button type="button" onClick={() => updateSaleItem(item.productId, -item.quantity)}
-                          className="text-gray-300 hover:text-red-400">
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <span className="text-sm font-bold text-brand-pink w-20 text-right">{fmt(lineTotal(item))}</span>
+                        <Button type="button" size="icon-xs" variant="destructive" className="shrink-0"
+                          title="Quitar producto" aria-label="Quitar producto"
+                          onClick={() => updateSaleItem(idx, -item.quantity)}>
+                          <X className="w-3 h-3" />
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -791,12 +810,13 @@ export default function AdminOrdersPage() {
                   {ivaAmt > 0 && <div className="flex justify-between"><span className="text-gray-500">IVA ({editSale.ivaRate}%)</span><span>{fmt(ivaAmt)}</span></div>}
                   {svcAmt > 0 && <div className="flex justify-between"><span className="text-gray-500">Servicio ({editSale.serviceRate}%)</span><span>{fmt(svcAmt)}</span></div>}
                   {tipAmt > 0 && <div className="flex justify-between"><span className="text-gray-500">Propina</span><span>{fmt(tipAmt)}</span></div>}
+                  {t.deliveryFee > 0 && <div className="flex justify-between"><span className="text-gray-500">Envío</span><span>{fmt(t.deliveryFee)}</span></div>}
                   <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-1.5"><span>Total</span><span className="text-brand-pink">{fmt(total)}</span></div>
                 </div>
 
                 {/* Botones */}
                 <div className="flex gap-3 pt-1">
-                  <Button variant="secondary" className="flex-1" onClick={() => setEditSale(null)}>Cancelar</Button>
+                  <Button variant="cancel" className="flex-1" onClick={() => setEditSale(null)}>Cancelar</Button>
                   <Button className="flex-1" disabled={savingSale || editSale.items.length === 0} onClick={handleSaleSave}>
                     {savingSale && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
                     Guardar cambios
@@ -815,9 +835,9 @@ export default function AdminOrdersPage() {
           <div className="px-6 pb-6 space-y-4">
             <p className="text-sm text-brand-dark/60">Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
-              <Button variant="ghost" className="flex-1 bg-red-50 text-red-600 hover:bg-red-100"
+              <Button variant="destructive" className="flex-1"
                 onClick={() => confirmDelete && handleDelete(confirmDelete)}>Eliminar</Button>
-              <Button variant="outline" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+              <Button variant="cancel" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
             </div>
           </div>
         </DialogContent>
@@ -869,15 +889,15 @@ export default function AdminOrdersPage() {
               {deleteSaleError && <p className="text-sm text-red-600">{deleteSaleError}</p>}
               <div className="flex gap-3">
                 <Button
-                  variant="ghost"
-                  className="flex-1 bg-red-50 text-red-600 hover:bg-red-100"
+                  variant="destructive"
+                  className="flex-1"
                   disabled={deletingSale || !deleteSalePassword}
                   onClick={handleDeleteSale}
                 >
                   {deletingSale && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
                   Eliminar
                 </Button>
-                <Button variant="outline" className="flex-1" onClick={closeDeleteSale}>Cancelar</Button>
+                <Button variant="cancel" className="flex-1" onClick={closeDeleteSale}>Cancelar</Button>
               </div>
             </div>
           )}

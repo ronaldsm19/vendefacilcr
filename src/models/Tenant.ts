@@ -59,7 +59,7 @@ export interface ITenant {
   status: "active" | "inactive" | "suspended";
   theme: ITenantTheme;
   menuConfig: IMenuConfig;
-  posConfig: { ivaEnabled: boolean; ivaRate: number; tipEnabled: boolean; serviceRate: number };
+  posConfig: { ivaEnabled: boolean; ivaRate: number; serviceEnabled: boolean; serviceRate: number; tipEnabled: boolean };
   ticketConfig: ITicketConfig;
   comandaConfig: IComandaConfig;
   instagram: string;
@@ -108,11 +108,14 @@ const TenantSchema = new Schema(
       description:    { type: String, default: "" },
       fontFamily:     { type: String, enum: ["default", "playfair", "montserrat", "nunito", "lato"], default: "default" },
     },
+    // Cobros del punto de venta: los fija el dueño en Configuración → Caja y valen para todos los
+    // roles; el punto de venta solo los lee (ver src/lib/pricing.ts).
     posConfig: {
-      ivaEnabled:  { type: Boolean, default: false },
-      ivaRate:     { type: Number,  default: 13 },
-      tipEnabled:  { type: Boolean, default: false },
-      serviceRate: { type: Number,  default: 10 },
+      ivaEnabled:     { type: Boolean, default: false },
+      ivaRate:        { type: Number,  default: 13, min: 0, max: 100 },
+      serviceEnabled: { type: Boolean, default: false },
+      serviceRate:    { type: Number,  default: 10, min: 0, max: 100 },
+      tipEnabled:     { type: Boolean, default: false },
     },
     ticketConfig: {
       businessName:     { type: String, default: "" },

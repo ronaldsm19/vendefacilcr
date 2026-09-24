@@ -1,4 +1,7 @@
 import mongoose, { Schema } from "mongoose";
+import { MAX_EXTRA_NAME, type LineExtra } from "@/lib/pricing";
+
+export type ProductExtra = LineExtra;
 
 // Plain interface for use across the app (API responses, components)
 export interface IProduct {
@@ -8,7 +11,10 @@ export interface IProduct {
   description: string;
   price: number;
   cost: number;
-  toppings: string[];
+  /** @deprecated Obsoleto: reemplazado por `extras`. Solo lo lee la migración única (src/server/services/productExtras.ts). */
+  toppings?: string[];
+  /** Extras con precio que el cliente puede sumarle al producto. */
+  extras: ProductExtra[];
   image: string;
   images: string[];        // imágenes adicionales (carrusel)
   category: string;
@@ -47,8 +53,18 @@ const ProductSchema = new Schema(
       default: 0,
       min: [0, "El costo no puede ser negativo"],
     },
+    // OBSOLETO: reemplazado por `extras`. Se conserva para no perder los datos viejos; ninguna
+    // pantalla lo lee. La migración única copia cada topping como extra de ₡0.
     toppings: {
       type: [String],
+      default: undefined,
+    },
+    extras: {
+      type: [{
+        name:  { type: String, required: true, trim: true, maxlength: MAX_EXTRA_NAME },
+        price: { type: Number, required: true, min: [0, "El precio del extra no puede ser negativo"] },
+        _id: false,
+      }],
       default: [],
     },
     image: {

@@ -1,8 +1,10 @@
+import type { LineExtra } from "@/lib/pricing";
+
 export interface SeedProduct {
   name: string;
   description: string;
   price: number;
-  toppings: string[];
+  extras: LineExtra[];
   image: string;
   images?: string[];
   featured?: boolean;
@@ -14,7 +16,10 @@ export interface SeedProduct {
   available: boolean;
 }
 
-export const seedProducts: SeedProduct[] = [
+// Datos de ejemplo escritos con la lista vieja de toppings; cada uno entra como extra de ₡0.
+type SeedEntry = Omit<SeedProduct, "extras"> & { toppings: string[] };
+
+const SEED_ENTRIES: SeedEntry[] = [
   // ── Gelatinas Mosaico ──────────────────────────────────────────────
   {
     name: "Gelatina Mosaico Clásica",
@@ -111,3 +116,8 @@ export const seedProducts: SeedProduct[] = [
     available: true,
   },
 ];
+
+export const seedProducts: SeedProduct[] = SEED_ENTRIES.map(({ toppings, ...p }) => ({
+  ...p,
+  extras: toppings.map((name) => ({ name, price: 0 })),
+}));
