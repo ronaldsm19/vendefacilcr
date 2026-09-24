@@ -240,13 +240,17 @@ export default function ExpenseForm({ onSave, onCancel, saving }: ExpenseFormPro
                 className="w-28 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
               />
               {items.length > 1 && (
-                <button
+                <Button
                   type="button"
+                  size="icon-sm"
+                  variant="destructive"
+                  className="shrink-0"
+                  title="Eliminar línea"
+                  aria-label="Eliminar línea"
                   onClick={() => removeItem(idx)}
-                  className="text-red-400 hover:text-red-600 p-1 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
-                </button>
+                </Button>
               )}
             </div>
           ))}
@@ -277,7 +281,8 @@ export default function ExpenseForm({ onSave, onCancel, saving }: ExpenseFormPro
                 sizes="400px"
               />
             </div>
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40">
+            {/* Siempre visibles (en el teléfono no hay "hover") */}
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-center p-2 bg-gradient-to-t from-black/50 to-transparent">
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -286,13 +291,15 @@ export default function ExpenseForm({ onSave, onCancel, saving }: ExpenseFormPro
                 >
                   <Upload className="w-3.5 h-3.5" /> Cambiar
                 </button>
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="h-auto px-3 py-1.5 rounded-lg gap-1.5"
                   onClick={() => { setReceiptImage(""); setUploadError(""); }}
-                  className="px-3 py-1.5 bg-white rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors flex items-center gap-1.5"
                 >
                   <X className="w-3.5 h-3.5" /> Quitar
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -348,7 +355,7 @@ export default function ExpenseForm({ onSave, onCancel, saving }: ExpenseFormPro
         <Button type="submit" disabled={saving} className="flex-1">
           {saving ? "Guardando..." : "Guardar factura"}
         </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+        <Button type="button" variant="cancel" onClick={onCancel}>Cancelar</Button>
       </div>
     </form>
   );

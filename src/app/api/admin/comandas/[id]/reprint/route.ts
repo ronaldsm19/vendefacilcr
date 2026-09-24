@@ -5,6 +5,7 @@ import { getSession, requireRole } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
 import { Comanda } from "@/models/Comanda";
 import { enqueueComandaPrint } from "@/lib/printQueue";
+import { withKitchenNotes } from "@/lib/kitchenText";
 
 export async function POST(
   request: NextRequest,
@@ -28,7 +29,7 @@ export async function POST(
   }
 
   try {
-    const jobs = await enqueueComandaPrint(comanda, { isReprint: true });
+    const jobs = await enqueueComandaPrint(withKitchenNotes(comanda), { isReprint: true });
     return NextResponse.json({ ok: true, jobs: jobs.map((j) => ({ id: String(j._id), station: j.station })) });
   } catch (err) {
     console.error("[POST /api/admin/comandas/[id]/reprint]", err);

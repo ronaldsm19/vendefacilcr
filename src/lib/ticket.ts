@@ -6,6 +6,7 @@
 // Igual que en los tickets térmicos reales: solo el número con 2 decimales.
 
 import type { jsPDF } from "jspdf";
+import { extrasTotal, type LineExtra } from "@/lib/pricing";
 
 // ── Modelo de filas del ticket ────────────────────────────────────
 export type Row =
@@ -131,6 +132,41 @@ const METHOD_LABEL: Record<string, string> = {
 };
 
 // ── Ticket de VENTA ───────────────────────────────────────────────
+export interface SaleTicketItem {
+  productName: string;
+  quantity: number;
+  unitPrice: number;       // precio base
+  lineTotal: number;       // base + extras, por la cantidad
+  extras?: LineExtra[];
+}
+
+/** Una fila de la tabla de productos del tiquete: el producto, o uno de sus extras debajo. */
+export interface TicketItemRow {
+  isExtra: boolean;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+/**
+ * Filas de la tabla de productos del tiquete del cliente. Cada producto va con su precio base y,
+ * debajo, cada extra en su propia fila con su precio (por la misma cantidad). Las filas suman
+ * exactamente el total de la línea, así el cliente puede verificar la cuenta.
+ */
+export function ticketItemRows(items: SaleTicketItem[]): TicketItemRow[] {
+  const rows: TicketItemRow[] = [];
+  for (const it of items) {
+    const extras = it.extras ?? [];
+    const extrasAmount = extrasTotal(extras) * it.quantity;
+    rows.push({ isExtra: false, name: it.productName, quantity: it.quantity, unitPrice: it.unitPrice, total: it.lineTotal - extrasAmount });
+    for (const e of extras) {
+      rows.push({ isExtra: true, name: e.name, quantity: it.quantity, unitPrice: e.price, total: e.price * it.quantity });
+    }
+  }
+  return rows;
+}
+
 export interface SaleTicketData {
   businessName: string;
   ticketNumber?: number;
@@ -144,7 +180,7 @@ export interface SaleTicketData {
   deliveryAddress?: string;
   deliveryPhone?: string;
   deliveryFee?: number;
-  items: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
+  items: SaleTicketItem[];
   subtotal: number;
   ivaEnabled?: boolean; ivaRate?: number; ivaAmount?: number;
   serviceEnabled?: boolean; serviceRate?: number; serviceAmount?: number;
@@ -208,15 +244,16 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
       { text: "Total", width: 10, align: "r" },
     ]),
   });
-  for (const it of d.items) {
+  for (const r of ticketItemRows(d.items)) {
+    // El extra va indentado bajo su producto, sin repetir las unidades.
     rows.push({
       t: "left",
       size: 8,
       text: padCols([
-        { text: String(it.quantity), width: 3 },
-        { text: it.productName, width: 15 },
-        { text: money(it.unitPrice), width: 8, align: "r" },
-        { text: money(it.lineTotal), width: 10, align: "r" },
+        { text: r.isExtra ? "" : String(r.quantity), width: 3 },
+        { text: r.isExtra ? ` + ${r.name}` : r.name, width: 15 },
+        { text: money(r.unitPrice), width: 8, align: "r" },
+        { text: money(r.total), width: 10, align: "r" },
       ]),
     });
   }

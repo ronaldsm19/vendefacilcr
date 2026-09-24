@@ -348,12 +348,15 @@ export default function AdminMaterialesPage() {
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
-                          <button
+                          <Button
+                            size="icon-sm"
+                            variant="destructive"
+                            title="Eliminar material"
+                            aria-label="Eliminar material"
                             onClick={() => setConfirmDelete(m._id)}
-                            className="p-1.5 rounded-lg text-brand-dark/40 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -516,7 +519,7 @@ export default function AdminMaterialesPage() {
             </div>
           </form>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+            <Button type="button" variant="cancel" onClick={() => setShowForm(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={saving} onClick={(e) => {
@@ -540,10 +543,10 @@ export default function AdminMaterialesPage() {
             ¿Seguro que querés eliminar este material? Esta acción no se puede deshacer.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+            <Button variant="cancel" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
             <Button
+              variant="destructive"
               onClick={() => confirmDelete && handleDelete(confirmDelete)}
-              className="bg-red-500 hover:bg-red-600 text-white"
             >
               Eliminar
             </Button>

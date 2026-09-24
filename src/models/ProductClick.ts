@@ -9,7 +9,7 @@ export interface IProductClick {
 }
 
 const ProductClickSchema = new Schema({
-  tenantId:    { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+  tenantId:    { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
   productId:   { type: String, required: true, index: true },
   productName: { type: String, required: true },
   timestamp:   { type: Date, default: Date.now, index: true },

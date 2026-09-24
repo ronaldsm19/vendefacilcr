@@ -29,6 +29,7 @@ function trackClick(productId?: string) {
 
 export default function ProductCard({ product, index = 0, whatsappNumber }: ProductCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const extras = product.extras ?? [];
   const cat = legacyCategoryLabels[product.category] ?? {
     label: product.category,
     color: "bg-brand-dark/70 text-white",
@@ -99,20 +100,20 @@ export default function ProductCard({ product, index = 0, whatsappNumber }: Prod
             </p>
           </div>
 
-          {/* Toppings preview */}
-          {product.toppings.length > 0 && (
+          {/* Extras preview (con su precio) */}
+          {extras.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {product.toppings.slice(0, 3).map((t) => (
+              {extras.slice(0, 3).map((e) => (
                 <span
-                  key={t}
+                  key={e.name}
                   className="text-xs px-2 py-0.5 rounded-full bg-brand-muted text-brand-dark/60 border border-brand-pink/10"
                 >
-                  {t}
+                  {e.name}{e.price > 0 && ` +₡${e.price.toLocaleString("es-CR")}`}
                 </span>
               ))}
-              {product.toppings.length > 3 && (
+              {extras.length > 3 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-brand-muted text-brand-pink/70">
-                  +{product.toppings.length - 3}
+                  +{extras.length - 3}
                 </span>
               )}
             </div>

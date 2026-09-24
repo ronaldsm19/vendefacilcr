@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Save, Shield, Clock, CreditCard, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 interface Tenant {
   _id: string;
@@ -415,13 +416,14 @@ export default function TenantDetailPage() {
               configuración. Esta acción no se puede deshacer.
             </p>
           </div>
-          <button
+          <Button
+            variant="destructive"
+            className="rounded-xl"
             onClick={() => { setShowDelete(true); setConfirmSlug(""); setDeleteError(""); }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors cursor-pointer"
           >
             <AlertTriangle className="w-4 h-4" />
             Eliminar tenant
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -451,20 +453,22 @@ export default function TenantDetailPage() {
             />
             {deleteError && <p className="text-red-400 text-sm">{deleteError}</p>}
             <div className="flex justify-end gap-3 pt-1">
-              <button
+              <Button
+                variant="cancel"
+                className="rounded-xl"
                 onClick={() => setShowDelete(false)}
                 disabled={deleting}
-                className="px-4 py-2 rounded-xl text-sm text-white/60 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
               >
                 Cancelar
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="destructive"
+                className="rounded-xl"
                 onClick={handleDelete}
                 disabled={deleting || confirmSlug !== tenant.slug}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {deleting ? "Eliminando..." : "Eliminar definitivamente"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

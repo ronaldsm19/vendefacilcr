@@ -3,6 +3,8 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
 import { isStation } from "@/lib/station";
+import { normalizeExtras } from "@/lib/pricing";
+import { ensureExtrasMigrated } from "@/server/services/productExtras";
 
 export async function GET(
   request: NextRequest,
@@ -15,7 +17,8 @@ export async function GET(
 
   const { id } = await params;
   await connectToDatabase();
-  const product = await Product.findOne({ _id: id, tenantId: session.tenantId }).lean();
+  await ensureExtrasMigrated(session.tenantId);
+  const product = await Product.findOne({ _id: id, tenantId: session.tenantId }).select("-toppings").lean();
   if (!product) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json({ product });
 }
@@ -36,12 +39,24 @@ export async function PUT(
   if (body.station !== undefined && !isStation(body.station)) {
     return NextResponse.json({ error: "Estación inválida" }, { status: 400 });
   }
+  // Campos que el cuerpo nunca puede cambiar: el negocio dueño, la identidad y los toppings
+  // obsoletos (reemplazados por extras).
+  delete body.tenantId;
+  delete body._id;
+  delete body.toppings;
+  if (body.extras !== undefined) {
+    const extras = normalizeExtras(body.extras);
+    if (!extras) {
+      return NextResponse.json({ error: "Extras inválidos: cada uno necesita nombre y un precio de 0 o más" }, { status: 400 });
+    }
+    body.extras = extras;
+  }
 
   const product = await Product.findOneAndUpdate(
     { _id: id, tenantId: session.tenantId },
     { ...body, price: body.price ? Number(body.price) : undefined },
-    { new: true, runValidators: true }
-  ).lean();
+    { returnDocument: "after", runValidators: true }
+  ).select("-toppings").lean();
 
   if (!product) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json({ product });

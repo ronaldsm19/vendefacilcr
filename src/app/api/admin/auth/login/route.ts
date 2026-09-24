@@ -7,9 +7,10 @@ import { StaffUser, USERNAME_RE, PIN_RE } from "@/models/StaffUser";
 import { AccessLog } from "@/models/AccessLog";
 import { signJwt, COOKIE_NAME } from "@/lib/auth";
 import { isPremiumPlan, homePathFor, ERROR_PREMIUM, type Role } from "@/lib/permissions";
+import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
 
-// ── In-memory rate limiter ──────────────────────────────────────
-const attempts = new Map<string, { count: number; resetAt: number }>();
+// ── Límite de intentos (contadores en MongoDB, ver server/services/rateLimit) ──
+// Cada intento se consume antes de verificar la credencial; un login exitoso borra el contador.
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutos
 
 // Login admin (correo + contraseña): normalmente una sola persona por tenant,
@@ -28,27 +29,6 @@ const MAX_ATTEMPTS_IP_STAFF = 30;
 
 function getIp(req: NextRequest) {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-}
-
-function isBlocked(key: string, max: number): boolean {
-  const rec = attempts.get(key);
-  if (!rec) return false;
-  if (Date.now() > rec.resetAt) { attempts.delete(key); return false; }
-  return rec.count >= max;
-}
-
-function recordFail(key: string) {
-  const now = Date.now();
-  const rec = attempts.get(key);
-  if (!rec || now > rec.resetAt) {
-    attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-  } else {
-    rec.count++;
-  }
-}
-
-function clearAttempts(key: string) {
-  attempts.delete(key);
 }
 // ───────────────────────────────────────────────────────────────
 
@@ -102,7 +82,7 @@ export async function POST(request: NextRequest) {
     if (login.includes("@")) {
       const adminIpKey = `admin-ip:${ip}`;
 
-      if (isBlocked(adminIpKey, MAX_ATTEMPTS_IP_ADMIN)) {
+      if (!(await consumeAttempt(adminIpKey, MAX_ATTEMPTS_IP_ADMIN, WINDOW_MS))) {
         return NextResponse.json(
           { error: "Demasiados intentos fallidos. Intenta de nuevo en 15 minutos." },
           { status: 429 }
@@ -114,7 +94,6 @@ export async function POST(request: NextRequest) {
       const user = await User.findOne({ email }).lean() as IUserLean | null;
 
       if (!user) {
-        recordFail(adminIpKey);
         if (tenantSlug) {
           Tenant.findOne({ slug: tenantSlug }).lean().then((t) => {
             if (t) AccessLog.create({ tenantId: (t as ITenantLean)._id.toString(), tenantSlug, userEmail: email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
@@ -126,7 +105,6 @@ export async function POST(request: NextRequest) {
 
       const passwordMatch = await bcrypt.compare(password, user.password);
       if (!passwordMatch) {
-        recordFail(adminIpKey);
         if (user.tenantId) {
           Tenant.findById(user.tenantId).lean().then((t) => {
             if (t) AccessLog.create({ tenantId: (t as ITenantLean)._id.toString(), tenantSlug: (t as ITenantLean).slug, userEmail: user.email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
@@ -151,13 +129,12 @@ export async function POST(request: NextRequest) {
 
       // Validate that the URL tenant matches the user's tenant
       if (tenantSlug && tenantSlug !== tenant.slug) {
-        recordFail(adminIpKey);
         AccessLog.create({ tenantId: tenant._id.toString(), tenantSlug: tenant.slug, userEmail: user.email, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
         await new Promise((r) => setTimeout(r, 500));
         return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
       }
 
-      clearAttempts(adminIpKey);
+      await clearAttempts(adminIpKey);
 
       // Record successful login — non-blocking
       AccessLog.create({
@@ -212,31 +189,34 @@ export async function POST(request: NextRequest) {
     const pin = String(password);
 
     if (!USERNAME_RE.test(username) || !PIN_RE.test(pin)) {
-      recordFail(staffIpKey);
+      await consumeAttempt(staffIpKey, MAX_ATTEMPTS_IP_STAFF, WINDOW_MS);
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
     const tenant = await Tenant.findOne({ slug: tenantSlug }).select("_id slug status plan").lean() as ITenantLean | null;
     if (!tenant) {
-      recordFail(staffIpKey);
+      await consumeAttempt(staffIpKey, MAX_ATTEMPTS_IP_STAFF, WINDOW_MS);
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
     const userKey = `staff-user:${tenant._id}:${username}`;
 
-    // Primero el límite específico de la cuenta (más chico), y solo si eso no
-    // bloquea, el límite compartido de la IP (más grande). Así una persona que
-    // se equivoca de PIN ve el mensaje de SU cuenta, no uno genérico que suene
-    // a que el sistema entero quedó bloqueado para todo el local.
-    if (isBlocked(userKey, MAX_ATTEMPTS_USER)) {
+    // Se consumen los dos contadores a la vez, pero se evalúa primero el de la cuenta (más
+    // chico): así una persona que se equivoca de PIN ve el mensaje de SU cuenta, no uno
+    // genérico que suene a que el sistema entero quedó bloqueado para todo el local.
+    const [userOk, ipOk] = await Promise.all([
+      consumeAttempt(userKey, MAX_ATTEMPTS_USER, WINDOW_MS),
+      consumeAttempt(staffIpKey, MAX_ATTEMPTS_IP_STAFF, WINDOW_MS),
+    ]);
+    if (!userOk) {
       return NextResponse.json(
         { error: "Demasiados intentos fallidos para este usuario. Intentá de nuevo en 15 minutos." },
         { status: 429 }
       );
     }
-    if (isBlocked(staffIpKey, MAX_ATTEMPTS_IP_STAFF)) {
+    if (!ipOk) {
       return NextResponse.json(
         { error: "Demasiados intentos fallidos. Intenta de nuevo en 15 minutos." },
         { status: 429 }
@@ -254,15 +234,12 @@ export async function POST(request: NextRequest) {
     const staff = await StaffUser.findOne({ tenantId: tenant._id, username }).lean() as IStaffUserLean | null;
 
     if (!staff || !staff.active || !(await bcrypt.compare(pin, staff.pinHash))) {
-      recordFail(staffIpKey);
-      recordFail(userKey);
       AccessLog.create({ tenantId: tenant._id.toString(), tenantSlug: tenant.slug, userEmail: username, ip, userAgent: ua, success: false, event: "login" }).catch(() => {});
       await new Promise((r) => setTimeout(r, 500));
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
-    clearAttempts(staffIpKey);
-    clearAttempts(userKey);
+    await Promise.all([clearAttempts(staffIpKey), clearAttempts(userKey)]);
 
     AccessLog.create({
       tenantId:   tenant._id.toString(),

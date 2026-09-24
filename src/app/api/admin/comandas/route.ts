@@ -4,14 +4,15 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Comanda } from "@/models/Comanda";
 import { SalonTable } from "@/models/SalonTable";
 import { TableArea } from "@/models/TableArea";
-import { Product } from "@/models/Product";
 import { Tenant } from "@/models/Tenant";
 import { getSession, requireRole } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
 import { buildStatusUpdate, type ComandaStatus } from "@/lib/tableStatus";
-import { effectiveStation } from "@/lib/station";
 import { startOfTodayCR } from "@/lib/crDate";
 import { enqueueComandaPrint } from "@/lib/printQueue";
+import { withKitchenNotes } from "@/lib/kitchenText";
+import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { snapshotComandaItems, validateComandaItemsInput } from "@/server/services/comandaItems";
 
 const OPEN_STATUSES: ComandaStatus[] = ["enviada", "servida"];
 const ALL_STATUSES: ComandaStatus[] = ["enviada", "servida", "pagada", "anulada"];
@@ -101,12 +102,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ comandas, total, page, limit });
 }
 
-interface ItemInput {
-  productId?: unknown;
-  quantity?: unknown;
-  note?: unknown;
-}
-
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -118,29 +113,14 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const { tableId, customerName, items, notes } = body as {
-    tableId?: unknown; customerName?: unknown; items?: ItemInput[]; notes?: unknown;
+    tableId?: unknown; customerName?: unknown; items?: unknown; notes?: unknown;
   };
 
   if (typeof tableId !== "string" || !mongoose.isValidObjectId(tableId)) {
     return NextResponse.json({ error: "Mesa requerida" }, { status: 400 });
   }
-  if (!Array.isArray(items) || items.length === 0) {
-    return NextResponse.json({ error: "Agregá al menos un producto" }, { status: 400 });
-  }
-  if (items.length > 200) {
-    return NextResponse.json({ error: "Demasiados ítems (máx. 200)" }, { status: 400 });
-  }
-  for (const item of items) {
-    if (typeof item.productId !== "string" || !mongoose.isValidObjectId(item.productId)) {
-      return NextResponse.json({ error: "Producto inválido" }, { status: 400 });
-    }
-    if (!Number.isInteger(item.quantity) || (item.quantity as number) < 1 || (item.quantity as number) > 99) {
-      return NextResponse.json({ error: "Cantidad inválida" }, { status: 400 });
-    }
-    if (item.note !== undefined && (typeof item.note !== "string" || item.note.length > 200)) {
-      return NextResponse.json({ error: "La nota del ítem es muy larga (máx. 200)" }, { status: 400 });
-    }
-  }
+  try { validateComandaItemsInput(items); }
+  catch (err) { return serviceErrorResponse(err); }
   if (notes !== undefined && (typeof notes !== "string" || notes.length > 500)) {
     return NextResponse.json({ error: "Las notas son muy largas (máx. 500)" }, { status: 400 });
   }
@@ -152,31 +132,9 @@ export async function POST(request: NextRequest) {
   if (!table) return NextResponse.json({ error: "Mesa no encontrada" }, { status: 404 });
   const area = await TableArea.findOne({ _id: table.areaId, tenantId: session.tenantId }).lean();
 
-  const ids = items.map((i) => String(i.productId));
-  const products = await Product.find({ _id: { $in: ids }, tenantId: session.tenantId }).lean() as Array<Record<string, unknown>>;
-  const productMap = new Map(products.map((p) => [String(p._id), p]));
-
-  if (products.length !== new Set(ids).size) {
-    return NextResponse.json({ error: "Un producto ya no existe" }, { status: 400 });
-  }
-  for (const p of products) {
-    if (p.available === false) {
-      return NextResponse.json({ error: `"${p.name}" no está disponible` }, { status: 400 });
-    }
-  }
-
-  const snapshotItems = items.map((i) => {
-    const p = productMap.get(String(i.productId))!;
-    return {
-      productId: String(i.productId),
-      productName: p.name as string,
-      unitPrice: p.price as number,
-      quantity: i.quantity as number,
-      station: effectiveStation(p as { station?: string; menuSection?: string }),
-      note: typeof i.note === "string" ? i.note.trim() : "",
-      paidQty: 0,
-    };
-  });
+  let snapshotItems;
+  try { snapshotItems = await snapshotComandaItems(session.tenantId, items); }
+  catch (err) { return serviceErrorResponse(err); }
 
   // Backfill obligatorio (Fase 2, 5.1). Sin esto, en un tenant cuyo documento no tiene
   // comandaConfig.nextNumber, la 1ª y la 2ª comanda reciben ambas number = 1 (E11000).
@@ -224,7 +182,7 @@ export async function POST(request: NextRequest) {
   );
 
   after(async () => {
-    try { await enqueueComandaPrint(comanda.toObject()); }
+    try { await enqueueComandaPrint(withKitchenNotes(comanda.toObject())); }
     catch (err) { console.error("[printQueue] comanda nueva", err); }
   });
 

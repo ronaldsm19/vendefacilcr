@@ -326,12 +326,15 @@ export default function AdminRecetasPage() {
                   >
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
-                  <button
+                  <Button
+                    size="icon-sm"
+                    variant="destructive"
+                    title="Eliminar receta"
+                    aria-label="Eliminar receta"
                     onClick={() => setConfirmDelete(recipe._id)}
-                    className="p-1.5 rounded-lg text-brand-dark/40 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             );
@@ -548,13 +551,17 @@ export default function AdminRecetasPage() {
                       placeholder="Cant."
                       className="w-20 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
                     />
-                    <button
+                    <Button
                       type="button"
+                      size="icon-sm"
+                      variant="destructive"
+                      className="shrink-0"
+                      title="Quitar ingrediente"
+                      aria-label="Quitar ingrediente"
                       onClick={() => setRows(r => r.filter((_, i) => i !== idx))}
-                      className="p-1.5 rounded-lg text-brand-dark/30 hover:text-red-400 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </div>
                 ))}
                 {rows.length === 0 && (
@@ -567,7 +574,7 @@ export default function AdminRecetasPage() {
           </form>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+            <Button type="button" variant="cancel" onClick={() => setShowForm(false)}>
               Cancelar
             </Button>
             <Button
@@ -706,7 +713,7 @@ export default function AdminRecetasPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProducing(null)}>Cancelar</Button>
+            <Button variant="cancel" onClick={() => setProducing(null)}>Cancelar</Button>
             <Button onClick={handleProduce} disabled={saving || !batches || parseInt(batches) < 1}>
               {saving ? "Registrando..." : "Confirmar producción"}
             </Button>
@@ -724,10 +731,10 @@ export default function AdminRecetasPage() {
             ¿Seguro que querés eliminar esta receta? Esta acción no se puede deshacer.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+            <Button variant="cancel" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
             <Button
+              variant="destructive"
               onClick={() => confirmDelete && handleDelete(confirmDelete)}
-              className="bg-red-500 hover:bg-red-600 text-white"
             >
               Eliminar
             </Button>

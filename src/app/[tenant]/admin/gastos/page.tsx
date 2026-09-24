@@ -113,12 +113,15 @@ export default function AdminExpensesPage() {
                     <ExternalLink className="w-4 h-4" />
                   </a>
                 )}
-                <button
+                <Button
+                  size="icon-sm"
+                  variant="destructive"
+                  title="Eliminar factura"
+                  aria-label="Eliminar factura"
                   onClick={(ev) => { ev.stopPropagation(); setConfirmDelete(e._id); }}
-                  className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
-                </button>
+                </Button>
                 <ChevronDown className={`w-4 h-4 text-brand-dark/30 transition-transform ${expanded === e._id ? "rotate-180" : ""}`} />
               </div>
 
@@ -180,9 +183,9 @@ export default function AdminExpensesPage() {
           <div className="px-6 pb-6 space-y-4">
             <p className="text-sm text-brand-dark/60">Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
-              <Button variant="ghost" className="flex-1 bg-red-50 text-red-600 hover:bg-red-100"
+              <Button variant="destructive" className="flex-1"
                 onClick={() => confirmDelete && handleDelete(confirmDelete)}>Eliminar</Button>
-              <Button variant="outline" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+              <Button variant="cancel" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
             </div>
           </div>
         </DialogContent>

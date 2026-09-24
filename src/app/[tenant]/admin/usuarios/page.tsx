@@ -240,9 +240,9 @@ export default function UsuariosPage() {
                           <button title="Cambiar PIN" onClick={() => openPin(u)} className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer">
                             <KeyRound className="w-4 h-4" />
                           </button>
-                          <button title="Eliminar" onClick={() => setDeleteUser(u)} className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors cursor-pointer">
+                          <Button size="icon-sm" variant="destructive" title="Eliminar" aria-label="Eliminar usuario" onClick={() => setDeleteUser(u)}>
                             <Trash2 className="w-4 h-4" />
-                          </button>
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -268,7 +268,7 @@ export default function UsuariosPage() {
                   <div className="flex items-center gap-2 pt-1">
                     <Button variant="secondary" size="sm" className="flex-1" onClick={() => openEdit(u)}><Pencil className="w-3.5 h-3.5 mr-1" /> Editar</Button>
                     <Button variant="secondary" size="sm" className="flex-1" onClick={() => openPin(u)}><KeyRound className="w-3.5 h-3.5 mr-1" /> PIN</Button>
-                    <Button variant="ghost" size="sm" className="flex-1 bg-red-50 text-red-600 hover:bg-red-100" onClick={() => setDeleteUser(u)}><Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar</Button>
+                    <Button variant="destructive" size="sm" className="flex-1" onClick={() => setDeleteUser(u)}><Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar</Button>
                   </div>
                 </div>
               ))}
@@ -335,7 +335,7 @@ export default function UsuariosPage() {
             </div>
             {formError && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{formError}</p>}
             <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => setShowCreate(false)}>Cancelar</Button>
+              <Button variant="cancel" className="flex-1" onClick={() => setShowCreate(false)}>Cancelar</Button>
               <Button className="flex-1" disabled={saving} onClick={handleCreate}>
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Crear"}
               </Button>
@@ -392,7 +392,7 @@ export default function UsuariosPage() {
             </div>
             {formError && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{formError}</p>}
             <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => setEditUser(null)}>Cancelar</Button>
+              <Button variant="cancel" className="flex-1" onClick={() => setEditUser(null)}>Cancelar</Button>
               <Button className="flex-1" disabled={saving} onClick={handleEditSave}>
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Guardar"}
               </Button>
@@ -427,7 +427,7 @@ export default function UsuariosPage() {
             <p className="text-xs text-brand-dark/40">El usuario no recibe aviso: comunicale el nuevo PIN.</p>
             {formError && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{formError}</p>}
             <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => setPinUser(null)}>Cancelar</Button>
+              <Button variant="cancel" className="flex-1" onClick={() => setPinUser(null)}>Cancelar</Button>
               <Button className="flex-1" disabled={saving} onClick={handlePinSave}>
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Guardar"}
               </Button>
@@ -443,8 +443,8 @@ export default function UsuariosPage() {
           <div className="px-6 pb-6 space-y-4">
             <p className="text-sm text-brand-dark/60">Las ventas que registró conservan su nombre. Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
-              <Button variant="ghost" className="flex-1 bg-red-50 text-red-600 hover:bg-red-100" disabled={saving} onClick={handleDelete}>Eliminar</Button>
-              <Button variant="outline" className="flex-1" onClick={() => setDeleteUser(null)}>Cancelar</Button>
+              <Button variant="destructive" className="flex-1" disabled={saving} onClick={handleDelete}>Eliminar</Button>
+              <Button variant="cancel" className="flex-1" onClick={() => setDeleteUser(null)}>Cancelar</Button>
             </div>
           </div>
         </DialogContent>

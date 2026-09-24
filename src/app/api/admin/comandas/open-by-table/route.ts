@@ -9,6 +9,7 @@ import { Tenant } from "@/models/Tenant";
 import { readComandaConfig } from "@/lib/comandaConfig";
 import { syncTableWithComandas } from "@/lib/tableSync";
 import { startOfTodayCR } from "@/lib/crDate";
+import { subtotalOf } from "@/lib/pricing";
 
 const OPEN_STATUSES = ["enviada", "servida"] as const;
 
@@ -89,9 +90,11 @@ export async function GET(request: NextRequest) {
           pendingQty,
           note: it.note ?? "",
           station: it.station,
+          extras: it.extras ?? [],
         };
       });
-      const pendingTotal = items.reduce((s: number, it) => s + it.pendingQty * it.unitPrice, 0);
+      // Lo pendiente de cada línea lleva sus extras: la parte que falta cobrar se cobra completa.
+      const pendingTotal = subtotalOf(items.map((it) => ({ unitPrice: it.unitPrice, extras: it.extras, quantity: it.pendingQty })));
       return {
         _id: String(c._id),
         number: c.number,

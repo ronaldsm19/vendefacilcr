@@ -5,6 +5,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
 import { isStation } from "@/lib/station";
+import { MAX_EXTRA_NAME, normalizeExtras, type LineExtra } from "@/lib/pricing";
 
 function parseBool(val: unknown, fallback: boolean): boolean {
   if (typeof val === "boolean") return val;
@@ -89,13 +90,27 @@ export async function POST(request: NextRequest) {
     const stationRaw = String(get(row, "estacion", "station") ?? "").trim().toLowerCase();
     const station = isStation(stationRaw) ? stationRaw : (menuSection === "bebidas" ? "bebidas" : "cocina");
 
-    // Toppings: string separado por "|" o array
-    let toppings: string[] = [];
+    // Extras: "Nombre:precio" separados por "|" (o un arreglo en JSON). La columna vieja
+    // "toppings"/"ingredientes" se sigue aceptando y cada nombre entra como extra de ₡0.
+    const extras: LineExtra[] = [];
+    const eRaw = get(row, "extras");
     const tRaw = get(row, "toppings", "ingredientes");
-    if (typeof tRaw === "string" && tRaw.trim()) {
-      toppings = tRaw.split("|").map((t) => t.trim()).filter(Boolean);
-    } else if (Array.isArray(tRaw)) {
-      toppings = tRaw.map(String).filter(Boolean);
+    const parts: unknown[] =
+      typeof eRaw === "string" ? eRaw.split("|") : Array.isArray(eRaw) ? eRaw
+      : typeof tRaw === "string" ? tRaw.split("|") : Array.isArray(tRaw) ? tRaw : [];
+    for (const part of parts) {
+      if (part && typeof part === "object") {
+        const e = normalizeExtras([part]);
+        if (e) extras.push(...e);
+        continue;
+      }
+      const text = String(part ?? "").trim();
+      if (!text) continue;
+      const sep = eRaw !== undefined ? text.lastIndexOf(":") : -1;
+      const extraName = (sep > 0 ? text.slice(0, sep) : text).trim().slice(0, MAX_EXTRA_NAME);
+      const extraPrice = sep > 0 ? parseNum(text.slice(sep + 1).trim(), -1) : 0;
+      if (!extraName || extraPrice < 0) { errors.push(`Fila ${rowNum}: extra inválido "${text}"`); continue; }
+      extras.push({ name: extraName, price: extraPrice });
     }
 
     docs.push({
@@ -108,7 +123,7 @@ export async function POST(request: NextRequest) {
       menuSection,
       station,
       image:        String(get(row, "imagen", "image") ?? ""),
-      toppings,
+      extras,
       stock:        parseNum(get(row, "stock"), 0),
       available:    parseBool(get(row, "disponible", "available"), true),
       featured:     parseBool(get(row, "destacado", "featured"), false),

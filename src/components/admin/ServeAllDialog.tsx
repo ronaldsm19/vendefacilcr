@@ -60,7 +60,7 @@ export default function ServeAllDialog({ tableId, pending, onClose, onDone }: Se
             <Button className="flex-1" disabled={saving} onClick={handleConfirm}>
               {saving ? "Confirmando..." : "Sí, ya se sirvieron"}
             </Button>
-            <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
+            <Button variant="cancel" className="flex-1" onClick={onClose}>Cancelar</Button>
           </div>
         </div>
       </DialogContent>

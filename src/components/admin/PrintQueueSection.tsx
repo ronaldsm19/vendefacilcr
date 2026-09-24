@@ -211,12 +211,9 @@ export default function PrintQueueSection() {
                         Reintentar
                       </button>
                     ) : job.status === "pending" ? (
-                      <button
-                        onClick={() => runJobAction(job.id, "cancel")}
-                        className="text-xs px-2.5 py-1 rounded-lg border border-brand-muted hover:border-brand-pink text-brand-dark/70"
-                      >
+                      <Button size="sm" variant="destructive" className="h-7 px-2.5" onClick={() => runJobAction(job.id, "cancel")}>
                         Cancelar
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                 </td>
@@ -232,7 +229,7 @@ export default function PrintQueueSection() {
           <div className="px-6 pt-2 pb-6 space-y-4">
             <p className="text-sm text-brand-dark/60">El token actual dejará de funcionar y el agente no imprimirá hasta que le configurés el nuevo.</p>
             <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" onClick={() => setConfirmRegenerate(false)}>Cancelar</Button>
+              <Button variant="cancel" className="flex-1" onClick={() => setConfirmRegenerate(false)}>Cancelar</Button>
               <Button className="flex-1" disabled={generating} onClick={generate}>Regenerar</Button>
             </div>
           </div>

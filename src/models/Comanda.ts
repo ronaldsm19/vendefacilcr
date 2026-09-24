@@ -1,6 +1,8 @@
 import mongoose, { Schema } from "mongoose";
 import type { ComandaStatus } from "@/lib/tableStatus";
 import type { ProductStation } from "@/lib/station";
+import { LineExtraSchema } from "@/models/LineExtra";
+import type { LineExtra } from "@/lib/pricing";
 
 // Cada union se declara UNA sola vez: ComandaStatus en src/lib/tableStatus.ts (Fase 2, módulo
 // puro que ya lo consume en isOpenComanda/computeTableStatusFromComandas) y ProductStation en
@@ -12,11 +14,12 @@ export const COMANDA_OPEN_STATUSES: ComandaStatus[] = ["enviada", "servida"];
 export interface IComandaItem {
   productId: string;
   productName: string;
-  unitPrice: number;      // snapshot al comandar
+  unitPrice: number;      // snapshot al comandar (precio BASE, sin extras)
   quantity: number;       // entero >= 1
   station: ProductStation;// snapshot de Product.station
   note: string;           // nota por ítem, "" si no hay
   paidQty: number;        // default 0; lo usa Fase 5
+  extras?: LineExtra[];   // copia congelada de los extras elegidos (aplican a toda la línea); comandas viejas no lo tienen
 }
 
 export interface IComanda {
@@ -56,6 +59,7 @@ const ComandaItemSchema = new Schema(
     station:     { type: String, enum: ["cocina", "bebidas", "ninguna"], default: "cocina" },
     note:        { type: String, default: "", maxlength: 200 },
     paidQty:     { type: Number, default: 0, min: 0 },
+    extras:      { type: [LineExtraSchema], default: [] },
   },
   { _id: false }
 );
