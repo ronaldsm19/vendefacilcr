@@ -159,8 +159,8 @@ export default async function TenantStorefront({
         subtagline={settings?.hero?.subtagline || undefined}
         badge={settings?.hero?.badge || undefined}
       />
-      <BestSellersSection products={featuredProducts} whatsappNumber={tenant.whatsappNumber} />
-      <ProductsSection products={products} whatsappNumber={tenant.whatsappNumber} categories={categories} />
+      <BestSellersSection products={featuredProducts} whatsappNumber={tenant.whatsappNumber} businessName={tenant.name} />
+      <ProductsSection products={products} whatsappNumber={tenant.whatsappNumber} businessName={tenant.name} categories={categories} />
       <TrustSection />
       <AboutSection aboutData={settings?.about} whatsappNumber={tenant.whatsappNumber} />
       <Footer

@@ -9,6 +9,7 @@ import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 interface ProductsSectionProps {
   products: (SeedProduct & { _id?: string })[];
   whatsappNumber?: string;
+  businessName?: string;
   categories?: CategoryOrderEntry[];
 }
 
@@ -19,7 +20,7 @@ const legacyLabels: Record<string, string> = {
   especial: "Edición Especial",
 };
 
-function ProductsGrid({ products, whatsappNumber, categories: categoryOrder }: ProductsSectionProps) {
+function ProductsGrid({ products, whatsappNumber, businessName, categories: categoryOrder }: ProductsSectionProps) {
   const [activeCategory, setActiveCategory] = useState("all");
 
   // Derive tabs from actual product categories (handles both old slugs and new labels),
@@ -75,7 +76,7 @@ function ProductsGrid({ products, whatsappNumber, categories: categoryOrder }: P
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
       >
         {filtered.map((product, i) => (
-          <ProductCard key={product._id ?? product.name} product={product} index={i} whatsappNumber={whatsappNumber} />
+          <ProductCard key={product._id ?? product.name} product={product} index={i} whatsappNumber={whatsappNumber} businessName={businessName} />
         ))}
       </motion.div>
 
@@ -89,7 +90,7 @@ function ProductsGrid({ products, whatsappNumber, categories: categoryOrder }: P
   );
 }
 
-export default function ProductsSection({ products, whatsappNumber, categories }: ProductsSectionProps) {
+export default function ProductsSection({ products, whatsappNumber, businessName, categories }: ProductsSectionProps) {
   return (
     <section id="productos" className="py-24 px-6 bg-surface-alt">
       <div className="max-w-6xl mx-auto">
@@ -142,7 +143,7 @@ export default function ProductsSection({ products, whatsappNumber, categories }
           </motion.p>
         </div>
 
-        <ProductsGrid products={products} whatsappNumber={whatsappNumber} categories={categories} />
+        <ProductsGrid products={products} whatsappNumber={whatsappNumber} businessName={businessName} categories={categories} />
       </div>
     </section>
   );
