@@ -10,19 +10,81 @@ export function isOrderType(v: unknown): v is OrderType {
   return typeof v === "string" && (ORDER_TYPES as string[]).includes(v);
 }
 
-/** Lo mínimo de una línea de venta, carrito o comanda para calcular su dinero. */
-export interface PricedLine {
-  unitPrice: number;
-  quantity: number;
+/**
+ * Extra con precio de un producto (Product.extras). Cada línea de comanda, venta, carrito o pedido
+ * guarda su PROPIA copia congelada de los extras elegidos: si mañana cambia el precio de un extra
+ * en el catálogo, lo ya comandado o vendido no cambia.
+ */
+export interface LineExtra {
+  name: string;
+  price: number;
 }
 
-/** Total de una línea: precio por cantidad. */
+export const MAX_EXTRA_NAME = 60;
+
+/** Lo mínimo de una línea de venta, carrito o comanda para calcular su dinero. */
+export interface PricedLine {
+  /** Precio base del producto. Nunca incluye los extras. */
+  unitPrice: number;
+  quantity: number;
+  /** Extras elegidos; aplican a TODAS las unidades de la línea. */
+  extras?: LineExtra[];
+}
+
+export function extrasTotal(extras: LineExtra[] | undefined): number {
+  return (extras ?? []).reduce((sum, e) => sum + e.price, 0);
+}
+
+/** Precio unitario efectivo: base + suma de los extras de la línea. */
+export function effectiveUnitPrice(line: Pick<PricedLine, "unitPrice" | "extras">): number {
+  return line.unitPrice + extrasTotal(line.extras);
+}
+
+/** Total de una línea: precio unitario efectivo por cantidad. */
 export function lineTotal(line: PricedLine): number {
-  return line.unitPrice * line.quantity;
+  return effectiveUnitPrice(line) * line.quantity;
 }
 
 export function subtotalOf(lines: PricedLine[]): number {
   return lines.reduce((sum, l) => sum + lineTotal(l), 0);
+}
+
+/**
+ * Total de una línea de la tienda o de un pedido manual, donde el producto puede tener ofertas por
+ * volumen ("4 por ₡5400"). La oferta reemplaza solo el precio BASE de esa cantidad exacta; los
+ * extras se cobran siempre por unidad encima.
+ */
+export function offerLineTotal(
+  line: PricedLine,
+  offers: { qty: number; price: number }[] | undefined,
+): number {
+  const offer = (offers ?? []).find((o) => o.qty === line.quantity);
+  const base = offer ? offer.price : line.unitPrice * line.quantity;
+  return base + extrasTotal(line.extras) * line.quantity;
+}
+
+/**
+ * Valida y normaliza una lista de extras que llega de afuera (cuerpo de una petición, documento
+ * viejo). Devuelve null si algo no es válido: nombre vacío o muy largo, o precio no numérico o
+ * negativo. Sin lista, devuelve [].
+ */
+export function normalizeExtras(raw: unknown): LineExtra[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) return null;
+  const out: LineExtra[] = [];
+  for (const e of raw) {
+    const name = typeof e?.name === "string" ? e.name.trim() : "";
+    const price = e?.price;
+    if (!name || name.length > MAX_EXTRA_NAME) return null;
+    if (typeof price !== "number" || !Number.isFinite(price) || price < 0) return null;
+    out.push({ name, price });
+  }
+  return out;
+}
+
+/** Clave estable de un conjunto de extras: dos líneas con la misma clave llevan lo mismo. */
+export function extrasKey(extras: LineExtra[] | undefined): string {
+  return (extras ?? []).map((e) => `${e.name}\u0000${e.price}`).sort().join("\u0001");
 }
 
 /** Cobros del punto de venta, fijados por el dueño en Configuración → Caja (Tenant.posConfig). */

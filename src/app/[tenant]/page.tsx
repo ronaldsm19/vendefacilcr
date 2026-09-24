@@ -17,6 +17,8 @@ import { AccessLog } from "@/models/AccessLog";
 import { SeedProduct } from "@/data/seed";
 import type { CategoryOrderEntry } from "@/lib/categories";
 import { getCategoryOrder } from "@/server/services/categories";
+import { ensureExtrasMigrated } from "@/server/services/productExtras";
+import { normalizeExtras } from "@/lib/pricing";
 
 async function getTenant(slug: string) {
   try {
@@ -52,10 +54,13 @@ async function getTenant(slug: string) {
 
 async function getProducts(tenantId: string): Promise<(SeedProduct & { _id?: string })[]> {
   try {
+    await ensureExtrasMigrated(tenantId);
     const products = await Product.find({ tenantId, available: true })
+      .select("-toppings -cost")
       .sort({ createdAt: -1 })
-      .lean();
-    return JSON.parse(JSON.stringify(products)) as (SeedProduct & { _id?: string })[];
+      .lean() as Array<Record<string, unknown>>;
+    const withExtras = products.map((p) => ({ ...p, extras: normalizeExtras(p.extras) ?? [] }));
+    return JSON.parse(JSON.stringify(withExtras)) as (SeedProduct & { _id?: string })[];
   } catch {
     return [];
   }

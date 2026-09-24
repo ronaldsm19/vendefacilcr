@@ -15,6 +15,7 @@ import ComandaCard, { type ComandaRow } from "@/components/admin/ComandaCard";
 import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
 import ServeAllDialog from "@/components/admin/ServeAllDialog";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
+import { lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
 
 interface CatalogProduct {
   _id: string;
@@ -23,6 +24,7 @@ interface CatalogProduct {
   category: string;
   station: ProductStation;
   image?: string;
+  extras?: LineExtra[];
 }
 
 interface LiveTable {
@@ -42,6 +44,7 @@ interface ComandaLine {
   station: ProductStation;
   quantity: number;
   note: string;
+  extras: LineExtra[];   // aplican a toda la línea; extras distintos van en otra línea
 }
 
 function fmt(n: number) {
@@ -154,24 +157,27 @@ export default function TomarComandaPage() {
           station: i.station,
           quantity: i.quantity,
           note: i.note ?? "",
+          extras: i.extras ?? [],
         })));
         setTab("new");
       })
       .finally(() => setEditLoading(false));
   }, [editId, isPremium]);
 
+  // Sumar desde el catálogo va a la línea del producto SIN extras; las líneas con extras no se tocan.
   function incrementCatalog(p: CatalogProduct) {
     setLines((prev) => {
-      const idx = prev.findIndex((l) => l.productId === p._id);
+      const idx = prev.findIndex((l) => l.productId === p._id && l.extras.length === 0);
       if (idx === -1) {
-        return [...prev, { key: crypto.randomUUID(), productId: p._id, productName: p.name, unitPrice: p.price, station: p.station, quantity: 1, note: "" }];
+        return [...prev, { key: crypto.randomUUID(), productId: p._id, productName: p.name, unitPrice: p.price, station: p.station, quantity: 1, note: "", extras: [] }];
       }
       return prev.map((l, i) => (i === idx ? { ...l, quantity: l.quantity + 1 } : l));
     });
   }
   function decrementCatalog(p: CatalogProduct) {
     setLines((prev) => {
-      const idx = prev.findIndex((l) => l.productId === p._id);
+      let idx = prev.findIndex((l) => l.productId === p._id && l.extras.length === 0);
+      if (idx === -1) idx = prev.findLastIndex((l) => l.productId === p._id);
       if (idx === -1) return prev;
       const line = prev[idx];
       if (line.quantity <= 1) return prev.filter((_, i) => i !== idx);
@@ -179,7 +185,19 @@ export default function TomarComandaPage() {
     });
   }
   function quantityFor(productId: string): number {
-    return lines.find((l) => l.productId === productId)?.quantity ?? 0;
+    return lines.filter((l) => l.productId === productId).reduce((s, l) => s + l.quantity, 0);
+  }
+  function toggleLineExtra(key: string, extra: LineExtra) {
+    setLines((prev) => prev.map((l) => {
+      if (l.key !== key) return l;
+      const has = l.extras.some((e) => e.name === extra.name);
+      return { ...l, extras: has ? l.extras.filter((e) => e.name !== extra.name) : [...l.extras, { name: extra.name, price: extra.price }] };
+    }));
+  }
+  /** Extras que se pueden elegir en una línea: los del catálogo + los ya elegidos que hayan salido del catálogo. */
+  function extraOptionsFor(line: ComandaLine): LineExtra[] {
+    const fromCatalog = catalog.find((p) => p._id === line.productId)?.extras ?? [];
+    return [...fromCatalog, ...line.extras.filter((e) => !fromCatalog.some((c) => c.name === e.name))];
   }
   function updateLineQty(key: string, delta: number) {
     setLines((prev) => prev.flatMap((l) => {
@@ -199,7 +217,8 @@ export default function TomarComandaPage() {
     setLines((prev) => {
       const src = prev.find((l) => l.key === key);
       if (!src) return prev;
-      return [...prev, { ...src, key: crypto.randomUUID(), quantity: 1, note: "" }];
+      // Línea nueva del mismo producto para otros extras u otra nota.
+      return [...prev, { ...src, key: crypto.randomUUID(), quantity: 1, note: "", extras: [] }];
     });
   }
 
@@ -223,7 +242,8 @@ export default function TomarComandaPage() {
       const payload = {
         tableId,
         customerName: customerName.trim(),
-        items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, note: l.note })),
+        // Los extras viajan por nombre: el precio lo congela el servidor desde el catálogo.
+        items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, note: l.note, extras: l.extras.map((e) => e.name) })),
         notes: notesText.trim(),
       };
       const res = editId
@@ -273,6 +293,7 @@ export default function TomarComandaPage() {
         station: i.station,
         quantity: i.quantity,
         note: i.note ?? "",
+        extras: i.extras ?? [],
       })));
     }
   }
@@ -283,6 +304,7 @@ export default function TomarComandaPage() {
   }
 
   const totalItems = lines.reduce((s, l) => s + l.quantity, 0);
+  const totalAmount = subtotalOf(lines);
   const pendingToServe = openComandas.filter((c) => c.status === "enviada");
   const categories = ["Todas", ...orderCategories(categoryOrder, catalog.map((p) => p.category))];
   const visibleProducts = catalog.filter((p) =>
@@ -445,7 +467,10 @@ export default function TomarComandaPage() {
                     {lines.map((l) => (
                       <div key={l.key} className="bg-gray-50 rounded-xl border border-brand-muted p-3 space-y-2">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="font-medium text-brand-dark text-sm">{l.productName}</p>
+                          <div className="min-w-0">
+                            <p className="font-medium text-brand-dark text-sm">{l.productName}</p>
+                            <p className="text-xs text-brand-pink font-semibold">{fmt(lineTotal(l))}</p>
+                          </div>
                           <div className="flex items-center gap-2">
                             <button onClick={() => updateLineQty(l.key, -1)} className="w-7 h-7 rounded-lg border border-brand-muted flex items-center justify-center text-brand-dark/60">
                               <Minus className="w-3 h-3" />
@@ -456,6 +481,22 @@ export default function TomarComandaPage() {
                             </button>
                           </div>
                         </div>
+                        {extraOptionsFor(l).length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {extraOptionsFor(l).map((e) => {
+                              const selected = l.extras.some((x) => x.name === e.name);
+                              return (
+                                <button key={e.name} type="button" role="checkbox" aria-checked={selected}
+                                  onClick={() => toggleLineExtra(l.key, e)}
+                                  className={`px-2.5 py-1 rounded-full text-xs border transition-all ${
+                                    selected ? "border-brand-pink bg-brand-pink text-white" : "border-brand-muted bg-white text-brand-dark/70"
+                                  }`}>
+                                  {e.name} {e.price > 0 ? `+${fmt(e.price)}` : ""}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
                           <StickyNote className="w-3.5 h-3.5 text-brand-dark/30 shrink-0" />
                           <input
@@ -539,7 +580,7 @@ export default function TomarComandaPage() {
 
       {tab === "new" && !editBlocked && !editLoading && (
         <div className="sticky bottom-0 bg-white border-t border-brand-muted p-4 flex items-center justify-between gap-3">
-          <span className="text-sm text-brand-dark/60">{totalItems} ítems</span>
+          <span className="text-sm text-brand-dark/60">{totalItems} ítems · {fmt(totalAmount)}</span>
           <Button className="flex-1" disabled={lines.length === 0 || saving} onClick={handleSubmit}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : (editId ? "Guardar cambios" : "Enviar comanda")}
           </Button>

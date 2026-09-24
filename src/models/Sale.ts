@@ -1,11 +1,14 @@
 import mongoose, { Schema } from "mongoose";
+import { LineExtraSchema } from "@/models/LineExtra";
+import type { LineExtra } from "@/lib/pricing";
 
 export interface ISaleItem {
   productId: string;
   productName: string;
-  unitPrice: number;
+  unitPrice: number;      // precio BASE, sin extras
   quantity: number;
-  lineTotal: number;
+  lineTotal: number;      // (unitPrice + extras) × quantity
+  extras?: LineExtra[];   // copia congelada; ventas viejas no lo tienen
 }
 
 export interface ISaleComandaClaim {
@@ -59,6 +62,7 @@ const SaleItemSchema = new Schema(
     unitPrice:   { type: Number, required: true },
     quantity:    { type: Number, required: true, min: 1 },
     lineTotal:   { type: Number, required: true },
+    extras:      { type: [LineExtraSchema], default: [] },
   },
   { _id: false }
 );

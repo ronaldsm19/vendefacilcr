@@ -332,7 +332,7 @@ export default function AdminProductsPage() {
 
       {/* Form Dialog */}
       <Dialog open={showForm} onOpenChange={(v) => { if (!v) { setShowForm(false); setEditing(null); } }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg lg:max-w-4xl">
           <DialogHeader className="pb-4">
             <DialogTitle>{editing ? "Editar producto" : "Nuevo producto"}</DialogTitle>
           </DialogHeader>

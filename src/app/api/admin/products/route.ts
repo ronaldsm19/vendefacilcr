@@ -3,6 +3,8 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
 import { effectiveStation, isStation } from "@/lib/station";
+import { normalizeExtras } from "@/lib/pricing";
+import { ensureExtrasMigrated } from "@/server/services/productExtras";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -11,9 +13,11 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
 
   await connectToDatabase();
-  const raw = await Product.find({ tenantId: session.tenantId }).sort({ createdAt: -1 }).lean() as Array<Record<string, unknown>>;
+  await ensureExtrasMigrated(session.tenantId);
+  const raw = await Product.find({ tenantId: session.tenantId }).select("-toppings").sort({ createdAt: -1 }).lean() as Array<Record<string, unknown>>;
   const products = raw.map((p) => ({
     ...p,
+    extras: normalizeExtras(p.extras) ?? [],
     station: effectiveStation(p as { station?: string; menuSection?: string }),
     stationAssigned: typeof p.station === "string",
   }));
@@ -29,12 +33,16 @@ export async function POST(request: NextRequest) {
   await connectToDatabase();
   const body = await request.json();
 
-  const { name, description, price, cost, toppings, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock } = body;
+  const { name, description, price, cost, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock } = body;
   if (!name || !price || !category) {
     return NextResponse.json({ error: "Faltan campos requeridos (nombre, precio, categoría)" }, { status: 400 });
   }
   if (station !== undefined && !isStation(station)) {
     return NextResponse.json({ error: "Estación inválida" }, { status: 400 });
+  }
+  const extras = normalizeExtras(body.extras);
+  if (!extras) {
+    return NextResponse.json({ error: "Extras inválidos: cada uno necesita nombre y un precio de 0 o más" }, { status: 400 });
   }
 
   const product = await Product.create({
@@ -42,7 +50,7 @@ export async function POST(request: NextRequest) {
     name, description,
     price: Number(price),
     cost:  cost !== undefined ? Number(cost) : 0,
-    toppings: toppings ?? [],
+    extras,
     image,
     images: images ?? [],
     category,

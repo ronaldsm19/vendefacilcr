@@ -8,7 +8,8 @@ import { SalonTable } from "@/models/SalonTable";
 import { getSession, requireFeature } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
 import { syncTableWithComandas } from "@/lib/tableSync";
-import { computeSaleTotals, isOrderType, lineTotal, readPosCharges, subtotalOf } from "@/lib/pricing";
+import { computeSaleTotals, isOrderType, readPosCharges, subtotalOf } from "@/lib/pricing";
+import { parseSaleItems } from "@/server/services/saleItems";
 import mongoose from "mongoose";
 
 export async function GET(request: NextRequest) {
@@ -70,23 +71,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Faltan campos requeridos (items, paymentMethod)" }, { status: 400 });
   }
 
-  interface ItemInput { productId?: unknown; productName?: unknown; unitPrice?: unknown; quantity?: unknown }
-  if (!Array.isArray(items) || !(items as ItemInput[]).every((i) =>
-    typeof i?.productName === "string" && i.productName.trim() !== "" &&
-    typeof i.unitPrice === "number" && Number.isFinite(i.unitPrice) && i.unitPrice >= 0 &&
-    Number.isInteger(i.quantity) && (i.quantity as number) >= 1
-  )) {
+  // Cada línea lleva su copia de los extras; el total de la línea lo calcula el helper compartido.
+  const saleItems = parseSaleItems(items);
+  if (!saleItems) {
     return NextResponse.json({ error: "Ítems inválidos" }, { status: 400 });
   }
-  const saleItems = (items as ItemInput[]).map((i) => {
-    const line = {
-      productId:   typeof i.productId === "string" ? i.productId : "",
-      productName: (i.productName as string).trim(),
-      unitPrice:   i.unitPrice as number,
-      quantity:    i.quantity as number,
-    };
-    return { ...line, lineTotal: lineTotal(line) };
-  });
 
   const tenantCfg = await Tenant.findById(session.tenantId).select("posConfig").lean() as { posConfig?: unknown } | null;
   if (!tenantCfg) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });

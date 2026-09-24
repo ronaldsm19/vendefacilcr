@@ -4,7 +4,8 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Sale } from "@/models/Sale";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
-import { computeSaleTotals, isOrderType, lineTotal, subtotalOf } from "@/lib/pricing";
+import { computeSaleTotals, isOrderType, subtotalOf } from "@/lib/pricing";
+import { parseSaleItems } from "@/server/services/saleItems";
 
 export async function GET(
   request: NextRequest,
@@ -45,12 +46,8 @@ export async function PUT(
     return NextResponse.json({ error: "La venta debe tener al menos un producto" }, { status: 400 });
   }
 
-  interface ItemInput { productId?: unknown; productName?: unknown; unitPrice?: unknown; quantity?: unknown }
-  if (!Array.isArray(items) || !(items as ItemInput[]).every((i) =>
-    typeof i?.productName === "string" && i.productName.trim() !== "" &&
-    typeof i.unitPrice === "number" && Number.isFinite(i.unitPrice) && i.unitPrice >= 0 &&
-    Number.isInteger(i.quantity) && (i.quantity as number) >= 1
-  )) {
+  const saleItems = parseSaleItems(items);
+  if (!saleItems) {
     return NextResponse.json({ error: "Ítems inválidos" }, { status: 400 });
   }
 
@@ -69,15 +66,6 @@ export async function PUT(
     } | null;
   if (!existing) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  const saleItems = (items as ItemInput[]).map((i) => {
-    const line = {
-      productId:   typeof i.productId === "string" ? i.productId : "",
-      productName: (i.productName as string).trim(),
-      unitPrice:   i.unitPrice as number,
-      quantity:    i.quantity as number,
-    };
-    return { ...line, lineTotal: lineTotal(line) };
-  });
   const totals = computeSaleTotals({
     subtotal: subtotalOf(saleItems),
     charges: {

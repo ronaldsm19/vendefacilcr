@@ -2,19 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { IProduct } from "@/models/Product";
-import { IOrderItem } from "@/models/Order";
-import { Plus, X, ChevronDown } from "lucide-react";
+import type { IProduct } from "@/models/Product";
+import type { IOrderItem } from "@/models/Order";
+import { Plus, X, Check } from "lucide-react";
 import CustomerCombobox from "@/components/admin/CustomerCombobox";
-
-const FREE_TOPPINGS   = 2;
-const EXTRA_TOPPING_PRICE = 150;
+import { offerLineTotal, type LineExtra } from "@/lib/pricing";
 
 interface LineItemState {
-  productId:    string;
-  quantity:     number;
-  itemToppings: string[][];   // toppings por unidad
-  openUnitIdx:  number | null;
+  productId: string;
+  quantity:  number;
+  extras:    LineExtra[];   // copia de los extras elegidos (aplican a todas las unidades)
 }
 
 interface OrderFormProps {
@@ -38,20 +35,15 @@ interface OrderFormProps {
   saving?:  boolean;
 }
 
+/** Misma fórmula que la tienda: oferta por volumen sobre el precio base + extras por unidad. */
 function calcSubtotal(item: LineItemState, product: IProduct): number {
-  const offers = (product as IProduct & { offers?: { qty: number; price: number }[] }).offers ?? [];
-  const activeOffer = offers.find(o => o.qty === item.quantity);
-  const base  = activeOffer ? activeOffer.price : product.price * item.quantity;
-  const extra = item.itemToppings.reduce(
-    (sum, tops) => sum + Math.max(0, tops.length - FREE_TOPPINGS), 0
-  );
-  return base + extra * EXTRA_TOPPING_PRICE;
+  return offerLineTotal({ unitPrice: product.price, quantity: item.quantity, extras: item.extras }, product.offers);
 }
 
-function resizeToppings(prev: string[][], newQty: number): string[][] {
-  const next = [...prev];
-  while (next.length < newQty) next.push([]);
-  return next.slice(0, newQty);
+/** Pedidos viejos guardaban toppings sueltos por unidad; se recuperan como extras del producto por nombre. */
+function legacyExtras(names: string[], product: IProduct | undefined): LineExtra[] {
+  const unique = Array.from(new Set(names));
+  return unique.map((name) => product?.extras?.find((e) => e.name === name) ?? { name, price: 0 });
 }
 
 export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFormProps) {
@@ -67,39 +59,43 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
   });
   const [manualTotal, setManualTotal] = useState<string | null>(null);
 
-  // Inicializar líneas de pedido
+  // Inicializar líneas de pedido (los toppings de pedidos viejos se completan cuando llega el catálogo)
   const [lineItems, setLineItems] = useState<LineItemState[]>(() => {
     if (initial?.items && initial.items.length > 0) {
       return initial.items.map(it => ({
-        productId:    it.productId,
-        quantity:     it.quantity,
-        itemToppings: it.itemToppings?.length ? it.itemToppings : Array.from({ length: it.quantity }, () => []),
-        openUnitIdx:  null,
+        productId: it.productId,
+        quantity:  it.quantity,
+        extras:    it.extras ?? [],
       }));
     }
     // Legacy: convertir pedido viejo a línea única
     if (initial?.productId) {
-      const qty = initial.quantity ?? 1;
-      const tops = initial.options ?? [];
-      return [{
-        productId:    initial.productId,
-        quantity:     qty,
-        itemToppings: Array.from({ length: qty }, (_, i) => (i === 0 ? tops : [])),
-        openUnitIdx:  null,
-      }];
+      return [{ productId: initial.productId, quantity: initial.quantity ?? 1, extras: [] }];
     }
-    return [{ productId: "", quantity: 1, itemToppings: [[]], openUnitIdx: null }];
+    return [{ productId: "", quantity: 1, extras: [] }];
   });
 
   useEffect(() => {
     fetch("/api/admin/products")
       .then(r => r.json())
-      .then(d => setProducts(d.products ?? []));
+      .then(d => {
+        const list: IProduct[] = d.products ?? [];
+        setProducts(list);
+        // Pedidos anteriores a los extras: sus toppings (por unidad) pasan a ser extras de la línea.
+        setLineItems(prev => prev.map((line, i) => {
+          if (line.extras.length > 0) return line;
+          const legacy = initial?.items?.[i]?.itemToppings?.flat()
+            ?? (i === 0 && !initial?.items?.length ? initial?.options : undefined) ?? [];
+          if (legacy.length === 0) return line;
+          return { ...line, extras: legacyExtras(legacy, list.find(p => String(p._id) === line.productId)) };
+        }));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Helpers ─────────────────────────────────────────────────────
   function addLineItem() {
-    setLineItems(prev => [...prev, { productId: "", quantity: 1, itemToppings: [[]], openUnitIdx: null }]);
+    setLineItems(prev => [...prev, { productId: "", quantity: 1, extras: [] }]);
   }
 
   function removeLineItem(idx: number) {
@@ -108,35 +104,24 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
 
   function setLineProduct(idx: number, productId: string) {
     setLineItems(prev => prev.map((item, i) =>
-      i !== idx ? item : { ...item, productId, itemToppings: resizeToppings([[]], item.quantity), openUnitIdx: null }
+      i !== idx ? item : { ...item, productId, extras: [] }
     ));
   }
 
   function setLineQty(idx: number, newQty: number) {
     const q = Math.max(1, newQty);
-    setLineItems(prev => prev.map((item, i) =>
-      i !== idx ? item : { ...item, quantity: q, itemToppings: resizeToppings(item.itemToppings, q) }
-    ));
+    setLineItems(prev => prev.map((item, i) => (i !== idx ? item : { ...item, quantity: q })));
   }
 
-  function toggleUnitTopping(lineIdx: number, unitIdx: number, topping: string) {
+  function toggleExtra(lineIdx: number, extra: LineExtra) {
     setLineItems(prev => prev.map((item, i) => {
       if (i !== lineIdx) return item;
-      const tops = [...item.itemToppings];
-      tops[unitIdx] = tops[unitIdx].includes(topping)
-        ? tops[unitIdx].filter(t => t !== topping)
-        : [...tops[unitIdx], topping];
-      return { ...item, itemToppings: tops };
-    }));
-  }
-
-  function toggleAccordion(lineIdx: number, unitIdx: number) {
-    setLineItems(prev => prev.map((item, i) =>
-      i !== lineIdx ? item : {
+      const has = item.extras.some(e => e.name === extra.name);
+      return {
         ...item,
-        openUnitIdx: item.openUnitIdx === unitIdx ? null : unitIdx,
-      }
-    ));
+        extras: has ? item.extras.filter(e => e.name !== extra.name) : [...item.extras, { name: extra.name, price: extra.price }],
+      };
+    }));
   }
 
   // ── Precio calculado ────────────────────────────────────────────
@@ -156,12 +141,12 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
     const builtItems = validItems.map(item => {
       const prod = products.find(p => String(p._id) === item.productId)!;
       return {
-        productId:    item.productId,
-        productName:  prod.name,
-        price:        prod.price,
-        quantity:     item.quantity,
-        itemToppings: item.itemToppings,
-        subtotal:     calcSubtotal(item, prod),
+        productId:   item.productId,
+        productName: prod.name,
+        price:       prod.price,
+        quantity:    item.quantity,
+        extras:      item.extras,
+        subtotal:    calcSubtotal(item, prod),
       };
     });
 
@@ -212,8 +197,12 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
           {lineItems.map((item, lineIdx) => {
             const prod = products.find(p => String(p._id) === item.productId) ?? null;
             const subtotal = prod ? calcSubtotal(item, prod) : 0;
-            const offers = (prod as (IProduct & { offers?: { qty: number; price: number }[] }) | null)?.offers ?? [];
-            const activeOffer = offers.find(o => o.qty === item.quantity);
+            const activeOffer = prod?.offers?.find(o => o.qty === item.quantity);
+            // Extras del catálogo + los ya elegidos que ya no estén en el catálogo (se pueden quitar).
+            const extraOptions = [
+              ...(prod?.extras ?? []),
+              ...item.extras.filter(e => !(prod?.extras ?? []).some(c => c.name === e.name)),
+            ];
 
             return (
               <div key={lineIdx} className="border border-brand-muted rounded-xl p-3 space-y-3">
@@ -283,89 +272,35 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
                   </p>
                 )}
 
-                {/* Toppings — qty = 1: inline */}
-                {prod && prod.toppings.length > 0 && item.quantity === 1 && (
+                {/* Extras con precio (aplican a todas las unidades de la línea) */}
+                {prod && extraOptions.length > 0 && (
                   <div>
                     <p className="text-xs text-brand-dark/50 mb-2">
-                      Toppings · {FREE_TOPPINGS} incluidos · +₡{EXTRA_TOPPING_PRICE} c/u extra
+                      Extras{item.quantity > 1 ? ` · se suman a cada una de las ${item.quantity} unidades` : ""}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {prod.toppings.map(t => {
-                        const selected = item.itemToppings[0]?.includes(t);
+                      {extraOptions.map(extra => {
+                        const selected = item.extras.some(e => e.name === extra.name);
                         return (
                           <button
-                            key={t} type="button"
-                            onClick={() => toggleUnitTopping(lineIdx, 0, t)}
-                            className={`px-2.5 py-1 rounded-full text-xs border transition-all ${
+                            key={extra.name} type="button"
+                            role="checkbox" aria-checked={selected}
+                            onClick={() => toggleExtra(lineIdx, extra)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-all ${
                               selected
                                 ? "gradient-bg text-white border-transparent"
                                 : "bg-brand-muted border-brand-muted text-brand-dark/70 hover:border-brand-pink/30"
                             }`}
-                          >{t}</button>
+                          >
+                            {selected && <Check className="w-3 h-3" />}
+                            {extra.name}
+                            <span className={selected ? "text-white/80" : "text-brand-dark/50"}>
+                              {extra.price > 0 ? `+₡${extra.price.toLocaleString("es-CR")}` : "₡0"}
+                            </span>
+                          </button>
                         );
                       })}
                     </div>
-                  </div>
-                )}
-
-                {/* Toppings — qty > 1: acordeón por unidad */}
-                {prod && prod.toppings.length > 0 && item.quantity > 1 && (
-                  <div className="space-y-1">
-                    <p className="text-xs text-brand-dark/50 mb-1">
-                      Personaliza cada unidad · {FREE_TOPPINGS} toppings incluidos · +₡{EXTRA_TOPPING_PRICE} c/u extra
-                    </p>
-                    {Array.from({ length: item.quantity }, (_, unitIdx) => {
-                      const unitTops = item.itemToppings[unitIdx] ?? [];
-                      const extraCount = Math.max(0, unitTops.length - FREE_TOPPINGS);
-                      const isOpen = item.openUnitIdx === unitIdx;
-                      const shortName = prod.name.split(" ").slice(-1)[0];
-                      return (
-                        <div key={unitIdx} className="border border-brand-muted/60 rounded-lg overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => toggleAccordion(lineIdx, unitIdx)}
-                            className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-brand-muted/30 transition-colors"
-                          >
-                            <span className="text-xs font-medium text-brand-dark">
-                              {shortName} #{unitIdx + 1}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {unitTops.length > 0 && (
-                                <span className="text-xs text-brand-pink/80">
-                                  {unitTops.length} topping{unitTops.length !== 1 ? "s" : ""}
-                                  {extraCount > 0 && (
-                                    <span className="font-semibold">
-                                      {" "}(+₡{(extraCount * EXTRA_TOPPING_PRICE).toLocaleString("es-CR")})
-                                    </span>
-                                  )}
-                                </span>
-                              )}
-                              <ChevronDown className={`w-3.5 h-3.5 text-brand-dark/40 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
-                            </div>
-                          </button>
-                          {isOpen && (
-                            <div className="px-3 pb-3 pt-1 border-t border-brand-muted/40">
-                              <div className="flex flex-wrap gap-1.5">
-                                {prod.toppings.map(t => {
-                                  const selected = unitTops.includes(t);
-                                  return (
-                                    <button
-                                      key={t} type="button"
-                                      onClick={() => toggleUnitTopping(lineIdx, unitIdx, t)}
-                                      className={`px-2.5 py-1 rounded-full text-xs border transition-all ${
-                                        selected
-                                          ? "gradient-bg text-white border-transparent"
-                                          : "bg-brand-muted border-brand-muted text-brand-dark/70 hover:border-brand-pink/30"
-                                      }`}
-                                    >{t}</button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
                   </div>
                 )}
               </div>

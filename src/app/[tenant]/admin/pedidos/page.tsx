@@ -10,7 +10,7 @@ import { IOrder } from "@/models/Order";
 import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle } from "lucide-react";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
-import { computeSaleTotals, isOrderType, lineTotal, subtotalOf } from "@/lib/pricing";
+import { computeSaleTotals, isOrderType, lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -41,7 +41,7 @@ interface VentaStats {
 
 type OrderRow = IOrder & { _id: string };
 
-interface SaleItem { productId: string; productName: string; unitPrice: number; quantity: number; }
+interface SaleItem { productId: string; productName: string; unitPrice: number; quantity: number; extras?: LineExtra[]; }
 interface FullSale {
   _id: string;
   ticketNumber?: number;
@@ -240,6 +240,12 @@ export default function AdminOrdersPage() {
       paymentMethod: s.paymentMethod,
       mixedPayment: s.mixedPayment,
       notes: s.notes,
+      // Igual que el tiquete original: sin esto la reimpresión de un express no mostraba el envío.
+      orderType: s.orderType,
+      pickupTime: s.pickupTime,
+      deliveryAddress: s.deliveryAddress,
+      deliveryPhone: s.deliveryPhone,
+      deliveryFee: s.deliveryFee,
     };
   }
 
@@ -315,11 +321,12 @@ export default function AdminOrdersPage() {
     } finally { setSavingSale(false); }
   }
 
-  function updateSaleItem(productId: string, delta: number) {
+  // Por posición y no por producto: el mismo producto puede estar en dos líneas con extras distintos.
+  function updateSaleItem(index: number, delta: number) {
     setEditSale((prev) => {
       if (!prev) return prev;
       const items = prev.items
-        .map((i) => i.productId === productId ? { ...i, quantity: i.quantity + delta } : i)
+        .map((i, idx) => idx === index ? { ...i, quantity: i.quantity + delta } : i)
         .filter((i) => i.quantity > 0);
       return { ...prev, items };
     });
@@ -328,11 +335,12 @@ export default function AdminOrdersPage() {
   function addSaleProduct(p: ProductOption) {
     setEditSale((prev) => {
       if (!prev) return prev;
-      const existing = prev.items.find((i) => i.productId === p._id);
-      if (existing) {
-        return { ...prev, items: prev.items.map((i) => i.productId === p._id ? { ...i, quantity: i.quantity + 1 } : i) };
+      // Se suma a la línea del mismo producto sin extras; si solo hay líneas con extras, va en una nueva.
+      const existingIdx = prev.items.findIndex((i) => i.productId === p._id && !(i.extras?.length));
+      if (existingIdx >= 0) {
+        return { ...prev, items: prev.items.map((i, idx) => idx === existingIdx ? { ...i, quantity: i.quantity + 1 } : i) };
       }
-      return { ...prev, items: [...prev.items, { productId: p._id, productName: p.name, unitPrice: p.price, quantity: 1 }] };
+      return { ...prev, items: [...prev.items, { productId: p._id, productName: p.name, unitPrice: p.price, quantity: 1, extras: [] }] };
     });
     setProductSearch("");
     setShowProductDrop(false);
@@ -715,17 +723,22 @@ export default function AdminOrdersPage() {
                 <div>
                   <label className="block text-xs font-medium text-brand-dark/60 mb-2">Productos</label>
                   <div className="space-y-2 mb-2">
-                    {editSale.items.map((item) => (
-                      <div key={item.productId} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
-                        <span className="flex-1 text-sm font-medium text-gray-900 truncate">{item.productName}</span>
+                    {editSale.items.map((item, idx) => (
+                      <div key={`${item.productId}-${idx}`} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-medium text-gray-900 truncate">{item.productName}</span>
+                          {item.extras?.map((e) => (
+                            <span key={e.name} className="block text-xs text-gray-500 truncate">+ {e.name} {fmt(e.price)}</span>
+                          ))}
+                        </span>
                         <span className="text-xs text-gray-400">{fmt(item.unitPrice)}</span>
                         <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => updateSaleItem(item.productId, -1)}
+                          <button type="button" onClick={() => updateSaleItem(idx, -1)}
                             className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                             <Minus className="w-3 h-3" />
                           </button>
                           <span className="w-6 text-center text-sm font-bold">{item.quantity}</span>
-                          <button type="button" onClick={() => updateSaleItem(item.productId, 1)}
+                          <button type="button" onClick={() => updateSaleItem(idx, 1)}
                             className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                             <Plus className="w-3 h-3" />
                           </button>
@@ -733,7 +746,7 @@ export default function AdminOrdersPage() {
                         <span className="text-sm font-bold text-brand-pink w-20 text-right">{fmt(lineTotal(item))}</span>
                         <Button type="button" size="icon-xs" variant="destructive" className="shrink-0"
                           title="Quitar producto" aria-label="Quitar producto"
-                          onClick={() => updateSaleItem(item.productId, -item.quantity)}>
+                          onClick={() => updateSaleItem(idx, -item.quantity)}>
                           <X className="w-3 h-3" />
                         </Button>
                       </div>

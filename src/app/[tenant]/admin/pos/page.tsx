@@ -16,8 +16,8 @@ import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } fro
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
-  computeSaleTotals, readPosCharges, subtotalOf, lineTotal,
-  DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals,
+  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey,
+  DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra,
 } from "@/lib/pricing";
 import {
   Dialog,
@@ -35,13 +35,15 @@ interface ProductRow {
   image?: string;
   category: string;
   available: boolean;
+  extras?: LineExtra[];
 }
 
 interface CartLine {
   productId: string;
   productName: string;
-  unitPrice: number;
+  unitPrice: number;      // precio base; los extras van aparte y el total sale de lineTotal()
   quantity: number;
+  extras?: LineExtra[];
   // Solo en líneas que vienen de una comanda (bloqueadas)
   comandaId?: string;
   comandaNumber?: number;
@@ -49,8 +51,22 @@ interface CartLine {
   note?: string;
 }
 
+/** Mismo producto con extras distintos = líneas distintas. */
 function lineKey(l: CartLine) {
-  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : l.productId;
+  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : `${l.productId}|${extrasKey(l.extras)}`;
+}
+
+/** Extras de una línea, cada uno con su precio, debajo del nombre del producto. */
+function LineExtras({ extras, className = "" }: { extras?: LineExtra[]; className?: string }) {
+  if (!extras?.length) return null;
+  // Spans (no <ul>): también se usa dentro de <label>.
+  return (
+    <span className={`block text-xs text-gray-500 ${className}`}>
+      {extras.map((e) => (
+        <span key={e.name} className="block">+ {e.name} {e.price > 0 ? fmt(e.price) : "(sin costo)"}</span>
+      ))}
+    </span>
+  );
 }
 
 interface ComandaSelection {
@@ -63,6 +79,7 @@ interface ComandaSelection {
 interface OpenComandaItem {
   index: number; productId: string; productName: string; unitPrice: number;
   quantity: number; paidQty: number; pendingQty: number; note: string; station: string;
+  extras?: LineExtra[];
 }
 interface OpenComanda {
   _id: string; number: number; status: "enviada" | "servida"; version: number;
@@ -271,6 +288,7 @@ function PosPageInner() {
   const [activeCategory, setActiveCategory] = useState("todos");
   const [qtyModal, setQtyModal]             = useState<ProductRow | null>(null);
   const [qtyInput, setQtyInput]             = useState(1);
+  const [qtyExtras, setQtyExtras]           = useState<string[]>([]);   // extras elegidos en el modal
 
   // ── Cart state ───────────────────────────────────────────────────
   const [cart, setCart]             = useState<CartLine[]>([]);
@@ -477,25 +495,30 @@ function PosPageInner() {
   function openQtyModal(product: ProductRow) {
     setQtyModal(product);
     setQtyInput(1);
+    setQtyExtras([]);
   }
+
+  // Extras elegidos en el modal, con el precio del catálogo en este momento (copia congelada).
+  const qtyChosenExtras: LineExtra[] = (qtyModal?.extras ?? [])
+    .filter((e) => qtyExtras.includes(e.name))
+    .map((e) => ({ name: e.name, price: e.price }));
 
   function addToCart() {
     if (!qtyModal || qtyInput < 1) return;
+    const newLine: CartLine = {
+      productId:   qtyModal._id,
+      productName: qtyModal.name,
+      unitPrice:   qtyModal.price,
+      quantity:    qtyInput,
+      extras:      qtyChosenExtras,
+    };
+    const key = lineKey(newLine);
     setCart((prev) => {
-      const existing = prev.find((l) => !l.comandaId && l.productId === qtyModal._id);
-      if (existing) {
-        return prev.map((l) =>
-          !l.comandaId && l.productId === qtyModal._id
-            ? { ...l, quantity: l.quantity + qtyInput }
-            : l
-        );
+      // Solo se suma a una línea existente si lleva exactamente los mismos extras.
+      if (prev.some((l) => !l.comandaId && lineKey(l) === key)) {
+        return prev.map((l) => (!l.comandaId && lineKey(l) === key ? { ...l, quantity: l.quantity + qtyInput } : l));
       }
-      return [...prev, {
-        productId:   qtyModal._id,
-        productName: qtyModal.name,
-        unitPrice:   qtyModal.price,
-        quantity:    qtyInput,
-      }];
+      return [...prev, newLine];
     });
     setQtyModal(null);
   }
@@ -533,7 +556,7 @@ function PosPageInner() {
     let selectedTotal = 0;
     let tablePendingTotal = 0;
     for (const c of t.comandas) {
-      for (const it of c.items) tablePendingTotal += it.pendingQty * it.unitPrice;
+      for (const it of c.items) tablePendingTotal += lineTotal({ ...it, quantity: it.pendingQty });
       const selItems = c.items
         .filter((it) => (picked[`${c._id}:${it.index}`] ?? 0) > 0)
         .map((it) => ({ index: it.index, qty: Math.min(picked[`${c._id}:${it.index}`], it.pendingQty) }));
@@ -541,11 +564,14 @@ function PosPageInner() {
       selections.push({ comandaId: c._id, number: c.number, version: c.version, items: selItems });
       for (const it of selItems) {
         const src = c.items[it.index];
-        selectedTotal += src.unitPrice * it.qty;
-        lines.push({
+        // La parte cobrada (total o parcial) lleva los mismos extras que la línea de la comanda.
+        const line: CartLine = {
           productId: src.productId, productName: src.productName, unitPrice: src.unitPrice,
-          quantity: it.qty, comandaId: c._id, comandaNumber: c.number, itemIndex: it.index, note: src.note,
-        });
+          quantity: it.qty, extras: src.extras ?? [],
+          comandaId: c._id, comandaNumber: c.number, itemIndex: it.index, note: src.note,
+        };
+        selectedTotal += lineTotal(line);
+        lines.push(line);
       }
     }
     if (selections.length === 0) return;
@@ -628,6 +654,7 @@ function PosPageInner() {
         productName: l.productName,
         unitPrice:   l.unitPrice,
         quantity:    l.quantity,
+        extras:      l.extras ?? [],
         lineTotal:   lineTotal(l),
       }));
       // Impuesto, servicio, subtotal y total los recalcula el servidor con la configuración del
@@ -918,6 +945,7 @@ function PosPageInner() {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 leading-tight">{line.productName}</p>
+                      <LineExtras extras={line.extras} className="mt-0.5" />
                       {line.comandaId && (
                         <span className="inline-block mt-1 text-[10px] font-semibold text-brand-pink bg-brand-pink/10 rounded-full px-1.5 py-0.5">
                           Comanda #{line.comandaNumber}
@@ -962,11 +990,11 @@ function PosPageInner() {
                       </div>
                     )}
                     <span className="text-sm font-bold text-brand-pink">
-                      {fmt(line.unitPrice * line.quantity)}
+                      {fmt(lineTotal(line))}
                     </span>
                   </div>
                   {line.quantity > 1 && (
-                    <p className="text-xs text-gray-400 mt-1">{fmt(line.unitPrice)} c/u</p>
+                    <p className="text-xs text-gray-400 mt-1">{fmt(effectiveUnitPrice(line))} c/u</p>
                   )}
                 </div>
               ))
@@ -1249,6 +1277,7 @@ function PosPageInner() {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 leading-tight">{line.productName}</p>
+                      <LineExtras extras={line.extras} className="mt-0.5" />
                       {line.comandaId && (
                         <span className="inline-block mt-1 text-[10px] font-semibold text-brand-pink bg-brand-pink/10 rounded-full px-1.5 py-0.5">
                           Comanda #{line.comandaNumber}
@@ -1278,9 +1307,9 @@ function PosPageInner() {
                         </button>
                       </div>
                     )}
-                    <span className="text-sm font-bold text-brand-pink">{fmt(line.unitPrice * line.quantity)}</span>
+                    <span className="text-sm font-bold text-brand-pink">{fmt(lineTotal(line))}</span>
                   </div>
-                  {line.quantity > 1 && <p className="text-xs text-gray-400 mt-1">{fmt(line.unitPrice)} c/u</p>}
+                  {line.quantity > 1 && <p className="text-xs text-gray-400 mt-1">{fmt(effectiveUnitPrice(line))} c/u</p>}
                 </div>
               ))
             )}
@@ -1527,12 +1556,40 @@ function PosPageInner() {
 
       {/* ── Modal de cantidad ── */}
       <Dialog open={!!qtyModal} onOpenChange={(open) => !open && setQtyModal(null)}>
-        <DialogContent className="max-w-xs">
+        <DialogContent className={qtyModal?.extras?.length ? "max-w-sm" : "max-w-xs"}>
           <DialogHeader>
             <DialogTitle className="text-base">{qtyModal?.name}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 px-6 pb-6 pt-2">
             <p className="text-brand-pink font-bold text-lg">{qtyModal ? fmt(qtyModal.price) : ""}</p>
+            {qtyModal?.extras && qtyModal.extras.length > 0 && (
+              <div className="w-full">
+                <p className="text-xs font-semibold text-gray-500 mb-1.5">Extras (para cada unidad)</p>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {qtyModal.extras.map((extra) => {
+                    const selected = qtyExtras.includes(extra.name);
+                    return (
+                      <button
+                        key={extra.name}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={selected}
+                        onClick={() => setQtyExtras((prev) => selected ? prev.filter((n) => n !== extra.name) : [...prev, extra.name])}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-left text-sm transition-colors ${
+                          selected ? "border-brand-pink bg-brand-pink/10" : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selected ? "bg-brand-pink border-brand-pink text-white" : "border-gray-300"}`}>
+                          {selected && <Check className="w-3 h-3" />}
+                        </span>
+                        <span className="flex-1 text-gray-800">{extra.name}</span>
+                        <span className="font-semibold text-gray-600">{extra.price > 0 ? `+${fmt(extra.price)}` : "Sin costo"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-4">
               <button
                 type="button"
@@ -1557,7 +1614,7 @@ function PosPageInner() {
               </button>
             </div>
             <p className="text-sm text-gray-400">
-              Subtotal: <span className="font-bold text-gray-700">{qtyModal ? fmt(qtyModal.price * qtyInput) : ""}</span>
+              Subtotal: <span className="font-bold text-gray-700">{qtyModal ? fmt(lineTotal({ unitPrice: qtyModal.price, quantity: qtyInput, extras: qtyChosenExtras })) : ""}</span>
             </p>
             <button
               type="button"
@@ -1726,6 +1783,7 @@ function PosPageInner() {
                                       />
                                       <span className="min-w-0">
                                         <span className="block">{it.productName}</span>
+                                        <LineExtras extras={it.extras} />
                                         {it.note && <span className="block text-xs text-gray-400 italic">{it.note}</span>}
                                         <span className="block text-xs text-brand-dark/40">pendiente {it.pendingQty} de {it.quantity}</span>
                                       </span>
@@ -1741,7 +1799,7 @@ function PosPageInner() {
                                           className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                                           <Plus className="w-3 h-3" />
                                         </button>
-                                        <span className="text-xs font-semibold text-brand-pink w-14 text-right">{fmt(it.unitPrice * qty)}</span>
+                                        <span className="text-xs font-semibold text-brand-pink w-14 text-right">{fmt(lineTotal({ ...it, quantity: qty }))}</span>
                                       </div>
                                     )}
                                   </div>
@@ -1762,9 +1820,9 @@ function PosPageInner() {
                   let tablePendingTotal = 0;
                   for (const c of activeTable.comandas) {
                     for (const it of c.items) {
-                      tablePendingTotal += it.pendingQty * it.unitPrice;
+                      tablePendingTotal += lineTotal({ ...it, quantity: it.pendingQty });
                       const q = picked[`${c._id}:${it.index}`] ?? 0;
-                      sum += Math.min(q, it.pendingQty) * it.unitPrice;
+                      sum += lineTotal({ ...it, quantity: Math.min(q, it.pendingQty) });
                     }
                   }
                   const willRemain = Math.max(0, tablePendingTotal - sum);

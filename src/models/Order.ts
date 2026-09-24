@@ -1,11 +1,15 @@
 import mongoose, { Schema } from "mongoose";
+import { LineExtraSchema } from "@/models/LineExtra";
+import type { LineExtra } from "@/lib/pricing";
 
 export interface IOrderItem {
   productId:    string;
   productName:  string;
-  price:        number;       // precio unitario al momento del pedido
+  price:        number;       // precio unitario BASE al momento del pedido
   quantity:     number;
-  itemToppings: string[][];   // toppings por unidad (índice = nro de unidad)
+  /** @deprecated Pedidos viejos: toppings por unidad. Los nuevos usan `extras`. */
+  itemToppings?: string[][];
+  extras?:      LineExtra[];  // copia congelada de los extras (aplican a toda la línea)
   subtotal:     number;
 }
 
@@ -34,7 +38,8 @@ const OrderItemSchema = new Schema({
   productName:  { type: String, required: true },
   price:        { type: Number, required: true },
   quantity:     { type: Number, required: true, min: 1 },
-  itemToppings: { type: [[String]], default: [] },
+  itemToppings: { type: [[String]], default: undefined },   // obsoleto (pedidos viejos)
+  extras:       { type: [LineExtraSchema], default: [] },
   subtotal:     { type: Number, required: true },
 }, { _id: false });
 
