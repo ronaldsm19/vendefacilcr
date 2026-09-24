@@ -4,6 +4,7 @@ import { Sale } from "@/models/Sale";
 import { Expense } from "@/models/Expense";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { dayRangeCR } from "@/lib/crDate";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -13,20 +14,22 @@ export async function GET(request: NextRequest) {
 
   await connectToDatabase();
 
-  // Rango del día de hoy (medianoche a medianoche)
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const endOfDay   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  // Rango del día de hoy en HORA DE COSTA RICA.
+  // Ojo: el servidor corre en UTC, seis horas adelante. Calcular el día con los
+  // getters locales de Date daba una ventana corrida (de las 18:00 del día
+  // anterior a las 17:59 del actual) y las ventas hechas antes de las 18:00
+  // desaparecían del cierre. El límite superior es exclusivo: se usa con $lt.
+  const { from: startOfDay, to: endOfDay } = dayRangeCR();
 
   const [sales, expenses, products] = await Promise.all([
     Sale.find({
       tenantId: session.tenantId,
-      saleDate: { $gte: startOfDay, $lte: endOfDay },
+      saleDate: { $gte: startOfDay, $lt: endOfDay },
     }).sort({ saleDate: -1 }).lean(),
 
     Expense.find({
       tenantId: session.tenantId,
-      date: { $gte: startOfDay, $lte: endOfDay },
+      date: { $gte: startOfDay, $lt: endOfDay },
     }).lean(),
 
     Product.find({ tenantId: session.tenantId, available: true })
