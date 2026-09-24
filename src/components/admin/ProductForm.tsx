@@ -289,13 +289,15 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
                 >
                   <Upload className="w-3.5 h-3.5" /> Cambiar
                 </button>
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="h-auto px-3 py-1.5 rounded-lg gap-1.5"
                   onClick={clearImage}
-                  className="px-3 py-1.5 bg-white rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 transition-colors flex items-center gap-1.5"
                 >
                   <X className="w-3.5 h-3.5" /> Quitar
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -468,13 +470,17 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
                     </div>
                   </div>
                 </div>
-                <button
+                <Button
                   type="button"
+                  size="icon-xs"
+                  variant="destructive"
+                  className="shrink-0"
+                  title="Eliminar oferta"
+                  aria-label="Eliminar oferta"
                   onClick={() => setOffers(prev => prev.filter((_, i) => i !== idx))}
-                  className="p-1.5 text-brand-dark/30 hover:text-red-500 transition-colors"
                 >
-                  <X className="w-4 h-4" />
-                </button>
+                  <X className="w-3 h-3" />
+                </Button>
               </div>
             ))}
           </div>
@@ -536,7 +542,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
         <Button type="submit" disabled={saving || uploading || uploadingExtra} className="flex-1">
           {saving ? "Guardando..." : initial?._id ? "Actualizar producto" : "Crear producto"}
         </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+        <Button type="button" variant="cancel" onClick={onCancel}>Cancelar</Button>
       </div>
     </form>
   );

@@ -293,12 +293,15 @@ export default function AdminProductsPage() {
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
-                        <button
+                        <Button
+                          size="icon-sm"
+                          variant="destructive"
+                          title="Eliminar producto"
+                          aria-label="Eliminar producto"
                           onClick={() => setConfirmDelete(p._id)}
-                          className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/50 hover:text-red-500 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   )}
@@ -355,13 +358,13 @@ export default function AdminProductsPage() {
             <p className="text-sm text-brand-dark/60">Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
               <Button
-                variant="ghost"
-                className="flex-1 bg-red-50 text-red-600 hover:bg-red-100"
+                variant="destructive"
+                className="flex-1"
                 onClick={() => confirmDelete && handleDelete(confirmDelete)}
               >
                 Eliminar
               </Button>
-              <Button variant="outline" className="flex-1" onClick={() => setConfirmDelete(null)}>
+              <Button variant="cancel" className="flex-1" onClick={() => setConfirmDelete(null)}>
                 Cancelar
               </Button>
             </div>

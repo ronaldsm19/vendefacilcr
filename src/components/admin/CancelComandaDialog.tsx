@@ -52,10 +52,10 @@ export default function CancelComandaDialog({ comanda, onClose, onDone }: Cancel
           />
           {error && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{error}</p>}
           <div className="flex gap-3">
-            <Button variant="ghost" className="flex-1 bg-red-50 text-red-600 hover:bg-red-100" disabled={saving} onClick={handleCancel}>
+            <Button variant="destructive" className="flex-1" disabled={saving} onClick={handleCancel}>
               Anular
             </Button>
-            <Button variant="outline" className="flex-1" onClick={onClose}>Volver</Button>
+            <Button variant="cancel" className="flex-1" onClick={onClose}>Volver</Button>
           </div>
         </div>
       </DialogContent>

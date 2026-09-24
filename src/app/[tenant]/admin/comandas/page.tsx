@@ -314,13 +314,9 @@ export default function AdminComandasPage() {
                         {tab === "pendientes" ? (
                           <>
                             {!hasPaidItems(c) && (
-                              <button
-                                onClick={() => setCancelTarget(c)}
-                                title="Anular"
-                                className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
-                              >
+                              <Button size="icon-sm" variant="destructive" onClick={() => setCancelTarget(c)} title="Anular" aria-label="Anular">
                                 <Ban className="w-4 h-4" />
-                              </button>
+                              </Button>
                             )}
                             <Button asChild size="sm" variant="outline">
                               <Link href={`/${tenantSlug}/admin/pos?tableId=${c.tableId}`}>
@@ -340,13 +336,9 @@ export default function AdminComandasPage() {
                               </button>
                             )}
                             {isOpenStatus(c) && !hasPaidItems(c) && (
-                              <button
-                                onClick={() => setCancelTarget(c)}
-                                title="Anular"
-                                className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
-                              >
+                              <Button size="icon-sm" variant="destructive" onClick={() => setCancelTarget(c)} title="Anular" aria-label="Anular">
                                 <Ban className="w-4 h-4" />
-                              </button>
+                              </Button>
                             )}
                           </>
                         )}
@@ -429,7 +421,7 @@ export default function AdminComandasPage() {
                     <Button size="sm" variant="secondary" onClick={() => handleEdit(selected)}>
                       <Pencil className="w-3.5 h-3.5" /> Editar
                     </Button>
-                    <Button size="sm" variant="ghost" className="bg-red-50 text-red-600 hover:bg-red-100" onClick={() => setCancelTarget(selected)}>
+                    <Button size="sm" variant="destructive" onClick={() => setCancelTarget(selected)}>
                       <Ban className="w-3.5 h-3.5" /> Anular
                     </Button>
                   </>

@@ -21,6 +21,13 @@ const buttonVariants = cva(
         whatsapp:
           "bg-[#25D366] text-white shadow-lg hover:bg-[#1ebe5d] hover:scale-[1.03] active:scale-[0.98]",
         link: "text-brand-pink underline-offset-4 hover:underline p-0 h-auto",
+        // Eliminar, borrar, anular: rojo sólido siempre (no depende del mouse); al pasar el mouse,
+        // solo un rojo un poco más oscuro. Texto blanco sobre red-600 ≈ 4.8:1 (AA).
+        destructive:
+          "bg-red-600 text-white shadow-sm hover:bg-red-700 active:bg-red-800 focus-visible:ring-red-600",
+        // Cancelar y volver: gris neutro, igual en todos lados. gray-700 sobre gray-100 ≈ 9.9:1.
+        cancel:
+          "bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 focus-visible:ring-gray-400",
       },
       size: {
         default: "h-11 px-6 py-2",
@@ -28,6 +35,8 @@ const buttonVariants = cva(
         lg: "h-14 px-8 text-base",
         xl: "h-16 px-10 text-lg",
         icon: "h-10 w-10 p-0",
+        "icon-sm": "h-8 w-8 p-0",
+        "icon-xs": "h-5 w-5 p-0",
       },
     },
     defaultVariants: {

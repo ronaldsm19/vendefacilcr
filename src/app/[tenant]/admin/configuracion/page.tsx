@@ -97,14 +97,17 @@ function SortableCategoryRow({
         >
           <ChevronDown className="w-4 h-4" />
         </button>
-        <button
+        <Button
           type="button"
+          size="icon-sm"
+          variant="destructive"
+          title="Eliminar categoría"
+          aria-label="Eliminar categoría"
           onClick={() => onDelete(category._id)}
           disabled={deleting}
-          className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/30 hover:text-red-500 transition-colors disabled:opacity-50"
         >
           {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -998,13 +1001,10 @@ export default function ConfiguracionPage() {
                 {uploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 Cambiar logo
               </Button>
-              <button
-                type="button"
-                onClick={handleRemoveLogo}
-                className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
-              >
+              <Button type="button" variant="destructive" size="sm" onClick={handleRemoveLogo}>
+                <Trash2 className="w-4 h-4" />
                 Eliminar logo
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
@@ -1210,13 +1210,10 @@ export default function ConfiguracionPage() {
                     {uploadingHero ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                     Cambiar
                   </Button>
-                  <button
-                    type="button"
-                    onClick={handleRemoveHero}
-                    className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
-                  >
+                  <Button type="button" variant="destructive" size="sm" onClick={handleRemoveHero}>
+                    <Trash2 className="w-4 h-4" />
                     Eliminar imagen
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -1488,13 +1485,17 @@ export default function ConfiguracionPage() {
                         >
                           <Upload className="w-3.5 h-3.5 text-brand-dark" />
                         </button>
-                        <button
+                        <Button
                           type="button"
+                          size="icon-sm"
+                          variant="destructive"
+                          className="rounded-lg"
+                          title="Eliminar foto"
+                          aria-label={`Eliminar foto ${idx + 1}`}
                           onClick={() => removeImage(idx)}
-                          className="p-1.5 bg-white rounded-lg"
                         >
-                          <X className="w-3.5 h-3.5 text-red-500" />
-                        </button>
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
                     </>
                   ) : (
@@ -1835,13 +1836,10 @@ export default function ConfiguracionPage() {
                     {uploadingMenuBg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                     Cambiar imagen
                   </Button>
-                  <button
-                    type="button"
-                    onClick={handleRemoveMenuBg}
-                    className="text-xs text-red-400 hover:text-red-600 transition-colors underline text-left"
-                  >
+                  <Button type="button" variant="destructive" size="sm" onClick={handleRemoveMenuBg}>
+                    <Trash2 className="w-4 h-4" />
                     Eliminar fondo
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -2227,7 +2225,7 @@ export default function ConfiguracionPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <Button type="submit" disabled={savingSaleDeletePw}>{savingSaleDeletePw ? "Guardando..." : "Guardar contraseña"}</Button>
               {saleDeleteConfigured && (
-                <Button type="button" variant="outline" disabled={removingSaleDeletePw} onClick={handleRemoveSaleDeletePassword}>
+                <Button type="button" variant="destructive" disabled={removingSaleDeletePw} onClick={handleRemoveSaleDeletePassword}>
                   {removingSaleDeletePw ? "Quitando..." : "Quitar contraseña"}
                 </Button>
               )}

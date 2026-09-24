@@ -558,13 +558,9 @@ export default function AdminOrdersPage() {
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => openDeleteSale(item)}
-                              title="Eliminar venta"
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
-                            >
+                            <Button size="icon-sm" variant="destructive" onClick={() => openDeleteSale(item)} title="Eliminar venta" aria-label="Eliminar venta">
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </Button>
                           </>
                         )}
                         {item.source === "manual" && (
@@ -587,12 +583,9 @@ export default function AdminOrdersPage() {
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => setConfirmDelete(item.id)}
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-brand-dark/40 hover:text-red-500 transition-colors cursor-pointer"
-                            >
+                            <Button size="icon-sm" variant="destructive" onClick={() => setConfirmDelete(item.id)} title="Eliminar pedido" aria-label="Eliminar pedido">
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </Button>
                           </>
                         )}
                       </div>
@@ -738,10 +731,11 @@ export default function AdminOrdersPage() {
                           </button>
                         </div>
                         <span className="text-sm font-bold text-brand-pink w-20 text-right">{fmt(lineTotal(item))}</span>
-                        <button type="button" onClick={() => updateSaleItem(item.productId, -item.quantity)}
-                          className="text-gray-300 hover:text-red-400">
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <Button type="button" size="icon-xs" variant="destructive" className="shrink-0"
+                          title="Quitar producto" aria-label="Quitar producto"
+                          onClick={() => updateSaleItem(item.productId, -item.quantity)}>
+                          <X className="w-3 h-3" />
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -809,7 +803,7 @@ export default function AdminOrdersPage() {
 
                 {/* Botones */}
                 <div className="flex gap-3 pt-1">
-                  <Button variant="secondary" className="flex-1" onClick={() => setEditSale(null)}>Cancelar</Button>
+                  <Button variant="cancel" className="flex-1" onClick={() => setEditSale(null)}>Cancelar</Button>
                   <Button className="flex-1" disabled={savingSale || editSale.items.length === 0} onClick={handleSaleSave}>
                     {savingSale && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
                     Guardar cambios
@@ -828,9 +822,9 @@ export default function AdminOrdersPage() {
           <div className="px-6 pb-6 space-y-4">
             <p className="text-sm text-brand-dark/60">Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
-              <Button variant="ghost" className="flex-1 bg-red-50 text-red-600 hover:bg-red-100"
+              <Button variant="destructive" className="flex-1"
                 onClick={() => confirmDelete && handleDelete(confirmDelete)}>Eliminar</Button>
-              <Button variant="outline" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+              <Button variant="cancel" className="flex-1" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
             </div>
           </div>
         </DialogContent>
@@ -882,15 +876,15 @@ export default function AdminOrdersPage() {
               {deleteSaleError && <p className="text-sm text-red-600">{deleteSaleError}</p>}
               <div className="flex gap-3">
                 <Button
-                  variant="ghost"
-                  className="flex-1 bg-red-50 text-red-600 hover:bg-red-100"
+                  variant="destructive"
+                  className="flex-1"
                   disabled={deletingSale || !deleteSalePassword}
                   onClick={handleDeleteSale}
                 >
                   {deletingSale && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
                   Eliminar
                 </Button>
-                <Button variant="outline" className="flex-1" onClick={closeDeleteSale}>Cancelar</Button>
+                <Button variant="cancel" className="flex-1" onClick={closeDeleteSale}>Cancelar</Button>
               </div>
             </div>
           )}

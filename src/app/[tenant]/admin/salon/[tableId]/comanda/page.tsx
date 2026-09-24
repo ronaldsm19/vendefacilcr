@@ -471,9 +471,9 @@ export default function TomarComandaPage() {
                           <button onClick={() => duplicateLine(l.key)} className="text-xs text-brand-pink font-medium">
                             Agregar otra línea
                           </button>
-                          <button onClick={() => removeLine(l.key)} className="text-xs text-red-500 font-medium">
+                          <Button size="sm" variant="destructive" className="h-7 px-3" onClick={() => removeLine(l.key)}>
                             Quitar
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     ))}
@@ -505,7 +505,7 @@ export default function TomarComandaPage() {
                 </div>
               )}
               {editId && (
-                <button onClick={exitEdit} className="text-sm text-brand-dark/50 underline">Cancelar edición</button>
+                <Button variant="cancel" size="sm" onClick={exitEdit}>Cancelar edición</Button>
               )}
             </div>
           )

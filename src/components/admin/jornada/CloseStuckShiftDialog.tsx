@@ -110,7 +110,7 @@ export default function CloseStuckShiftDialog({ shift, onClose, onClosed }: Clos
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
-          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
+          <Button type="button" variant="cancel" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
           <Button type="button" onClick={handleConfirm} disabled={saving}>

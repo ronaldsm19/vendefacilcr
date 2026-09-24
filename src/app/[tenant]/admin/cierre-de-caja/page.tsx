@@ -489,7 +489,7 @@ export default function CierreDeCajaPage() {
             )}
             {editMode && (
               <>
-                <Button variant="secondary" onClick={handleCancelEdit} className="gap-2 text-sm">
+                <Button variant="cancel" onClick={handleCancelEdit} className="gap-2 text-sm">
                   <X className="w-4 h-4" /> Cancelar
                 </Button>
                 <Button onClick={handleSaveEdit} disabled={savingEdit} className="gap-2 text-sm">

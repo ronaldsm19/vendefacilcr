@@ -106,7 +106,7 @@ export default function ComandaCard({ comanda, thresholds, now, onServe, onCance
             </Button>
           )}
           {onCancel && isOpen && !hasPaidItems && (
-            <Button size="sm" variant="ghost" className="bg-red-50 text-red-600 hover:bg-red-100" onClick={onCancel}>
+            <Button size="sm" variant="destructive" onClick={onCancel}>
               <Ban className="w-3.5 h-3.5" /> Anular
             </Button>
           )}

@@ -964,23 +964,26 @@ export default function SalonPage() {
       {/* Area tabs */}
       <div className="shrink-0 flex items-center border-b border-brand-muted bg-white overflow-x-auto px-2">
         {areas.map(area => (
-          <button key={area._id}
-            onClick={() => { setActiveAreaId(area._id); setSelectedId(null); setSelectedWallId(null); resetView(); }}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeAreaId === area._id
-                ? "border-brand-pink text-brand-pink"
-                : "border-transparent text-brand-dark/50 hover:text-brand-dark"
-            }`}
-          >
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: area.color }} />
-            {area.name}
+          <div key={area._id} className="flex items-center shrink-0">
+            <button
+              onClick={() => { setActiveAreaId(area._id); setSelectedId(null); setSelectedWallId(null); resetView(); }}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                activeAreaId === area._id
+                  ? "border-brand-pink text-brand-pink"
+                  : "border-transparent text-brand-dark/50 hover:text-brand-dark"
+              }`}
+            >
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: area.color }} />
+              {area.name}
+            </button>
             {effectiveMode === "design" && (
-              <span onClick={(e) => { e.stopPropagation(); removeArea(area._id); }}
-                className="ml-0.5 text-brand-dark/30 hover:text-red-400 transition-colors cursor-pointer">
-                <X className="w-3.5 h-3.5" />
-              </span>
+              <Button size="icon-xs" variant="destructive" className="-ml-2 mr-2"
+                title="Eliminar zona" aria-label={`Eliminar zona ${area.name}`}
+                onClick={() => removeArea(area._id)}>
+                <X className="w-3 h-3" />
+              </Button>
             )}
-          </button>
+          </div>
         ))}
         {effectiveMode === "design" && (
           <button onClick={() => setShowAddArea(true)}
@@ -1161,7 +1164,7 @@ export default function SalonPage() {
                   <Button className="w-full" disabled={saving} onClick={saveTableEdit}>
                     {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}Guardar
                   </Button>
-                  <Button variant="secondary" className="w-full hover:text-red-500 transition-colors"
+                  <Button variant="destructive" className="w-full"
                     onClick={() => deleteTable(selectedId!)}>
                     <Trash2 className="w-4 h-4 mr-1" /> Eliminar
                   </Button>
@@ -1228,7 +1231,7 @@ export default function SalonPage() {
                   <Button className="w-full" disabled={saving} onClick={saveWallEdit}>
                     {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}Guardar
                   </Button>
-                  <Button variant="secondary" className="w-full hover:text-red-500 transition-colors"
+                  <Button variant="destructive" className="w-full"
                     onClick={() => deleteWall(selectedWallId!)}>
                     <Trash2 className="w-4 h-4 mr-1" /> Eliminar
                   </Button>
@@ -1423,7 +1426,7 @@ export default function SalonPage() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button variant="secondary" className="flex-1" onClick={() => { setShowAddArea(false); setNewAreaName(""); }}>
+              <Button variant="cancel" className="flex-1" onClick={() => { setShowAddArea(false); setNewAreaName(""); }}>
                 Cancelar
               </Button>
               <Button className="flex-1" disabled={addingArea || !newAreaName.trim()} onClick={addArea}>
@@ -1553,7 +1556,7 @@ export default function SalonPage() {
                             {statusSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : "☕ "}
                             Cliente llegó — Marcar ocupada
                           </Button>
-                          <Button variant="secondary" className="w-full hover:text-red-500 transition-colors"
+                          <Button variant="destructive" className="w-full"
                             disabled={statusSaving} onClick={handleCancelReservation}>
                             Cancelar reserva
                           </Button>

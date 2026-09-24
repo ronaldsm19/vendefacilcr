@@ -196,7 +196,7 @@ export default function ImportProductsModal({ onSuccess, onCancel }: Props) {
             <><Upload className="w-4 h-4" /> Importar</>
           )}
         </Button>
-        <Button variant="secondary" onClick={onCancel} disabled={importing}>
+        <Button variant="cancel" onClick={onCancel} disabled={importing}>
           Cancelar
         </Button>
       </div>

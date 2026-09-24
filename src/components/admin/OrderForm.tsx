@@ -258,13 +258,17 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
 
                   {/* Quitar línea */}
                   {lineItems.length > 1 && (
-                    <button
+                    <Button
                       type="button"
+                      size="icon-xs"
+                      variant="destructive"
+                      className="shrink-0"
+                      title="Quitar producto"
+                      aria-label="Quitar producto"
                       onClick={() => removeLineItem(lineIdx)}
-                      className="p-1 text-brand-dark/30 hover:text-red-500 transition-colors shrink-0"
                     >
-                      <X className="w-4 h-4" />
-                    </button>
+                      <X className="w-3 h-3" />
+                    </Button>
                   )}
                 </div>
 
@@ -423,7 +427,7 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
         <Button type="submit" disabled={saving} className="flex-1">
           {saving ? "Guardando..." : initial?.customerName ? "Actualizar pedido" : "Registrar pedido"}
         </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+        <Button type="button" variant="cancel" onClick={onCancel}>Cancelar</Button>
       </div>
     </form>
   );

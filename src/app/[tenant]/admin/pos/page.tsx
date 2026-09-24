@@ -926,13 +926,17 @@ function PosPageInner() {
                       {line.note && <p className="text-xs text-gray-400 italic">{line.note}</p>}
                     </div>
                     {!line.comandaId && (
-                      <button
+                      <Button
                         type="button"
+                        size="icon-xs"
+                        variant="destructive"
+                        className="shrink-0"
+                        title="Quitar del carrito"
+                        aria-label="Quitar del carrito"
                         onClick={() => removeLine(lineKey(line))}
-                        className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                        <X className="w-3 h-3" />
+                      </Button>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
@@ -1253,9 +1257,11 @@ function PosPageInner() {
                       {line.note && <p className="text-xs text-gray-400 italic">{line.note}</p>}
                     </div>
                     {!line.comandaId && (
-                      <button type="button" onClick={() => removeLine(lineKey(line))} className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      <Button type="button" size="icon-xs" variant="destructive" className="shrink-0"
+                        title="Quitar del carrito" aria-label="Quitar del carrito"
+                        onClick={() => removeLine(lineKey(line))}>
+                        <X className="w-3 h-3" />
+                      </Button>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
@@ -1453,13 +1459,14 @@ function PosPageInner() {
 
             {/* Acciones */}
             <div className="flex gap-3">
-              <button
+              <Button
                 type="button"
+                variant="cancel"
+                className="flex-1 h-auto py-2.5 rounded-xl"
                 onClick={() => setShowPaymentModal(false)}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 Cancelar
-              </button>
+              </Button>
               <button
                 type="button"
                 disabled={saving || (needsChangeCalc && amountPaid < cashPortion && amountPaid > 0)}
@@ -1767,7 +1774,7 @@ function PosPageInner() {
                         Seleccionado: {count} ítem{count !== 1 ? "s" : ""} · {fmt(sum)} · Quedará pendiente: {fmt(willRemain)}
                       </span>
                       <div className="flex gap-2 shrink-0">
-                        <Button type="button" variant="secondary" className="flex-1 sm:flex-none" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }}>Cancelar</Button>
+                        <Button type="button" variant="cancel" className="flex-1 sm:flex-none" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }}>Cancelar</Button>
                         <Button type="button" className="flex-1 sm:flex-none" disabled={count === 0} onClick={applySelection}>Cobrar seleccionado</Button>
                       </div>
                     </div>
