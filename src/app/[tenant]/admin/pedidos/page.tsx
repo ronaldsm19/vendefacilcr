@@ -10,7 +10,7 @@ import { IOrder } from "@/models/Order";
 import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle } from "lucide-react";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
-import { computeSaleTotals, isOrderType, lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
+import { computeSaleTotals, extraLabel, extraQty, isOrderType, lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -744,7 +744,7 @@ export default function AdminOrdersPage() {
                         <span className="flex-1 min-w-0">
                           <span className="block text-sm font-medium text-gray-900 truncate">{item.productName}</span>
                           {item.extras?.map((e) => (
-                            <span key={e.name} className="block text-xs text-gray-500 truncate">+ {e.name} {fmt(e.price)}</span>
+                            <span key={e.name} className="block text-xs text-gray-500 truncate">+ {extraLabel(e)} {fmt(e.price * extraQty(e))}</span>
                           ))}
                         </span>
                         <span className="text-xs text-gray-400">{fmt(item.unitPrice)}</span>

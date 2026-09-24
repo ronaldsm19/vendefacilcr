@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { Product } from "@/models/Product";
 import type { IComandaItem } from "@/models/Comanda";
 import { ServiceError } from "@/server/errors";
-import { extrasKey, lineTotal, normalizeExtras, type LineExtra } from "@/lib/pricing";
+import { extraQty, extrasKey, lineTotal, normalizeExtras, type LineExtra } from "@/lib/pricing";
 
 export interface SaleItemRecord {
   productId: string;
@@ -107,7 +107,7 @@ export async function checkCatalogPrices(
       if (c.price !== e.price) {
         throw new ServiceError(409, `El extra "${e.name}" de "${p.name}" cambió de ${colones(e.price)} a ${colones(c.price)}.`, "PRICE_CHANGED");
       }
-      return { name: c.name, price: c.price };
+      return { name: c.name, price: c.price, qty: extraQty(e) };
     });
     return record({ productId: item.productId, productName: p.name, unitPrice: p.price, quantity: item.quantity, extras });
   });

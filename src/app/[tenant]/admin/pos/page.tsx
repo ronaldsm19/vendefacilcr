@@ -16,7 +16,7 @@ import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } fro
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
-  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey,
+  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty,
   DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra,
 } from "@/lib/pricing";
 import {
@@ -63,7 +63,7 @@ function LineExtras({ extras, className = "" }: { extras?: LineExtra[]; classNam
   return (
     <span className={`block text-xs text-gray-500 ${className}`}>
       {extras.map((e) => (
-        <span key={e.name} className="block">+ {e.name} {e.price > 0 ? fmt(e.price) : "(sin costo)"}</span>
+        <span key={e.name} className="block">+ {extraLabel(e)} {e.price > 0 ? fmt(e.price * extraQty(e)) : "(sin costo)"}</span>
       ))}
     </span>
   );
@@ -571,7 +571,7 @@ function PosPageInner() {
         } else {
           const extras = (l.extras ?? []).flatMap((e) => {
             const c = p.extras?.find((x) => x.name === e.name);
-            return c ? [{ name: c.name, price: c.price }] : [];
+            return c ? [{ name: c.name, price: c.price, qty: extraQty(e) }] : [];
           });
           if (extras.length !== (l.extras ?? []).length) dropped++;
           next = { ...l, productName: p.name, unitPrice: p.price, extras };
