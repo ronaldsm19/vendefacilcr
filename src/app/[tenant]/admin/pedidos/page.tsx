@@ -104,6 +104,7 @@ export default function AdminOrdersPage() {
   // POS sale edit
   const [editSale, setEditSale]         = useState<FullSale | null>(null);
   const [savingSale, setSavingSale]     = useState(false);
+  const [saleEditError, setSaleEditError] = useState("");
   const [saleProducts, setSaleProducts] = useState<ProductOption[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductDrop, setShowProductDrop] = useState(false);
@@ -301,18 +302,33 @@ export default function AdminOrdersPage() {
     ]);
     if (saleRes.sale) setEditSale(saleRes.sale);
     setSaleProducts(productsRes.products ?? []);
+    setSaleEditError("");
   }
 
   async function handleSaleSave() {
     if (!editSale) return;
     setSavingSale(true);
+    setSaleEditError("");
     try {
       const id = editSale._id;
-      await fetch(`/api/admin/sales/${id}`, {
+      const res = await fetch(`/api/admin/sales/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editSale),
       });
+      if (!res.ok) {
+        // P. ej. un producto agregado cuyo precio cambió en el catálogo: no se guarda ni se reimprime.
+        const data = await res.json().catch(() => ({}));
+        if (data.code === "PRICE_CHANGED") {
+          // Catálogo fresco para que, al volver a agregarlo, entre al precio de hoy.
+          const fresh = await fetch("/api/admin/products").then((r) => r.json()).catch(() => ({}));
+          if (fresh.products) setSaleProducts(fresh.products);
+          setSaleEditError(`${data.error} Quitá ese producto y volvé a agregarlo.`);
+        } else {
+          setSaleEditError(data.error ?? "No se pudo guardar la venta");
+        }
+        return;
+      }
       setEditSale(null);
       await load();
       // La venta ya quedó guardada; la impresión es best-effort y no bloquea el
@@ -813,6 +829,10 @@ export default function AdminOrdersPage() {
                   {t.deliveryFee > 0 && <div className="flex justify-between"><span className="text-gray-500">Envío</span><span>{fmt(t.deliveryFee)}</span></div>}
                   <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-1.5"><span>Total</span><span className="text-brand-pink">{fmt(total)}</span></div>
                 </div>
+
+                {saleEditError && (
+                  <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-3 py-2">{saleEditError}</p>
+                )}
 
                 {/* Botones */}
                 <div className="flex gap-3 pt-1">

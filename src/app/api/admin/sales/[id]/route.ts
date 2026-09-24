@@ -4,8 +4,9 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Sale } from "@/models/Sale";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
-import { computeSaleTotals, isOrderType, subtotalOf } from "@/lib/pricing";
-import { parseSaleItems } from "@/server/services/saleItems";
+import { computeSaleTotals, isOrderType, normalizeExtras, subtotalOf } from "@/lib/pricing";
+import { checkCatalogPrices, parseSaleItems, saleLineKey, type SaleItemRecord } from "@/server/services/saleItems";
+import { serviceErrorResponse } from "@/lib/serviceResponse";
 
 export async function GET(
   request: NextRequest,
@@ -46,8 +47,8 @@ export async function PUT(
     return NextResponse.json({ error: "La venta debe tener al menos un producto" }, { status: 400 });
   }
 
-  const saleItems = parseSaleItems(items);
-  if (!saleItems) {
+  const parsedItems = parseSaleItems(items);
+  if (!parsedItems) {
     return NextResponse.json({ error: "Ítems inválidos" }, { status: 400 });
   }
 
@@ -57,7 +58,7 @@ export async function PUT(
   const existing = await Sale.findOne({ _id: id, tenantId: session.tenantId })
     .select("items orderType ivaEnabled ivaRate serviceEnabled serviceRate tipEnabled tipAmount deliveryFee")
     .lean() as {
-      items?: { productId: string; quantity: number }[];
+      items?: { productId: string; unitPrice: number; quantity: number; extras?: unknown }[];
       orderType?: string;
       ivaEnabled?: boolean; ivaRate?: number;
       serviceEnabled?: boolean; serviceRate?: number;
@@ -65,6 +66,19 @@ export async function PUT(
       deliveryFee?: number;
     } | null;
   if (!existing) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+  // Precios: las líneas que la venta ya tenía (mismo producto, precio y extras) se quedan con lo que
+  // se cobró en su momento, aunque cambie la cantidad; lo que se agregue nuevo va al precio actual
+  // del catálogo. Así no se puede reescribir un precio desde el cuerpo de la petición.
+  const keep = new Set((existing.items ?? []).map((i) =>
+    saleLineKey({ productId: i.productId ?? "", unitPrice: i.unitPrice, extras: normalizeExtras(i.extras) ?? [] })
+  ));
+  let saleItems: SaleItemRecord[];
+  try {
+    saleItems = await checkCatalogPrices(session.tenantId, parsedItems, keep);
+  } catch (err) {
+    return serviceErrorResponse(err);
+  }
 
   const totals = computeSaleTotals({
     subtotal: subtotalOf(saleItems),
