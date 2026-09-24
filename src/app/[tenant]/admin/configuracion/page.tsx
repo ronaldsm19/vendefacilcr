@@ -16,6 +16,10 @@ import { useAdminSession } from "@/components/admin/SessionContext";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 import { DEFAULT_POS_CHARGES, readPosCharges, type PosCharges } from "@/lib/pricing";
 import {
+  EMPTY_PRODUCTS_SECTION, PRODUCTS_SECTION_FALLBACK, PRODUCTS_SECTION_LIMITS, productsSectionForDisplay,
+  readProductsSectionText, type ProductsSectionText,
+} from "@/lib/storeTexts";
+import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
 } from "@dnd-kit/core";
 import {
@@ -327,6 +331,12 @@ export default function ConfiguracionPage() {
   const [savingHero, setSavingHero] = useState(false);
   const [savedHero, setSavedHero] = useState(false);
 
+  // ── Textos de la sección de productos de la tienda ───────────────
+  const [productsText, setProductsText] = useState<ProductsSectionText>(EMPTY_PRODUCTS_SECTION);
+  const [savingProductsText, setSavingProductsText] = useState(false);
+  const [savedProductsText, setSavedProductsText] = useState(false);
+  const [productsTextError, setProductsTextError] = useState<string | null>(null);
+
   // ── About state ──────────────────────────────────────────────────
   const [about, setAbout] = useState<AboutData>(ABOUT_DEFAULTS);
   const [loadingAbout, setLoadingAbout] = useState(true);
@@ -415,6 +425,7 @@ export default function ConfiguracionPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data?.hero) setHero({ ...HERO_DEFAULTS, ...data.hero });
+        if (data?.productsSection) setProductsText(readProductsSectionText(data.productsSection));
         if (data?.about) {
           const imgs = [...(data.about.images ?? [])];
           while (imgs.length < 4) imgs.push("");
@@ -567,6 +578,28 @@ export default function ConfiguracionPage() {
       setTimeout(() => setSavedHero(false), 3000);
     } finally {
       setSavingHero(false);
+    }
+  }
+
+  // ── Handlers: textos de la sección de productos ──────────────────
+  async function handleSaveProductsText(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingProductsText(true);
+    setProductsTextError(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productsSection: productsText }),
+      });
+      if (!res.ok) {
+        setProductsTextError("No se pudieron guardar los textos. Intentá de nuevo.");
+        return;
+      }
+      setSavedProductsText(true);
+      setTimeout(() => setSavedProductsText(false), 3000);
+    } finally {
+      setSavingProductsText(false);
     }
   }
 
@@ -897,7 +930,7 @@ export default function ConfiguracionPage() {
     { key: "marca",    label: "Marca",    icon: "🎨", title: "Identidad de marca",      desc: "Logo, colores, tipografía y apariencia visual de tu tienda." },
     { key: "portada",  label: "Portada",  icon: "🏠", title: "Portada y contacto",       desc: "Texto principal de la tienda y redes sociales." },
     { key: "nosotros", label: "Nosotros", icon: "👥", title: "Sección Nosotros",          desc: "Texto e imágenes de la sección \"Nosotros\" en tu tienda." },
-    { key: "productos",label: "Productos",icon: "📦", title: "Familias de productos (categorías)",  desc: "Organizá tus familias de productos y el orden en que aparecen." },
+    { key: "productos",label: "Productos",icon: "📦", title: "Productos en tu tienda",              desc: "Textos de la sección de productos de tu tienda y el orden de tus familias." },
     { key: "menu",     label: "Menú",     icon: "🍽", title: "Menú público",             desc: "Configurá la página de menú que ven tus clientes." },
     { key: "comandas", label: "Comandas", icon: "⏱️", title: "Comandas",                 desc: "Umbrales de tiempo para las mesas con comandas activas." },
     { key: "ticket",   label: "Ticket",   icon: "🧾", title: "Ticket electrónico",        desc: "Datos que aparecen en tus tickets impresos." },
@@ -1546,8 +1579,77 @@ export default function ConfiguracionPage() {
 
       </>}
 
-      {/* ── TAB: PRODUCTOS ── Categorías ────────────────────────────── */}
-      {activeTab === "productos" && <>
+      {/* ── TAB: PRODUCTOS ── Textos de la sección + categorías ──────── */}
+      {activeTab === "productos" && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+
+      {/* ── Textos de la sección de productos ─────────────────────────── */}
+      <form onSubmit={handleSaveProductsText}>
+        <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
+          <div>
+            <h2 className="font-semibold text-brand-dark text-lg">Textos de la sección de productos</h2>
+            <p className="text-sm text-brand-dark/50 mt-0.5">
+              El encabezado que ven tus clientes sobre tus productos. Lo que dejes vacío usa el texto de ejemplo.
+            </p>
+          </div>
+
+          {([
+            { key: "eyebrow", label: "Rótulo", help: "Texto pequeño en mayúsculas sobre el título." },
+            { key: "title", label: "Título", help: "Primera parte del título." },
+            { key: "highlight", label: "Parte destacada", help: "Final del título, en el color de tu marca." },
+            { key: "description", label: "Descripción", help: "Frase corta debajo del título." },
+            { key: "badge", label: "Etiqueta (opcional)", help: "Por ejemplo \"📦 Pedidos por encargo\". Si la dejás vacía no se muestra." },
+          ] as { key: keyof ProductsSectionText; label: string; help: string }[]).map((f) => (
+            <div key={f.key}>
+              <label htmlFor={`productos-${f.key}`} className="block text-sm font-medium text-brand-dark mb-1">{f.label}</label>
+              <input
+                id={`productos-${f.key}`}
+                type="text"
+                maxLength={PRODUCTS_SECTION_LIMITS[f.key]}
+                value={productsText[f.key]}
+                onChange={(e) => setProductsText((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                placeholder={PRODUCTS_SECTION_FALLBACK[f.key] || "Sin etiqueta"}
+                className="w-full px-3 py-2 text-sm border border-brand-muted rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-pink/30 placeholder:text-brand-dark/25"
+              />
+              <p className="text-xs text-brand-dark/40 mt-1">{f.help}</p>
+            </div>
+          ))}
+
+          {/* Vista previa con los mismos textos que va a mostrar la tienda */}
+          {(() => {
+            const preview = productsSectionForDisplay(productsText);
+            return (
+              <div className="rounded-xl border border-dashed border-brand-muted bg-brand-muted/20 px-4 py-5 text-center">
+                <p className="text-[10px] font-semibold text-brand-dark/40 uppercase tracking-wide mb-2">Vista previa</p>
+                <p className="text-xs font-semibold text-brand-pink uppercase tracking-widest">{preview.eyebrow}</p>
+                <p className="font-brand text-xl font-bold text-brand-dark mt-1">
+                  {preview.title}{preview.title && preview.highlight && " "}
+                  {preview.highlight && <span className="gradient-text">{preview.highlight}</span>}
+                </p>
+                {preview.badge && (
+                  <span className="inline-block mt-2 px-2.5 py-1 rounded-full bg-brand-pink/10 text-brand-pink border border-brand-pink/20 text-xs font-semibold">
+                    {preview.badge}
+                  </span>
+                )}
+                <p className="text-xs text-brand-dark/60 mt-2">{preview.description}</p>
+              </div>
+            );
+          })()}
+
+          {productsTextError && (
+            <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-3 py-2">{productsTextError}</p>
+          )}
+          <div className="flex items-center gap-3 pt-1">
+            <Button type="submit" disabled={savingProductsText} className="flex-1">
+              {savingProductsText ? "Guardando..." : "Guardar textos"}
+            </Button>
+            {savedProductsText && (
+              <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+                <Check className="w-4 h-4" /> Guardado
+              </span>
+            )}
+          </div>
+        </section>
+      </form>
 
       {/* ── Familias de productos (categorías) ────────────────────────── */}
       <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
@@ -1617,7 +1719,7 @@ export default function ConfiguracionPage() {
         </form>
       </section>
 
-      </>}
+      </div>}
 
       {/* ── TAB: MENÚ ── Configuración del menú público ─────────────── */}
       {activeTab === "menu" && <>

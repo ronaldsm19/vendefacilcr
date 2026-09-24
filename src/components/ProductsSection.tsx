@@ -5,12 +5,15 @@ import { motion } from "framer-motion";
 import ProductCard from "@/components/ProductCard";
 import { SeedProduct } from "@/data/seed";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
+import { PRODUCTS_SECTION_FALLBACK, type ProductsSectionText } from "@/lib/storeTexts";
 
 interface ProductsSectionProps {
   products: (SeedProduct & { _id?: string })[];
   whatsappNumber?: string;
   businessName?: string;
   categories?: CategoryOrderEntry[];
+  /** Textos del encabezado, ya resueltos con productsSectionForDisplay (Configuración → Productos). */
+  texts?: ProductsSectionText;
 }
 
 // Backward-compat display labels for old slug-based categories
@@ -82,7 +85,7 @@ function ProductsGrid({ products, whatsappNumber, businessName, categories: cate
 
       {filtered.length === 0 && (
         <div className="text-center py-16 text-brand-dark/40">
-          <p className="text-4xl mb-3">🍮</p>
+          <p className="text-4xl mb-3">🛒</p>
           <p className="font-semibold">No hay productos en esta categoría aún</p>
         </div>
       )}
@@ -90,7 +93,7 @@ function ProductsGrid({ products, whatsappNumber, businessName, categories: cate
   );
 }
 
-export default function ProductsSection({ products, whatsappNumber, businessName, categories }: ProductsSectionProps) {
+export default function ProductsSection({ products, whatsappNumber, businessName, categories, texts = PRODUCTS_SECTION_FALLBACK }: ProductsSectionProps) {
   return (
     <section id="productos" className="py-24 px-6 bg-surface-alt">
       <div className="max-w-6xl mx-auto">
@@ -102,7 +105,7 @@ export default function ProductsSection({ products, whatsappNumber, businessName
             viewport={{ once: true }}
             className="inline-block text-sm font-semibold text-brand-pink uppercase tracking-widest mb-3"
           >
-            Nuestros postres
+            {texts.eyebrow}
           </motion.span>
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
@@ -111,8 +114,9 @@ export default function ProductsSection({ products, whatsappNumber, businessName
             transition={{ delay: 0.1 }}
             className="font-brand text-4xl md:text-5xl font-bold text-brand-dark"
           >
-            Creaciones que{" "}
-            <span className="gradient-text">enamoran</span>
+            {texts.title}
+            {texts.title && texts.highlight && " "}
+            {texts.highlight && <span className="gradient-text">{texts.highlight}</span>}
           </motion.h2>
           <motion.div
             initial={{ scaleX: 0 }}
@@ -121,17 +125,19 @@ export default function ProductsSection({ products, whatsappNumber, businessName
             transition={{ delay: 0.3, duration: 0.6 }}
             className="mt-4 mx-auto w-16 h-1 rounded-full gradient-bg"
           />
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.35 }}
-            className="flex flex-wrap justify-center gap-2 mt-5"
-          >
-            <span className="px-3 py-1.5 rounded-full bg-brand-pink/10 text-brand-pink border border-brand-pink/20 text-sm font-semibold">
-              📦 Pedidos por encargo
-            </span>
-          </motion.div>
+          {texts.badge && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.35 }}
+              className="flex flex-wrap justify-center gap-2 mt-5"
+            >
+              <span className="px-3 py-1.5 rounded-full bg-brand-pink/10 text-brand-pink border border-brand-pink/20 text-sm font-semibold">
+                {texts.badge}
+              </span>
+            </motion.div>
+          )}
           <motion.p
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
@@ -139,7 +145,7 @@ export default function ProductsSection({ products, whatsappNumber, businessName
             transition={{ delay: 0.2 }}
             className="mt-4 text-brand-dark/60 max-w-md mx-auto"
           >
-            Cada postre es elaborado con ingredientes frescos y mucho amor
+            {texts.description}
           </motion.p>
         </div>
 
