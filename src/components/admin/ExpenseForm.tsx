@@ -281,7 +281,8 @@ export default function ExpenseForm({ onSave, onCancel, saving }: ExpenseFormPro
                 sizes="400px"
               />
             </div>
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/40">
+            {/* Siempre visibles (en el teléfono no hay "hover") */}
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-center p-2 bg-gradient-to-t from-black/50 to-transparent">
               <div className="flex gap-2">
                 <button
                   type="button"

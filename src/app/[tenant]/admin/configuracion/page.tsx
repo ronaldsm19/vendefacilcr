@@ -1477,7 +1477,8 @@ export default function ConfiguracionPage() {
                   {url ? (
                     <>
                       <Image src={url} alt={`Foto ${idx + 1}`} fill className="object-cover" sizes="100px" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                      {/* Siempre visibles (en el teléfono no hay "hover") */}
+                      <div className="absolute inset-x-0 bottom-0 p-1 bg-gradient-to-t from-black/50 to-transparent flex items-center justify-center gap-1">
                         <button
                           type="button"
                           onClick={() => fileRefs[idx].current?.click()}
