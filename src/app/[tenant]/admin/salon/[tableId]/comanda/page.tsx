@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronDown, Search, Plus, Minus, StickyNote, Loader2, CheckCheck, CopyPlus, Trash2, UtensilsCrossed, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { usePolling } from "@/hooks/usePolling";
 import { TABLE_STATUS_META, type TableStatus } from "@/lib/tableStatus";
@@ -55,6 +56,13 @@ interface PlateDraft {
   id: string;
   extras: LineExtra[];
   note: string;
+}
+
+/** Quitar pendiente de confirmar: lo que se va a perder y cómo aplicarlo si el mesero confirma. */
+interface PendingRemoval {
+  productName: string;
+  lines: ComandaLine[];
+  apply: () => void;
 }
 
 function fmt(n: number) {
@@ -106,6 +114,8 @@ export default function TomarComandaPage() {
   const [sheetProductId, setSheetProductId] = useState<string | null>(null);
   const [plates, setPlates] = useState<PlateDraft[]>([]);
   const [openPlateId, setOpenPlateId] = useState<string | null>(null);
+  // Quitar algo con extras o notas pide confirmación mostrando qué se pierde.
+  const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
 
   const load = useCallback(async () => {
     if (!isPremium) { setLoading(false); return; }
@@ -230,23 +240,32 @@ export default function TomarComandaPage() {
       return prev.map((l, i) => (i === idx ? { ...l, quantity: l.quantity + 1 } : l));
     });
   }
-  /** Una unidad menos: primero de la línea simple; si no hay, de la última personalizada. */
-  function decrementCatalog(productId: string) {
-    setLines((prev) => {
-      let idx = prev.findIndex((l) => l.productId === productId && isPlainLine(l));
-      if (idx === -1) idx = prev.findLastIndex((l) => l.productId === productId);
-      if (idx === -1) return prev;
-      if (prev[idx].quantity <= 1) return prev.filter((_, i) => i !== idx);
-      return prev.map((l, i) => (i === idx ? { ...l, quantity: l.quantity - 1 } : l));
-    });
+  /** Resta una unidad de una línea; si era la última, la saca. */
+  function decrementLine(key: string) {
+    setLines((prev) => prev.flatMap((l) => {
+      if (l.key !== key) return [l];
+      return l.quantity <= 1 ? [] : [{ ...l, quantity: l.quantity - 1 }];
+    }));
   }
-  /** Tocar la tarjeta: si no está, agrega 1; si ya está, lo quita (confirma si tiene extras o notas). */
+  /**
+   * Una unidad menos: primero de la línea simple, sin preguntar. Si solo quedan platos con extras o
+   * notas, se le muestra al mesero qué se pierde antes de restar.
+   */
+  function decrementCatalog(productId: string) {
+    const plain = lines.find((l) => l.productId === productId && isPlainLine(l));
+    if (plain) { decrementLine(plain.key); return; }
+    const last = lines.findLast((l) => l.productId === productId);
+    if (!last) return;
+    setPendingRemoval({ productName: last.productName, lines: [{ ...last, quantity: 1 }], apply: () => decrementLine(last.key) });
+  }
+  /** Tocar la tarjeta: si no está, agrega 1; si ya está, lo quita (si tiene extras o notas, pregunta mostrándolos). */
   function toggleCatalog(p: CatalogProduct) {
     const own = lines.filter((l) => l.productId === p._id);
     if (own.length === 0) { incrementCatalog(p); return; }
-    const customized = own.some((l) => !isPlainLine(l));
-    if (customized && !window.confirm(`¿Quitar ${p.name} de la comanda? Tiene extras o notas que se van a perder.`)) return;
-    setLines((prev) => prev.filter((l) => l.productId !== p._id));
+    const removeAll = () => setLines((prev) => prev.filter((l) => l.productId !== p._id));
+    const customized = own.filter((l) => !isPlainLine(l));
+    if (customized.length === 0) { removeAll(); return; }
+    setPendingRemoval({ productName: p.name, lines: own, apply: removeAll });
   }
   function quantityFor(productId: string): number {
     return lines.filter((l) => l.productId === productId).reduce((s, l) => s + l.quantity, 0);
@@ -857,6 +876,51 @@ export default function TomarComandaPage() {
           </div>
         </div>
       )}
+
+      {/* Confirmación antes de perder extras o notas (tarjeta tocada otra vez o − sobre un plato personalizado) */}
+      <Dialog open={!!pendingRemoval} onOpenChange={(open) => { if (!open) setPendingRemoval(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-xl">¿Seguro que querés quitarlo?</DialogTitle>
+          </DialogHeader>
+          {pendingRemoval && (
+            <div className="px-6 pb-6 pt-2 space-y-4">
+              <p className="text-sm text-brand-dark/70">
+                {pendingRemoval.lines.length === 1 && pendingRemoval.lines[0].quantity === 1
+                  ? <>Vas a quitar 1 <strong>{pendingRemoval.productName}</strong> y se pierden estos detalles:</>
+                  : <>Vas a quitar <strong>{pendingRemoval.productName}</strong> de la comanda y se pierden estos detalles:</>}
+              </p>
+              <ul className="space-y-2 max-h-64 overflow-y-auto">
+                {pendingRemoval.lines.map((l) => (
+                  <li key={l.key} className="rounded-xl border border-brand-muted bg-gray-50 px-3 py-2 text-sm">
+                    <p className="font-semibold text-brand-dark">{l.quantity}× {l.productName}</p>
+                    {l.extras.map((e) => (
+                      <p key={e.name} className="text-xs text-brand-dark/70">+ {extraLabel(e)}</p>
+                    ))}
+                    {l.note.trim() && (
+                      <p className="text-xs text-brand-dark/60 italic flex items-start gap-1">
+                        <StickyNote className="w-3 h-3 mt-0.5 shrink-0" aria-hidden /> {l.note.trim()}
+                      </p>
+                    )}
+                    {isPlainLine(l) && <p className="text-xs text-brand-dark/40">Sin extras ni notas</p>}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-3">
+                <Button type="button" variant="cancel" className="flex-1" onClick={() => setPendingRemoval(null)}>Cancelar</Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => { pendingRemoval.apply(); setPendingRemoval(null); }}
+                >
+                  Sí, quitar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {cancelTarget && (
         <CancelComandaDialog
