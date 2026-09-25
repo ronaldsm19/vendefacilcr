@@ -4,6 +4,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { StaffUser, PIN_RE } from "@/models/StaffUser";
 import { getSession, requireRole } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
+import { revokeAllForUser } from "@/server/services/refreshTokens";
 
 export async function PUT(
   request: NextRequest,
@@ -59,6 +60,13 @@ export async function PUT(
   ).select("-pinHash").lean();
 
   if (!user) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+  // Desactivar a alguien, cambiarle el PIN o cambiarle el rol tiene que sacar sus teléfonos en
+  // el acto. Sin esto, la app seguiría trabajando hasta una hora con el token ya emitido.
+  if ($set.active === false || $set.pinHash !== undefined || $set.role !== undefined) {
+    await revokeAllForUser(session.tenantId, id);
+  }
+
   return NextResponse.json({ user });
 }
 
@@ -76,5 +84,6 @@ export async function DELETE(
   const { id } = await params;
   await connectToDatabase();
   await StaffUser.deleteOne({ _id: id, tenantId: session.tenantId });
+  await revokeAllForUser(session.tenantId, id);
   return NextResponse.json({ ok: true });
 }

@@ -36,15 +36,50 @@ export async function verifyJwt(token: string): Promise<AdminPayload | null> {
   }
 }
 
+/**
+ * Sesión de la petición. Acepta DOS credenciales:
+ *
+ *  1. `Authorization: Bearer <jwt>` — lo usa la app móvil (React Native), que no maneja
+ *     cookies de forma confiable en iOS y Android.
+ *  2. La cookie httpOnly `dulce_admin_session` — lo usa la web, sin cambios.
+ *
+ * Si viene el encabezado, manda el encabezado: un token inválido o vencido devuelve null y
+ * NO se cae a la cookie. Caer a la cookie convertiría un token malo en una invitación a
+ * probar otra credencial, y haría que la app pareciera funcionar en un navegador con sesión
+ * abierta mientras falla en el teléfono.
+ */
 export async function getSession(
   request: NextRequest
 ): Promise<AdminPayload | null> {
-  const token = request.cookies.get("dulce_admin_session")?.value;
+  const bearer = bearerToken(request);
+  if (bearer !== null) return verifyJwt(bearer);
+
+  const token = request.cookies.get(COOKIE_NAME)?.value;
   if (!token) return null;
   return verifyJwt(token);
 }
 
+/** El token del encabezado Authorization, o null si no viene el encabezado. */
+export function bearerToken(request: NextRequest): string | null {
+  const header = request.headers.get("authorization");
+  if (!header) return null;
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match ? match[1].trim() : "";
+}
+
 export const COOKIE_NAME = "dulce_admin_session";
+
+/** Vida del token de acceso que consume la app móvil. */
+export const ACCESS_TOKEN_TTL_SECONDS = 60 * 60; // 1 hora
+
+/** Firma un token de acceso corto para la app. La web sigue usando signJwt (24 h). */
+export async function signAccessToken(payload: AdminPayload): Promise<string> {
+  return new SignJWT({ ...payload })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`)
+    .sign(JWT_SECRET);
+}
 
 export function forbidden(message: string = ERROR_FORBIDDEN): NextResponse {
   return NextResponse.json({ error: message }, { status: 403 });
