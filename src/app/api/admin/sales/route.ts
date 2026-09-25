@@ -8,7 +8,7 @@ import { SalonTable } from "@/models/SalonTable";
 import { getSession, requireFeature } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
 import { syncTableWithComandas } from "@/lib/tableSync";
-import { computeSaleTotals, isOrderType, readPosCharges, subtotalOf } from "@/lib/pricing";
+import { computeSaleTotals, isOrderType, readAppliedCharges, readPosCharges, subtotalOf } from "@/lib/pricing";
 import { checkCatalogPrices, checkComandaLines, parseSaleItems, type SaleItemRecord } from "@/server/services/saleItems";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import mongoose from "mongoose";
@@ -61,6 +61,8 @@ export async function POST(request: NextRequest) {
 
   // Las tasas, montos de impuesto/servicio, subtotal y total que mande el cliente se ignoran: se
   // recalculan acá con la configuración del negocio (Configuración → Caja) y src/lib/pricing.ts.
+  // Del cajero solo se toma si aplica o no cada cobro en esta venta (ivaEnabled, serviceEnabled,
+  // tipEnabled), y solo para los que el negocio tiene activos.
   const { customerName, tableNumber,
           items, tipAmount,
           paymentMethod, mixedPayment, notes,
@@ -184,6 +186,7 @@ export async function POST(request: NextRequest) {
     orderType,
     tipAmount,
     deliveryFee,
+    applied: readAppliedCharges(body),
   });
 
   // Reclamo atómico (uno por comanda, secuencial, sin transacciones)

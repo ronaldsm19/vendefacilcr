@@ -2223,7 +2223,7 @@ export default function ConfiguracionPage() {
             <div>
               <h2 className="font-semibold text-brand-dark text-lg">Cobros del punto de venta</h2>
               <p className="text-sm text-brand-dark/50 mt-0.5">
-                Se aplican igual en todas las ventas y para todo el personal. En el punto de venta se ven, pero nadie los puede cambiar desde ahí.
+                Activá los cobros que usa tu negocio. En el punto de venta aparecen con un switch para que el cajero decida si aplican en cada venta; el porcentaje solo se cambia acá.
               </p>
             </div>
             {loadingPosCharges ? (
@@ -2275,7 +2275,7 @@ export default function ConfiguracionPage() {
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-brand-dark">Propina</p>
-                    <p className="text-xs text-brand-dark/50">Si está activa, el cajero escribe el monto en cada venta.</p>
+                    <p className="text-xs text-brand-dark/50">Si está activa, el cajero la aplica y escribe el monto en cada venta.</p>
                   </div>
                   <Switch label="Permitir propina" checked={posCharges.tipEnabled} onChange={(v) => setPosCharges((p) => ({ ...p, tipEnabled: v }))} />
                 </div>

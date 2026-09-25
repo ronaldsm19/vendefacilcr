@@ -148,12 +148,29 @@ export function readPosCharges(raw: unknown): PosCharges {
   };
 }
 
+/**
+ * Lo que el cajero decide en ESTA venta. Un cobro solo se aplica si el negocio lo tiene activo en
+ * Configuración → Caja y el cajero no lo apagó; sin dato, se aplica. El porcentaje nunca viene de acá.
+ */
+export interface AppliedCharges {
+  iva?: boolean;
+  service?: boolean;
+  tip?: boolean;
+}
+
 export interface SaleTotalsInput {
   subtotal: number;
   charges: PosCharges;
   orderType: OrderType;
   tipAmount?: number;
   deliveryFee?: number;
+  applied?: AppliedCharges;
+}
+
+/** Lee las decisiones por venta que manda el POS (booleanos sueltos; cualquier otra cosa = sin dato). */
+export function readAppliedCharges(raw: { ivaEnabled?: unknown; serviceEnabled?: unknown; tipEnabled?: unknown }): AppliedCharges {
+  const flag = (v: unknown) => (typeof v === "boolean" ? v : undefined);
+  return { iva: flag(raw.ivaEnabled), service: flag(raw.serviceEnabled), tip: flag(raw.tipEnabled) };
 }
 
 export interface SaleTotals {
@@ -181,26 +198,29 @@ export function appliesService(charges: PosCharges, orderType: OrderType): boole
 }
 
 /**
- * Impuesto, servicio, propina, envío y total de una venta a partir del subtotal. El impuesto se
- * cobra en los tres tipos de pedido; el servicio, solo en LOCAL (en los demás queda apagado y en
- * cero, así no aparece ni en el resumen ni en el tiquete). El monto de la propina lo escribe el
- * cajero; si la propina no está habilitada, vale cero.
+ * Impuesto, servicio, propina, envío y total de una venta a partir del subtotal. Cada cobro se aplica
+ * si el negocio lo tiene activo y el cajero no lo apagó en esta venta (`applied`). El impuesto va en
+ * los tres tipos de pedido; el servicio, solo en LOCAL (en los demás queda apagado y en cero, así no
+ * aparece ni en el resumen ni en el tiquete). El monto de la propina lo escribe el cajero; si la
+ * propina no se aplica, vale cero. Los `*Enabled` del resultado dicen qué se cobró en ESTA venta.
  */
-export function computeSaleTotals({ subtotal, charges, orderType, tipAmount, deliveryFee }: SaleTotalsInput): SaleTotals {
-  const ivaAmount = charges.ivaEnabled ? Math.round((subtotal * charges.ivaRate) / 100) : 0;
-  const serviceEnabled = appliesService(charges, orderType);
+export function computeSaleTotals({ subtotal, charges, orderType, tipAmount, deliveryFee, applied }: SaleTotalsInput): SaleTotals {
+  const ivaEnabled = charges.ivaEnabled && applied?.iva !== false;
+  const ivaAmount = ivaEnabled ? Math.round((subtotal * charges.ivaRate) / 100) : 0;
+  const serviceEnabled = appliesService(charges, orderType) && applied?.service !== false;
   const serviceAmount = serviceEnabled ? Math.round((subtotal * charges.serviceRate) / 100) : 0;
-  const tip = charges.tipEnabled ? nonNegative(tipAmount) : 0;
+  const tipEnabled = charges.tipEnabled && applied?.tip !== false;
+  const tip = tipEnabled ? nonNegative(tipAmount) : 0;
   const delivery = orderType === "EXPRESS" ? nonNegative(deliveryFee) : 0;
   return {
     subtotal,
-    ivaEnabled: charges.ivaEnabled,
+    ivaEnabled,
     ivaRate: charges.ivaRate,
     ivaAmount,
     serviceEnabled,
     serviceRate: charges.serviceRate,
     serviceAmount,
-    tipEnabled: charges.tipEnabled,
+    tipEnabled,
     tipAmount: tip,
     deliveryFee: delivery,
     total: subtotal + ivaAmount + serviceAmount + tip + delivery,
