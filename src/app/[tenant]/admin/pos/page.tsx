@@ -16,8 +16,8 @@ import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } fro
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
-  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty,
-  DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra,
+  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty, appliesService,
+  DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra, type AppliedCharges,
 } from "@/lib/pricing";
 import {
   Dialog,
@@ -179,49 +179,91 @@ function ProductCard({
   );
 }
 
-// ── Cobros del negocio (solo lectura) ─────────────────────────────────────────
-// El impuesto, el servicio y si hay propina los fija el dueño en Configuración → Caja; acá solo
-// se muestran. Lo único editable es el MONTO de la propina, que cambia con cada cliente.
+// ── Cobros de la venta ────────────────────────────────────────────────────────
+// Configuración → Caja decide qué cobros tiene el negocio y su porcentaje. Acá aparecen solo esos,
+// con un switch para aplicarlos o no en ESTA venta; el porcentaje no se cambia desde el POS.
+
+const APPLY_ALL: Required<AppliedCharges> = { iva: true, service: true, tip: true };
+
+function ChargeSwitch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative w-10 h-5 rounded-full transition-colors shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-pink ${
+        checked ? "bg-brand-pink" : "bg-gray-300"
+      }`}
+    >
+      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200 ${checked ? "left-[22px]" : "left-0.5"}`} />
+    </button>
+  );
+}
 
 function ChargeLines({
+  charges,
+  orderType,
+  applied,
+  onAppliedChange,
   totals,
   tipAmount,
   onTipChange,
   tipInputClassName,
 }: {
+  charges: PosCharges;
+  orderType: OrderType;
+  applied: Required<AppliedCharges>;
+  onAppliedChange: (next: Required<AppliedCharges>) => void;
   totals: SaleTotals;
   tipAmount: number;
   onTipChange: (n: number) => void;
   tipInputClassName: string;
 }) {
+  const row = (on: boolean) => `text-sm ${on ? "text-brand-dark/70" : "text-gray-300"}`;
   return (
     <>
-      {totals.ivaEnabled && (
-        <div className="flex justify-between text-sm">
-          <span className="text-brand-dark/60">IVA ({totals.ivaRate}%)</span>
-          <span className="font-semibold">{fmt(totals.ivaAmount)}</span>
-        </div>
-      )}
-      {totals.serviceEnabled && (
-        <div className="flex justify-between text-sm">
-          <span className="text-brand-dark/60">Servicio ({totals.serviceRate}%)</span>
-          <span className="font-semibold">{fmt(totals.serviceAmount)}</span>
-        </div>
-      )}
-      {totals.tipEnabled && (
+      {charges.ivaEnabled && (
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-brand-dark/60">Propina</span>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-400">₡</span>
-            <input
-              type="number"
-              min={0}
-              value={tipAmount || ""}
-              placeholder="0"
-              onChange={(e) => onTipChange(Math.max(0, Number(e.target.value)))}
-              className={tipInputClassName}
-            />
+          <div className="flex items-center gap-2">
+            <ChargeSwitch checked={applied.iva} onChange={(v) => onAppliedChange({ ...applied, iva: v })} label={`Cobrar IVA ${charges.ivaRate}% en esta venta`} />
+            <span className={row(applied.iva)}>IVA ({charges.ivaRate}%)</span>
           </div>
+          <span className={`text-sm font-semibold ${applied.iva ? "" : "text-gray-300"}`}>{fmt(totals.ivaAmount)}</span>
+        </div>
+      )}
+      {appliesService(charges, orderType) && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ChargeSwitch checked={applied.service} onChange={(v) => onAppliedChange({ ...applied, service: v })} label={`Cobrar servicio ${charges.serviceRate}% en esta venta`} />
+            <span className={row(applied.service)}>Servicio ({charges.serviceRate}%)</span>
+          </div>
+          <span className={`text-sm font-semibold ${applied.service ? "" : "text-gray-300"}`}>{fmt(totals.serviceAmount)}</span>
+        </div>
+      )}
+      {charges.tipEnabled && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ChargeSwitch checked={applied.tip} onChange={(v) => onAppliedChange({ ...applied, tip: v })} label="Cobrar propina en esta venta" />
+            <span className={row(applied.tip)}>Propina</span>
+          </div>
+          {applied.tip ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-400">₡</span>
+              <input
+                type="number"
+                min={0}
+                value={tipAmount || ""}
+                placeholder="0"
+                aria-label="Monto de la propina"
+                onChange={(e) => onTipChange(Math.max(0, Number(e.target.value)))}
+                className={tipInputClassName}
+              />
+            </div>
+          ) : (
+            <span className="text-sm font-semibold text-gray-300">{fmt(0)}</span>
+          )}
         </div>
       )}
     </>
@@ -338,22 +380,24 @@ function PosPageInner() {
   const [amountPaid, setAmountPaid]             = useState(0);
   const payAmountRef = useRef<HTMLInputElement>(null);
 
-  // ── Cobros del negocio (Configuración → Caja), de solo lectura ──
+  // ── Cobros del negocio (Configuración → Caja): cuáles hay y su porcentaje ──
   const [charges, setCharges] = useState<PosCharges>(DEFAULT_POS_CHARGES);
+  // ── Si se aplican en ESTA venta (switch del cajero); arrancan prendidos en cada venta ──
+  const [applied, setApplied] = useState<Required<AppliedCharges>>(APPLY_ALL);
 
   // Flag: solo persistir DESPUÉS de que el draft haya sido restaurado
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-  // ── Persist draft cart (carrito y datos del pedido; los cobros vienen siempre de la configuración) ─
+  // ── Persist draft cart (carrito, datos del pedido y qué cobros aplica esta venta; los porcentajes vienen siempre de la configuración) ─
   useEffect(() => {
     if (!draftLoaded || !tenantSlug) return;
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       cart, paymentMethod, tipAmount, orderType,
-      tableId, tableNumber, customerName, comandaSelections,
+      tableId, tableNumber, customerName, comandaSelections, applied,
     }));
     window.dispatchEvent(new CustomEvent("pos-cart-update"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, paymentMethod, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections]);
+  }, [cart, paymentMethod, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections, applied]);
 
   async function loadOpenTables(focusTableId?: string): Promise<OpenTable[]> {
     setTablesLoading(true);
@@ -435,6 +479,13 @@ function PosPageInner() {
             if (typeof draft.tableNumber === "string") setTableNumber(draft.tableNumber);
             if (typeof draft.customerName === "string") setCustomerName(draft.customerName);
             if (Array.isArray(draft.comandaSelections)) setComandaSelections(draft.comandaSelections);
+            if (draft.applied && typeof draft.applied === "object") {
+              setApplied({
+                iva: draft.applied.iva !== false,
+                service: draft.applied.service !== false,
+                tip: draft.applied.tip !== false,
+              });
+            }
           }
         }
       } catch { /* ignore */ }
@@ -482,7 +533,7 @@ function PosPageInner() {
     );
 
   // Misma fórmula que usa el servidor al guardar la venta (src/lib/pricing.ts).
-  const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), charges, orderType, tipAmount, deliveryFee });
+  const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), charges, orderType, tipAmount, deliveryFee, applied });
   const { subtotal, total } = totals;
   const mixedSum     = mixedAmounts.efectivo + mixedAmounts.sinpe + mixedAmounts.tarjeta;
   const mixedRemainder = total - mixedSum;
@@ -720,6 +771,10 @@ function PosPageInner() {
           notes: observaciones,
           items,
           tipAmount:      totals.tipAmount,
+          // Qué cobros aplica esta venta; el servidor igual exige que estén activos en Configuración.
+          ivaEnabled:     applied.iva,
+          serviceEnabled: applied.service,
+          tipEnabled:     applied.tip,
           paymentMethod,
           mixedPayment:   paymentMethod === "mixto" ? mixedAmounts : undefined,
           orderType,
@@ -773,6 +828,7 @@ function PosPageInner() {
       autoPrintSale(String(s._id), ticketData);
       setCart([]);
       setTipAmount(0);
+      setApplied(APPLY_ALL);
       setCustomerName("");
       setTableNumber("");
       setObservaciones("");
@@ -1090,6 +1146,10 @@ function PosPageInner() {
             )}
 
             <ChargeLines
+              charges={charges}
+              orderType={orderType}
+              applied={applied}
+              onAppliedChange={setApplied}
               totals={totals}
               tipAmount={tipAmount}
               onTipChange={setTipAmount}
@@ -1393,6 +1453,10 @@ function PosPageInner() {
               </div>
             )}
             <ChargeLines
+              charges={charges}
+              orderType={orderType}
+              applied={applied}
+              onAppliedChange={setApplied}
               totals={totals}
               tipAmount={tipAmount}
               onTipChange={setTipAmount}
