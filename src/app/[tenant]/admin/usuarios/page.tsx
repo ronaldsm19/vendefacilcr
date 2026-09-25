@@ -5,7 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import type { StaffRole } from "@/lib/permissions";
-import { Plus, Pencil, KeyRound, Trash2, Loader2 } from "lucide-react";
+import { Plus, Pencil, KeyRound, Trash2, Loader2, Smartphone } from "lucide-react";
+
+interface DeviceRow {
+  id: string;
+  deviceName: string;
+  platform: "ios" | "android" | "otro";
+  lastUsedAt: string;
+  createdAt: string;
+}
 
 interface StaffUserRow {
   _id: string;
@@ -47,6 +55,12 @@ export default function UsuariosPage() {
   const [createForm, setCreateForm] = useState({ name: "", username: "", role: "cajero" as StaffRole, pin: "", pin2: "" });
   const [editForm, setEditForm] = useState({ name: "", role: "cajero" as StaffRole, active: true });
   const [pinForm, setPinForm] = useState({ pin: "", pin2: "" });
+
+  // Dispositivos con sesión viva de la app móvil, para poder cortar un teléfono perdido.
+  const [devicesUser, setDevicesUser] = useState<StaffUserRow | null>(null);
+  const [devices, setDevices] = useState<DeviceRow[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [revoking, setRevoking] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -184,6 +198,50 @@ export default function UsuariosPage() {
     return value.replace(/\D/g, "").slice(0, 4);
   }
 
+  async function openDevices(u: StaffUserRow) {
+    setDevicesUser(u);
+    setDevices([]);
+    setDevicesLoading(true);
+    try {
+      const res = await fetch(`/api/admin/staff-users/${u._id}/devices`);
+      const data = await res.json();
+      setDevices(res.ok ? (data.devices ?? []) : []);
+    } finally {
+      setDevicesLoading(false);
+    }
+  }
+
+  async function revokeOne(deviceId: string) {
+    if (!devicesUser) return;
+    setRevoking(deviceId);
+    try {
+      await fetch(`/api/admin/staff-users/${devicesUser._id}/devices/${deviceId}`, { method: "DELETE" });
+      setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+    } finally {
+      setRevoking(null);
+    }
+  }
+
+  async function revokeAll() {
+    if (!devicesUser) return;
+    setRevoking("all");
+    try {
+      await fetch(`/api/admin/staff-users/${devicesUser._id}/devices`, { method: "DELETE" });
+      setDevices([]);
+    } finally {
+      setRevoking(null);
+    }
+  }
+
+  function sinceLabel(iso: string) {
+    const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return "hace un momento";
+    if (mins < 60) return `hace ${mins} min`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `hace ${hours} h`;
+    return `hace ${Math.floor(hours / 24)} d`;
+  }
+
   return (
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex items-start justify-between gap-3">
@@ -239,6 +297,9 @@ export default function UsuariosPage() {
                           </button>
                           <button title="Cambiar PIN" onClick={() => openPin(u)} className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer">
                             <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button title="Dispositivos" onClick={() => openDevices(u)} className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer">
+                            <Smartphone className="w-4 h-4" />
                           </button>
                           <Button size="icon-sm" variant="destructive" title="Eliminar" aria-label="Eliminar usuario" onClick={() => setDeleteUser(u)}>
                             <Trash2 className="w-4 h-4" />
@@ -445,6 +506,61 @@ export default function UsuariosPage() {
             <div className="flex gap-3">
               <Button variant="destructive" className="flex-1" disabled={saving} onClick={handleDelete}>Eliminar</Button>
               <Button variant="cancel" className="flex-1" onClick={() => setDeleteUser(null)}>Cancelar</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dispositivos con sesión abierta en la app móvil */}
+      <Dialog open={!!devicesUser} onOpenChange={(v) => !v && setDevicesUser(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="pb-2">
+            <DialogTitle>Dispositivos de {devicesUser?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6 pt-2 space-y-4">
+            <p className="text-sm text-brand-dark/60">
+              Teléfonos con sesión abierta en la aplicación. Si se le perdió uno, revocalo acá:
+              deja de funcionar de inmediato y no hace falta cambiarle el PIN.
+            </p>
+
+            {devicesLoading ? (
+              <div className="flex items-center gap-2 text-sm text-brand-dark/40">
+                <Loader2 className="w-4 h-4 animate-spin" /> Cargando...
+              </div>
+            ) : devices.length === 0 ? (
+              <p className="text-sm text-brand-dark/40">No tiene ningún dispositivo con sesión abierta.</p>
+            ) : (
+              <ul className="space-y-2">
+                {devices.map((d) => (
+                  <li key={d.id} className="flex items-center gap-3 rounded-xl border border-brand-muted px-3 py-2.5">
+                    <Smartphone className="w-4 h-4 shrink-0 text-brand-dark/40" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-brand-dark truncate">{d.deviceName}</p>
+                      <p className="text-xs text-brand-dark/40">
+                        {d.platform === "ios" ? "iPhone" : d.platform === "android" ? "Android" : "Otro"}
+                        {" · "}activo {sinceLabel(d.lastUsedAt)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={revoking !== null}
+                      onClick={() => revokeOne(d.id)}
+                    >
+                      {revoking === d.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Revocar"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="flex gap-3">
+              {devices.length > 1 && (
+                <Button variant="destructive" className="flex-1" disabled={revoking !== null} onClick={revokeAll}>
+                  {revoking === "all" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Revocar todos"}
+                </Button>
+              )}
+              <Button variant="cancel" className="flex-1" onClick={() => setDevicesUser(null)}>Cerrar</Button>
             </div>
           </div>
         </DialogContent>
