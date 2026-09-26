@@ -6,6 +6,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import DateTime12hInput from "@/components/admin/DateTime12hInput";
 import { toCRInputValue, crInputToUTC, formatCRTime, formatHoursMinutes } from "@/lib/workPeriod";
 
 export interface EditableShift {
@@ -99,27 +100,15 @@ export default function EditShiftDialog({ shift, onClose, onSaved }: EditShiftDi
             </span>
           </div>
 
-          <div className={isOpen ? "" : "grid grid-cols-1 sm:grid-cols-2 gap-3"}>
+          <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-brand-dark mb-1">Entrada</label>
-              <input
-                type="datetime-local"
-                value={startedAt}
-                max={maxInput}
-                onChange={(e) => setStartedAt(e.target.value)}
-                className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-              />
+              <DateTime12hInput value={startedAt} max={maxInput} onChange={setStartedAt} />
             </div>
             {!isOpen && (
               <div>
                 <label className="block text-sm font-medium text-brand-dark mb-1">Salida</label>
-                <input
-                  type="datetime-local"
-                  value={endedAt}
-                  max={maxInput}
-                  onChange={(e) => setEndedAt(e.target.value)}
-                  className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-                />
+                <DateTime12hInput value={endedAt} max={maxInput} onChange={setEndedAt} />
               </div>
             )}
           </div>
