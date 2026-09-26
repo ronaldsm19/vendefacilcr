@@ -6,7 +6,9 @@ import { WorkShift } from "@/models/WorkShift";
 import { AccessLog } from "@/models/AccessLog";
 import { ServiceError } from "@/server/errors";
 import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
-import type { PeriodRange } from "@/lib/workPeriod";
+import {
+  nowInCR, resolvePeriod, formatPeriodLabel, crDayKey, formatCRDayLabel, type PeriodRange, type PeriodType,
+} from "@/lib/workPeriod";
 
 // Control de jornada laboral. La hora siempre es la del servidor: ninguna función de este módulo
 // acepta un startedAt, un endedAt de marcaje ni minutos calculados afuera. Las únicas excepciones son
@@ -387,4 +389,76 @@ export async function editShiftAsAdmin(
   }).catch(() => {});
 
   return updated;
+}
+
+interface MyShiftLean {
+  _id: mongoose.Types.ObjectId;
+  startedAt: Date;
+  endedAt: Date | null;
+  minutes: number;
+  status: "abierta" | "cerrada";
+  closedBy: "staff" | "admin";
+  edits?: unknown[];
+}
+
+/**
+ * Las horas de la propia persona, para la app del teléfono: su jornada abierta, lo que lleva en la
+ * quincena y en el mes en curso, y sus jornadas del mes agrupadas por día. Los minutos son solo de
+ * jornadas cerradas; la app suma en vivo lo que corre de la abierta. Dice si una jornada fue
+ * ajustada por el admin, pero no trae sus notas: son internas.
+ */
+export async function getMyHours(tenantId: string, staffUserId: string) {
+  if (!mongoose.isValidObjectId(staffUserId)) throw new ServiceError(404, "Personal no encontrado");
+  await connectToDatabase();
+
+  const ref = nowInCR();
+  const month = resolvePeriod("mes", ref);
+
+  const [shifts, open] = await Promise.all([
+    WorkShift.find({ tenantId, staffUserId, startedAt: { $gte: month.from, $lt: month.to } })
+      .select("startedAt endedAt minutes status closedBy edits.at")
+      .sort({ startedAt: 1 })
+      .lean<MyShiftLean[]>(),
+    WorkShift.findOne({ tenantId, staffUserId, status: "abierta" })
+      .select("startedAt")
+      .lean<{ _id: mongoose.Types.ObjectId; startedAt: Date } | null>(),
+  ]);
+
+  const closedMinutes = (list: MyShiftLean[]) =>
+    list.reduce((sum, s) => sum + (s.status === "cerrada" ? s.minutes : 0), 0);
+
+  const summary = (type: PeriodType) => {
+    const { from, to } = resolvePeriod(type, ref);
+    const inRange = shifts.filter((s) => s.startedAt >= from && s.startedAt < to);
+    return { from, to, label: formatPeriodLabel(type, ref), minutes: closedMinutes(inRange), shiftsCount: inRange.length };
+  };
+
+  // Un turno que cruza la medianoche cuenta completo en el día en que empezó, igual que en la web.
+  const byDay = new Map<string, MyShiftLean[]>();
+  for (const s of shifts) {
+    const key = crDayKey(s.startedAt);
+    byDay.set(key, [...(byDay.get(key) ?? []), s]);
+  }
+  const days = [...byDay.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, list]) => ({
+      date,
+      label: formatCRDayLabel(date),
+      minutes: closedMinutes(list),
+      shifts: list.map((s) => ({
+        _id: String(s._id),
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        minutes: s.minutes,
+        status: s.status,
+        adjusted: s.closedBy === "admin" || (s.edits?.length ?? 0) > 0,
+      })),
+    }));
+
+  return {
+    openShift: open ? { _id: String(open._id), startedAt: open.startedAt } : null,
+    quincena: summary("quincena"),
+    mes: summary("mes"),
+    days,
+  };
 }
