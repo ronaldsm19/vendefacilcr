@@ -1,32 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Clock, AlertTriangle, ShieldCheck, Pencil } from "lucide-react";
+import { Clock, AlertTriangle, ShieldCheck, Pencil, ChevronDown } from "lucide-react";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { usePolling } from "@/hooks/usePolling";
 import { ROLE_LABELS, type Role } from "@/lib/permissions";
-import { nowInCR, resolvePeriod, formatHoursMinutes, type PeriodType } from "@/lib/workPeriod";
+import { nowInCR, resolvePeriod, formatHoursMinutes, formatCRTime, type PeriodType } from "@/lib/workPeriod";
 import StaffPicker, { type ActiveStaffEntry } from "@/components/admin/jornada/StaffPicker";
 import PeriodPicker from "@/components/admin/jornada/PeriodPicker";
 import CloseStuckShiftDialog, { type StuckShift } from "@/components/admin/jornada/CloseStuckShiftDialog";
+import EditShiftDialog, { type EditableShift } from "@/components/admin/jornada/EditShiftDialog";
+import StaffShiftDays, { type JornadaShift } from "@/components/admin/jornada/StaffShiftDays";
 import { Button } from "@/components/ui/button";
 
 const DESKTOP_MESSAGE = "El marcaje de jornada solo se puede hacer desde la computadora del negocio";
 const SIXTEEN_HOURS_MS = 16 * 60 * 60 * 1000;
-
-interface ShiftRow {
-  _id: string;
-  staffUserId: string;
-  staffName: string;
-  staffRole: Role;
-  startedAt: string;
-  endedAt: string | null;
-  minutes: number;
-  status: "abierta" | "cerrada";
-  closedBy: "staff" | "admin";
-  adjustedByName: string;
-  adjustNote: string;
-}
 
 interface TotalRow {
   staffUserId: string;
@@ -38,7 +26,7 @@ interface TotalRow {
 }
 
 interface HoursData {
-  shifts: ShiftRow[];
+  shifts: JornadaShift[];
   totals: TotalRow[];
   openShifts: StuckShift[];
 }
@@ -122,6 +110,8 @@ export default function JornadaPage() {
   const [hoursData, setHoursData] = useState<HoursData | null>(null);
   const [hoursLoading, setHoursLoading] = useState(true);
   const [closingShift, setClosingShift] = useState<StuckShift | null>(null);
+  const [editingShift, setEditingShift] = useState<EditableShift | null>(null);
+  const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
 
   const loadHours = useCallback(async () => {
     const { from, to } = resolvePeriod(periodType, periodRef);
@@ -141,7 +131,7 @@ export default function JornadaPage() {
   const adjustedStaffIds = useMemo(() => {
     const ids = new Set<string>();
     for (const s of hoursData?.shifts ?? []) {
-      if (s.closedBy === "admin") ids.add(s.staffUserId);
+      if (s.closedBy === "admin" || s.edits?.length) ids.add(s.staffUserId);
     }
     return ids;
   }, [hoursData]);
@@ -229,6 +219,27 @@ export default function JornadaPage() {
                     <p className="text-xs text-brand-dark/40">
                       desde las {new Date(s.openShift.startedAt).toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" })}
                     </p>
+                    {s.openShift.originalStartedAt && (
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        Entrada corregida · marcó {formatCRTime(new Date(s.openShift.originalStartedAt))}
+                      </p>
+                    )}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingShift({
+                          _id: s.openShift._id,
+                          staffName: s.name,
+                          status: "abierta",
+                          startedAt: s.openShift.startedAt,
+                          endedAt: null,
+                          originalStartedAt: s.openShift.originalStartedAt,
+                        })}
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-pink hover:underline"
+                      >
+                        <Pencil className="w-3 h-3" /> Editar entrada
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -241,7 +252,10 @@ export default function JornadaPage() {
       {isAdmin && (
         <div className="bg-white rounded-2xl card-shadow p-6">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-            <h2 className="font-semibold text-brand-dark">Horas acumuladas</h2>
+            <div>
+              <h2 className="font-semibold text-brand-dark">Horas acumuladas</h2>
+              <p className="text-xs text-brand-dark/40 mt-0.5">Tocá a una persona para ver y editar sus jornadas por día.</p>
+            </div>
             <PeriodPicker type={periodType} refCR={periodRef} onTypeChange={setPeriodType} onRefChange={setPeriodRef} />
           </div>
 
@@ -255,31 +269,49 @@ export default function JornadaPage() {
                 const pct = Math.round((t.minutes / maxMinutes) * 100);
                 const hasOpen = t.openCount > 0;
                 const hasAdjusted = adjustedStaffIds.has(t.staffUserId);
+                const expanded = expandedStaffId === t.staffUserId;
                 return (
-                  <div key={t.staffUserId} className="border border-brand-muted rounded-xl p-4">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="min-w-0">
-                        <p className="font-medium text-brand-dark truncate">{t.name}</p>
-                        <p className="text-xs text-brand-dark/40">{ROLE_LABELS[t.role]}</p>
+                  <div key={t.staffUserId} className="border border-brand-muted rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedStaffId(expanded ? null : t.staffUserId)}
+                      aria-expanded={expanded}
+                      className="w-full text-left p-4 rounded-xl hover:bg-brand-muted/10 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-brand-dark truncate">{t.name}</p>
+                          <p className="text-xs text-brand-dark/40">{ROLE_LABELS[t.role]}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {hasOpen && (
+                            <span className="text-xs font-medium bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full">Turno abierto</span>
+                          )}
+                          {hasAdjusted && (
+                            <span className="flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+                              <Pencil className="w-3 h-3" /> Ajustado
+                            </span>
+                          )}
+                          <ChevronDown className={`w-4 h-4 text-brand-dark/40 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {hasOpen && (
-                          <span className="text-xs font-medium bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full">Turno abierto</span>
-                        )}
-                        {hasAdjusted && (
-                          <span className="flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
-                            <Pencil className="w-3 h-3" /> Ajustado
-                          </span>
-                        )}
+                      <div className="flex items-baseline justify-between text-sm mb-1.5">
+                        <span className="font-bold text-brand-dark">{formatHoursMinutes(t.minutes)}</span>
+                        <span className="text-brand-dark/40">{t.shiftsCount} jornada{t.shiftsCount === 1 ? "" : "s"}</span>
                       </div>
-                    </div>
-                    <div className="flex items-baseline justify-between text-sm mb-1.5">
-                      <span className="font-bold text-brand-dark">{formatHoursMinutes(t.minutes)}</span>
-                      <span className="text-brand-dark/40">{t.shiftsCount} jornada{t.shiftsCount === 1 ? "" : "s"}</span>
-                    </div>
-                    <div className="h-2 bg-brand-muted rounded-full overflow-hidden">
-                      <div className="h-full rounded-full gradient-bg" style={{ width: `${Math.max(pct, 2)}%` }} />
-                    </div>
+                      <div className="h-2 bg-brand-muted rounded-full overflow-hidden">
+                        <div className="h-full rounded-full gradient-bg" style={{ width: `${Math.max(pct, 2)}%` }} />
+                      </div>
+                    </button>
+                    {expanded && (
+                      <div className="px-4 pb-4 pt-4 border-t border-brand-muted">
+                        <StaffShiftDays
+                          shifts={hoursData.shifts.filter((s) => s.staffUserId === t.staffUserId)}
+                          nowMs={nowMs}
+                          onEdit={setEditingShift}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -325,6 +357,13 @@ export default function JornadaPage() {
         shift={closingShift}
         onClose={() => setClosingShift(null)}
         onClosed={() => { setClosingShift(null); loadHours(); loadActive(); }}
+      />
+
+      <EditShiftDialog
+        key={editingShift?._id ?? "none"}
+        shift={editingShift}
+        onClose={() => setEditingShift(null)}
+        onSaved={() => { setEditingShift(null); loadHours(); loadActive(); }}
       />
     </div>
   );

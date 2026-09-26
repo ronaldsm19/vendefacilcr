@@ -8,7 +8,7 @@ export interface ActiveStaffEntry {
   _id: string;
   name: string;
   role: Role;
-  openShift: { _id: string; startedAt: string } | null;
+  openShift: { _id: string; startedAt: string; originalStartedAt: string | null } | null;
 }
 
 interface StaffPickerProps {
