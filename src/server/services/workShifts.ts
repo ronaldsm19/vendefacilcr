@@ -297,7 +297,7 @@ export async function editShiftAsAdmin(
   await connectToDatabase();
 
   const shift = await WorkShift.findOne({ _id: shiftId, tenantId })
-    .select("staffUserId staffName startedAt endedAt status")
+    .select("staffUserId staffName startedAt endedAt status payrollPaymentId")
     .lean<{
       _id: mongoose.Types.ObjectId;
       staffUserId: mongoose.Types.ObjectId;
@@ -305,8 +305,19 @@ export async function editShiftAsAdmin(
       startedAt: Date;
       endedAt: Date | null;
       status: "abierta" | "cerrada";
+      payrollPaymentId: mongoose.Types.ObjectId | null;
     } | null>();
   if (!shift) throw new ServiceError(404, "Jornada no encontrada");
+
+  // Una jornada ya pagada no se corrige: cambiar sus horas dejaría el pago hecho sobre unos
+  // minutos que ya no existen, y la planilla mostraría una deuda que nadie puede explicar.
+  // Primero se anula el pago —eso la devuelve a pendiente— y después se corrige.
+  if (shift.payrollPaymentId) {
+    throw new ServiceError(
+      409,
+      "Esta jornada ya fue pagada. Anulá el pago en Planilla y después corregila."
+    );
+  }
 
   const isOpen = shift.status === "abierta";
   const { startedAt, endedAt, note } = input;
