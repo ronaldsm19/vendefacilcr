@@ -6,6 +6,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import DateTime12hInput from "@/components/admin/DateTime12hInput";
 import { toCRInputValue, crInputToUTC } from "@/lib/workPeriod";
 
 export interface StuckShift {
@@ -71,12 +72,7 @@ export default function CloseStuckShiftDialog({ shift, onClose, onClosed }: Clos
 
           <div>
             <label className="block text-sm font-medium text-brand-dark mb-1">Hora de salida real</label>
-            <input
-              type="datetime-local"
-              value={endedAt}
-              onChange={(e) => setEndedAt(e.target.value)}
-              className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-            />
+            <DateTime12hInput value={endedAt} max={toCRInputValue(new Date())} onChange={setEndedAt} />
           </div>
 
           <div>
