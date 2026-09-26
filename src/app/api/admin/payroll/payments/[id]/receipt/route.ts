@@ -4,7 +4,8 @@ import { requirePremium } from "@/lib/plan";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { attachReceiptPdf } from "@/server/services/payroll";
 
-// Guarda la URL del comprobante en PDF que la pantalla ya generó y subió.
+// Guarda la ruta del comprobante que la pantalla ya generó y subió al almacén privado, y
+// devuelve un enlace firmado recién hecho para mandarlo.
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(request);
@@ -18,8 +19,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const body = await request.json().catch(() => ({}));
 
   try {
-    await attachReceiptPdf(session.tenantId, id, String(body.url ?? ""));
-    return NextResponse.json({ ok: true });
+    return NextResponse.json(await attachReceiptPdf(session.tenantId, id, String(body.path ?? "")));
   } catch (err) {
     return serviceErrorResponse(err);
   }

@@ -62,7 +62,10 @@ export default function PayDialog({
   const [extras, setExtras] = useState<ExtraLine[]>([]);
   const [method, setMethod] = useState<PayMethod>("efectivo");
   const [reference, setReference] = useState("");
+  // Del pantallazo se guardan dos cosas: la ruta interna, que es lo que viaja al servidor, y
+  // un enlace firmado que solo sirve para la vista previa de este diálogo.
   const [proofImage, setProofImage] = useState("");
+  const [proofUrl, setProofUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
@@ -121,10 +124,13 @@ export default function PayDialog({
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/admin/upload?folder=planilla", { method: "POST", body: form });
+      // Almacén privado: el pantallazo de un SINPE lleva datos bancarios y no puede quedar
+      // en una dirección que abre cualquiera que la tenga.
+      const res = await fetch("/api/admin/payroll/upload", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "No se pudo subir la imagen");
-      setProofImage(data.url);
+      setProofImage(data.path);
+      setProofUrl(data.url ?? "");
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo subir la imagen");
     } finally {
@@ -347,12 +353,12 @@ export default function PayDialog({
 
                   <div>
                     <label className="block text-sm font-medium text-brand-dark mb-1">Pantallazo</label>
-                    {proofImage ? (
+                    {proofImage && proofUrl ? (
                       <div className="relative w-40 h-40 rounded-xl overflow-hidden border border-brand-muted">
-                        <Image src={proofImage} alt="Comprobante" fill className="object-cover" sizes="160px" />
+                        <Image src={proofUrl} alt="Comprobante" fill className="object-cover" sizes="160px" />
                         <button
                           type="button"
-                          onClick={() => setProofImage("")}
+                          onClick={() => { setProofImage(""); setProofUrl(""); }}
                           className="absolute top-1 right-1 bg-white/90 rounded-full p-1 shadow cursor-pointer"
                           aria-label="Quitar imagen"
                         >
