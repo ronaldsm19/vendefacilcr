@@ -4,6 +4,16 @@ import type { StaffRole } from "@/models/StaffUser";
 export type WorkShiftStatus = "abierta" | "cerrada";
 export type WorkShiftClosedBy = "staff" | "admin";
 
+export interface IWorkShiftEdit {
+  at: Date;
+  byName: string;
+  note: string;
+  fromStartedAt: Date;
+  fromEndedAt: Date | null;
+  toStartedAt: Date;
+  toEndedAt: Date | null;
+}
+
 export interface IWorkShift {
   _id: string;
   tenantId: string;
@@ -17,6 +27,7 @@ export interface IWorkShift {
   closedBy: WorkShiftClosedBy;
   adjustedByName: string;
   adjustNote: string;
+  edits: IWorkShiftEdit[];
   /**
    * Pago que ya cubrió este turno, o null si todavía se debe.
    *
@@ -28,6 +39,19 @@ export interface IWorkShift {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const WorkShiftEditSchema = new Schema(
+  {
+    at:            { type: Date, required: true },
+    byName:        { type: String, required: true },
+    note:          { type: String, default: "" },
+    fromStartedAt: { type: Date, required: true },
+    fromEndedAt:   { type: Date, default: null },
+    toStartedAt:   { type: Date, required: true },
+    toEndedAt:     { type: Date, default: null },
+  },
+  { _id: false }
+);
 
 const WorkShiftSchema = new Schema(
   {
@@ -42,6 +66,9 @@ const WorkShiftSchema = new Schema(
     closedBy:       { type: String, enum: ["staff", "admin"], default: "staff" },
     adjustedByName: { type: String, default: "" },
     adjustNote:     { type: String, default: "" },
+    // Historial de ediciones de entrada/salida hechas por el admin, en orden. El "from" de la primera
+    // edición es lo que la persona marcó de verdad (o lo que puso el admin al cerrar un turno olvidado).
+    edits:          { type: [WorkShiftEditSchema], default: [] },
     payrollPaymentId: { type: Schema.Types.ObjectId, ref: "PayrollPayment", default: null },
   },
   { timestamps: true }

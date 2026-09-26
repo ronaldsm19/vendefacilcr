@@ -88,3 +88,39 @@ export function formatHoursMinutes(totalMinutes: number): string {
   const m = safe % 60;
   return `${h} h ${m} min`;
 }
+
+/** "YYYY-MM-DDTHH:mm" en hora de pared de Costa Rica, para el value de un input datetime-local. */
+export function toCRInputValue(date: Date): string {
+  const n = new Date(date.getTime() - CR_OFFSET_MS);
+  const pad = (v: number) => String(v).padStart(2, "0");
+  return `${n.getUTCFullYear()}-${pad(n.getUTCMonth() + 1)}-${pad(n.getUTCDate())}T${pad(n.getUTCHours())}:${pad(n.getUTCMinutes())}`;
+}
+
+/** El input datetime-local se interpreta siempre como hora de Costa Rica, sin importar en qué
+ * huso horario esté el navegador o el servidor — evita que "las 2pm" que escribe el admin se
+ * conviertan silenciosamente en otra hora real por una zona horaria distinta a la de por medio. */
+export function crInputToUTC(value: string): Date | null {
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  return crWallClockToUTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
+}
+
+const DAYS_ES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+
+/** "YYYY-MM-DD" del día de Costa Rica en que cae ese instante (para agrupar jornadas por día). */
+export function crDayKey(date: Date): string {
+  return new Date(date.getTime() - CR_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** "Jueves 25 de setiembre" a partir de una clave de crDayKey. */
+export function formatCRDayLabel(dayKey: string): string {
+  const [y, m, d] = dayKey.split("-").map(Number);
+  const weekday = DAYS_ES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${weekday[0].toUpperCase()}${weekday.slice(1)} ${d} de ${MONTHS_ES[m - 1]}`;
+}
+
+/** "03:00 p. m." en hora de Costa Rica, sin importar la zona horaria del navegador. */
+export function formatCRTime(date: Date): string {
+  return date.toLocaleTimeString("es-CR", { timeZone: "America/Costa_Rica", hour: "2-digit", minute: "2-digit" });
+}
