@@ -1,8 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { getSession, requireFeature } from "@/lib/auth";
 import { normalizeOrderItems } from "@/server/services/orderItems";
+
+// El listado de ventas solo trae la cantidad de ítems: editar un pedido lo carga completo de acá.
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSession(request);
+  if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const denied = requireFeature(session, "pedidos");
+  if (denied) return denied;
+
+  const { id } = await params;
+  if (!mongoose.isValidObjectId(id)) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  await connectToDatabase();
+  const order = await Order.findOne({ _id: id, tenantId: session.tenantId }).lean();
+  if (!order) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  return NextResponse.json({ order });
+}
 
 export async function PATCH(
   request: NextRequest,
