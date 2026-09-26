@@ -8,6 +8,7 @@ import { Plus, X, Check } from "lucide-react";
 import CustomerCombobox from "@/components/admin/CustomerCombobox";
 import DateTime12hInput from "@/components/admin/DateTime12hInput";
 import { offerLineTotal, type LineExtra } from "@/lib/pricing";
+import { toCRInputValue, crInputToUTC } from "@/lib/workPeriod";
 
 interface LineItemState {
   productId: string;
@@ -57,9 +58,8 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
     customerName: initial?.customerName ?? "",
     phone:        initial?.phone        ?? "",
     paid:         initial?.paid         ?? false,
-    orderedAt:    initial?.orderedAt
-      ? new Date(initial.orderedAt).toISOString().slice(0, 16)
-      : new Date().toISOString().slice(0, 16),
+    // Se muestra y se edita en hora de Costa Rica (toISOString daría la hora UTC, 6 h adelante).
+    orderedAt:    toCRInputValue(initial?.orderedAt ? new Date(initial.orderedAt) : new Date()),
     notes:        initial?.notes ?? "",
   });
   const [manualTotal, setManualTotal] = useState<string | null>(null);
@@ -186,6 +186,9 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
 
     await onSave({
       ...form,
+      // Instante real (ISO con Z): el servidor corre en UTC y no tiene que adivinar la zona.
+      // Si la fecha quedó incompleta no se manda, y el servidor usa "ahora" o la que ya tenía.
+      orderedAt: crInputToUTC(form.orderedAt)?.toISOString(),
       items: builtItems,
       total,
     });
