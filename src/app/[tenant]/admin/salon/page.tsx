@@ -26,6 +26,7 @@ import {
 } from "@/lib/tableStatus";
 import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaConfig";
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
+import DateTime12hInput from "@/components/admin/DateTime12hInput";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1596,10 +1597,8 @@ export default function SalonPage() {
                     </div>
                     <div>
                       <label className="block text-xs text-brand-dark/50 mb-1">Fecha y hora *</label>
-                      <input type="datetime-local" value={reserveForm.dateTime}
-                        onChange={e => setReserveForm(f => ({ ...f, dateTime: e.target.value }))}
-                        className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-                        style={{ colorScheme: "light" }}
+                      <DateTime12hInput value={reserveForm.dateTime}
+                        onChange={v => setReserveForm(f => ({ ...f, dateTime: v }))}
                       />
                     </div>
                     <textarea placeholder="Notas (opcional)" rows={2} value={reserveForm.notes}

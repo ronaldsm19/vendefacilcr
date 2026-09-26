@@ -6,6 +6,7 @@ import type { IProduct } from "@/models/Product";
 import type { IOrderItem } from "@/models/Order";
 import { Plus, X, Check } from "lucide-react";
 import CustomerCombobox from "@/components/admin/CustomerCombobox";
+import DateTime12hInput from "@/components/admin/DateTime12hInput";
 import { offerLineTotal, type LineExtra } from "@/lib/pricing";
 
 interface LineItemState {
@@ -328,12 +329,7 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
         </div>
         <div>
           <label className="block text-sm font-medium text-brand-dark mb-1">Fecha y hora</label>
-          <input
-            type="datetime-local"
-            value={form.orderedAt}
-            onChange={e => setForm({ ...form, orderedAt: e.target.value })}
-            className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
-          />
+          <DateTime12hInput value={form.orderedAt} onChange={v => setForm({ ...form, orderedAt: v })} />
         </div>
       </div>
 
