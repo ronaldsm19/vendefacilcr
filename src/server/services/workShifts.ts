@@ -9,8 +9,11 @@ import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
 import type { PeriodRange } from "@/lib/workPeriod";
 
 // Control de jornada laboral. La hora siempre es la del servidor: ninguna función de este módulo
-// acepta un startedAt, un endedAt de marcaje ni minutos calculados afuera. La única excepción es
-// closeShiftAsAdmin, que recibe la hora de salida real que elige el admin y la valida acá.
+// acepta un startedAt, un endedAt de marcaje ni minutos calculados afuera. Las únicas excepciones son
+// las correcciones del admin —closeShiftAsAdmin (cerrar un turno olvidado) y editShiftAsAdmin
+// (corregir entrada y salida)—, que reciben las horas que elige el admin y las validan acá.
+
+const MAX_EDIT_MOVE_MS = 12 * 60 * 60 * 1000;
 
 const PIN_MAX_ATTEMPTS = 5;
 const PIN_WINDOW_MS = 15 * 60 * 1000;
@@ -67,8 +70,13 @@ export async function listActiveStaff(tenantId: string) {
     status: "abierta",
     staffUserId: { $in: staff.map((s) => s._id) },
   })
-    .select("staffUserId startedAt")
-    .lean<{ _id: { toString(): string }; staffUserId: { toString(): string }; startedAt: Date }[]>();
+    .select("staffUserId startedAt edits.fromStartedAt")
+    .lean<{
+      _id: { toString(): string };
+      staffUserId: { toString(): string };
+      startedAt: Date;
+      edits?: { fromStartedAt: Date }[];
+    }[]>();
 
   const openByStaff = new Map(openShifts.map((s) => [s.staffUserId.toString(), s]));
   return staff.map((s) => {
@@ -77,7 +85,14 @@ export async function listActiveStaff(tenantId: string) {
       _id: s._id.toString(),
       name: s.name,
       role: s.role,
-      openShift: open ? { _id: open._id.toString(), startedAt: open.startedAt } : null,
+      openShift: open
+        ? {
+            _id: open._id.toString(),
+            startedAt: open.startedAt,
+            // La hora que marcó de verdad, si el admin le corrigió la entrada.
+            originalStartedAt: open.edits?.[0]?.fromStartedAt ?? null,
+          }
+        : null,
     };
   });
 }
@@ -203,8 +218,8 @@ export async function getShiftsReport(tenantId: string, { from, to }: PeriodRang
 }
 
 /**
- * Única forma de corregir un turno que quedó abierto porque alguien olvidó marcar la salida. No hay
- * forma de editar startedAt, de tocar un turno ya cerrado ni de borrar turnos.
+ * Única forma de cerrar un turno que quedó abierto porque alguien olvidó marcar la salida. Las horas
+ * de una jornada se corrigen aparte, con editShiftAsAdmin; no hay forma de borrar jornadas.
  */
 export async function closeShiftAsAdmin(
   tenantId: string,
@@ -256,4 +271,120 @@ export async function closeShiftAsAdmin(
     adjustedByName: shift.adjustedByName as string,
     adjustNote: shift.adjustNote as string,
   };
+}
+
+/** "24/09, 10:00 p. m." en hora de Costa Rica, para mensajes de error. */
+function formatCR(date: Date): string {
+  return date.toLocaleString("es-CR", {
+    timeZone: "America/Costa_Rica", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+/**
+ * Edita la entrada y/o la salida de una jornada; solo el admin llega acá. Una jornada abierta solo
+ * admite corregir la entrada (la salida se marca con el PIN o con closeShiftAsAdmin); una cerrada
+ * admite las dos, y sus minutos se recalculan. Cada edición queda en shift.edits y en el AccessLog.
+ */
+export async function editShiftAsAdmin(
+  tenantId: string,
+  shiftId: string,
+  input: { startedAt: Date; endedAt: Date | null; note: string },
+  actor: AdjustActor
+) {
+  if (!mongoose.isValidObjectId(shiftId)) throw new ServiceError(404, "Jornada no encontrada");
+  await connectToDatabase();
+
+  const shift = await WorkShift.findOne({ _id: shiftId, tenantId })
+    .select("staffUserId staffName startedAt endedAt status")
+    .lean<{
+      _id: mongoose.Types.ObjectId;
+      staffUserId: mongoose.Types.ObjectId;
+      staffName: string;
+      startedAt: Date;
+      endedAt: Date | null;
+      status: "abierta" | "cerrada";
+    } | null>();
+  if (!shift) throw new ServiceError(404, "Jornada no encontrada");
+
+  const isOpen = shift.status === "abierta";
+  const { startedAt, endedAt, note } = input;
+  if (isOpen && endedAt) {
+    throw new ServiceError(400, "Esta jornada sigue abierta: solo se puede corregir la entrada. Para cerrarla usá «Cerrar jornada».");
+  }
+  if (!isOpen && !endedAt) throw new ServiceError(400, "Falta la hora de salida");
+
+  const now = new Date();
+  if (startedAt > now) throw new ServiceError(400, "La hora de entrada no puede estar en el futuro");
+  if (endedAt && endedAt > now) throw new ServiceError(400, "La hora de salida no puede estar en el futuro");
+  if (endedAt && endedAt <= startedAt) throw new ServiceError(400, "La salida tiene que ser después de la entrada");
+
+  // Un salto mayor casi siempre es una fecha equivocada en el selector, no una corrección real.
+  const movedTooFar = (next: Date, current: Date | null) =>
+    !!current && Math.abs(next.getTime() - current.getTime()) > MAX_EDIT_MOVE_MS;
+  if (movedTooFar(startedAt, shift.startedAt) || (endedAt && movedTooFar(endedAt, shift.endedAt))) {
+    throw new ServiceError(400, "Una edición no puede mover la entrada ni la salida más de 12 horas. Revisá la fecha.");
+  }
+
+  const sameStart = startedAt.getTime() === shift.startedAt.getTime();
+  const sameEnd = (endedAt?.getTime() ?? null) === (shift.endedAt?.getTime() ?? null);
+  if (sameStart && sameEnd) throw new ServiceError(400, "No cambiaste ninguna hora");
+
+  // No puede cruzarse con otra jornada de la misma persona; una abierta cuenta hasta ahora.
+  const overlap = await WorkShift.findOne({
+    tenantId,
+    staffUserId: shift.staffUserId,
+    _id: { $ne: shift._id },
+    startedAt: { $lt: endedAt ?? now },
+    $or: [{ status: "abierta" }, { endedAt: { $gt: startedAt } }],
+  })
+    .select("startedAt endedAt")
+    .lean<{ startedAt: Date; endedAt: Date | null } | null>();
+  if (overlap) {
+    throw new ServiceError(
+      400,
+      `Se cruza con otra jornada de ${shift.staffName} (${formatCR(overlap.startedAt)} – ${overlap.endedAt ? formatCR(overlap.endedAt) : "en curso"})`
+    );
+  }
+
+  const minutes = endedAt ? minutesBetween(startedAt, endedAt) : 0;
+
+  // Condicionado a que la jornada siga como la leímos: si la persona marca la salida justo ahora,
+  // sus minutos ya se calcularon con la hora vieja y no hay que pisarlos.
+  const updated = await WorkShift.findOneAndUpdate(
+    { _id: shift._id, tenantId, status: shift.status, startedAt: shift.startedAt, endedAt: shift.endedAt },
+    {
+      $set: { startedAt, endedAt, minutes },
+      $push: {
+        edits: {
+          at: now,
+          byName: actor.name,
+          note,
+          fromStartedAt: shift.startedAt,
+          fromEndedAt: shift.endedAt,
+          toStartedAt: startedAt,
+          toEndedAt: endedAt,
+        },
+      },
+    },
+    { returnDocument: "after" }
+  )
+    .select("-tenantId -__v")
+    .lean();
+  if (!updated) {
+    throw new ServiceError(409, "La jornada cambió mientras la editabas. Recargá la página e intentá de nuevo.");
+  }
+
+  const iso = (d: Date | null) => (d ? d.toISOString() : "abierta");
+  AccessLog.create({
+    tenantId,
+    tenantSlug: actor.tenantSlug,
+    userEmail:  actor.email || actor.name,
+    ip:         actor.ip ?? "unknown",
+    userAgent:  actor.userAgent ?? "",
+    success:    true,
+    event:      "work_shift_adjust",
+    path:       `workShiftId=${shiftId};staffName=${shift.staffName};startedAt=${iso(shift.startedAt)}->${iso(startedAt)};endedAt=${iso(shift.endedAt)}->${iso(endedAt)};minutes=${minutes}`,
+  }).catch(() => {});
+
+  return updated;
 }
