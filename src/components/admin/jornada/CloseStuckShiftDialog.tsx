@@ -6,7 +6,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { nowInCR, crWallClockToUTC } from "@/lib/workPeriod";
+import { toCRInputValue, crInputToUTC } from "@/lib/workPeriod";
 
 export interface StuckShift {
   _id: string;
@@ -21,25 +21,8 @@ interface CloseStuckShiftDialogProps {
   onClosed: () => void;
 }
 
-/** "YYYY-MM-DDTHH:mm" en hora de pared de Costa Rica, para el value inicial del input. */
-function nowCRForInput(): string {
-  const n = nowInCR();
-  const pad = (v: number) => String(v).padStart(2, "0");
-  return `${n.getUTCFullYear()}-${pad(n.getUTCMonth() + 1)}-${pad(n.getUTCDate())}T${pad(n.getUTCHours())}:${pad(n.getUTCMinutes())}`;
-}
-
-/** El input datetime-local se interpreta siempre como hora de Costa Rica, sin importar en qué
- * huso horario esté el navegador o el servidor — evita que "las 2pm" que escribe el admin se
- * conviertan silenciosamente en otra hora real por una zona horaria distinta a la de por medio. */
-function crInputToUTC(value: string): Date | null {
-  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  if (!m) return null;
-  const [, y, mo, d, h, mi] = m;
-  return crWallClockToUTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
-}
-
 export default function CloseStuckShiftDialog({ shift, onClose, onClosed }: CloseStuckShiftDialogProps) {
-  const [endedAt, setEndedAt] = useState(nowCRForInput());
+  const [endedAt, setEndedAt] = useState(() => toCRInputValue(new Date()));
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
