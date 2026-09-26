@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { buildSalePayload, checkAgent, printReceipt } from "@/lib/printBridge";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
+import AddToComandaPanel from "@/components/admin/AddToComandaPanel";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
@@ -363,6 +364,9 @@ function PosPageInner() {
   // selección dentro del panel: clave `${comandaId}:${index}` → qty elegida
   const [picked, setPicked] = useState<Record<string, number>>({});
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
+  // Comanda a la que se le está agregando lo que faltó anotar (tercer paso del panel), y el aviso de lo agregado.
+  const [addingTo, setAddingTo] = useState<OpenComanda | null>(null);
+  const [panelAdded, setPanelAdded] = useState<string | null>(null);
   const [lastTableNote, setLastTableNote] = useState<string | null>(null);
   const [isPartialCharge, setIsPartialCharge] = useState(false);
   const [nextTableToCharge, setNextTableToCharge] = useState<OpenTable | null>(null);
@@ -690,6 +694,7 @@ function PosPageInner() {
     setShowTablesPanel(false);
     setActiveTable(null);
     setPicked({});
+    setPanelAdded(null);
   }
 
   function toggleComanda(c: OpenComanda) {
@@ -704,6 +709,30 @@ function PosPageInner() {
       }
       return next;
     });
+  }
+
+  /** Vuelve del paso «Agregar» con la mesa recargada (versión nueva de la comanda) y lo agregado ya marcado para cobrar. */
+  async function handleItemsAdded(comandaId: string, count: number, summary: string) {
+    if (!activeTable) return;
+    const tableKey = activeTable.tableId;
+    const prevPicked = picked;
+    const tables = await loadOpenTables(tableKey);
+    setAddingTo(null);
+    const t = tables.find((x) => x.tableId === tableKey);
+    const c = t?.comandas.find((x) => x._id === comandaId);
+    if (!t || !c) return;
+    // Se conserva lo que el cajero ya había elegido y se marca completo lo recién agregado (va al final).
+    const next: Record<string, number> = {};
+    for (const cc of t.comandas) {
+      for (const it of cc.items) {
+        const key = `${cc._id}:${it.index}`;
+        if (prevPicked[key] && it.pendingQty > 0) next[key] = Math.min(prevPicked[key], it.pendingQty);
+      }
+    }
+    const added = [...c.items].sort((a, b) => a.index - b.index).slice(-count);
+    for (const it of added) if (it.pendingQty > 0) next[`${c._id}:${it.index}`] = it.pendingQty;
+    setPicked(next);
+    setPanelAdded(`Se agregó a la comanda #${c.number}: ${summary}. No se imprimió en cocina ni en barra.`);
   }
 
   function openPaymentModal() {
@@ -1749,12 +1778,16 @@ function PosPageInner() {
       </Dialog>
 
       {/* ── Panel Mesas ── */}
-      <Dialog open={showTablesPanel} onOpenChange={(o) => { if (!o) { setShowTablesPanel(false); setActiveTable(null); setPanelNotice(null); } }}>
+      <Dialog open={showTablesPanel} onOpenChange={(o) => { if (!o) { setShowTablesPanel(false); setActiveTable(null); setPanelNotice(null); setAddingTo(null); setPanelAdded(null); } }}>
         <DialogContent className="sm:max-w-2xl flex flex-col overflow-hidden max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="text-base">
-              {activeTable ? (
-                <button type="button" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }} className="inline-flex items-center gap-1 text-brand-dark/60 hover:text-brand-dark">
+              {activeTable && addingTo ? (
+                <button type="button" onClick={() => setAddingTo(null)} className="inline-flex items-center gap-1 text-brand-dark/60 hover:text-brand-dark">
+                  <ChevronLeft className="w-4 h-4" /> {activeTable.tableShape === "barstool" ? "Banqueta" : "Mesa"} {activeTable.tableLabel}
+                </button>
+              ) : activeTable ? (
+                <button type="button" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); setPanelAdded(null); }} className="inline-flex items-center gap-1 text-brand-dark/60 hover:text-brand-dark">
                   <ChevronLeft className="w-4 h-4" /> Mesas
                 </button>
               ) : "Mesas con comandas abiertas"}
@@ -1790,6 +1823,7 @@ function PosPageInner() {
                           onClick={() => {
                             setActiveTable(t);
                             setPicked(defaultPicks(t));
+                            setPanelAdded(null);
                             setPanelNotice(
                               comandaSelections.length > 0 && tableId !== t.tableId
                                 ? `El pedido en curso tiene comandas de ${tableNumber || "otra mesa"}. Al cobrar esta mesa se reemplazan.`
@@ -1815,6 +1849,14 @@ function PosPageInner() {
                   </div>
                 )}
               </>
+            ) : addingTo ? (
+              <AddToComandaPanel
+                comandaId={addingTo._id}
+                comandaNumber={addingTo.number}
+                products={products}
+                onCancel={() => setAddingTo(null)}
+                onAdded={({ count, summary }) => handleItemsAdded(addingTo._id, count, summary)}
+              />
             ) : (
               <>
                 <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1833,6 +1875,11 @@ function PosPageInner() {
                 {panelNotice && (
                   <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {panelNotice}
+                  </div>
+                )}
+                {panelAdded && (
+                  <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-700">
+                    <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {panelAdded}
                   </div>
                 )}
 
@@ -1927,6 +1974,13 @@ function PosPageInner() {
                               })}
                             </div>
                             {c.notes && <p className="text-xs text-gray-400 pl-6">{c.notes}</p>}
+                            <button
+                              type="button"
+                              onClick={() => { setAddingTo(c); setPanelAdded(null); }}
+                              className="ml-6 inline-flex items-center gap-1 text-xs font-medium text-brand-pink hover:underline"
+                            >
+                              <Plus className="w-3 h-3" /> Agregar producto
+                            </button>
                           </div>
                         );
                       })}
@@ -1952,7 +2006,7 @@ function PosPageInner() {
                         Seleccionado: {count} ítem{count !== 1 ? "s" : ""} · {fmt(sum)} · Quedará pendiente: {fmt(willRemain)}
                       </span>
                       <div className="flex gap-2 shrink-0">
-                        <Button type="button" variant="cancel" className="flex-1 sm:flex-none" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); }}>Cancelar</Button>
+                        <Button type="button" variant="cancel" className="flex-1 sm:flex-none" onClick={() => { setActiveTable(null); setPicked({}); setPanelNotice(null); setPanelAdded(null); }}>Cancelar</Button>
                         <Button type="button" className="flex-1 sm:flex-none" disabled={count === 0} onClick={applySelection}>Cobrar seleccionado</Button>
                       </div>
                     </div>
