@@ -24,11 +24,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No se recibió ningún archivo" }, { status: 400 });
     }
 
-    // Validar tipo de archivo
+    // Carpeta destino (solo valores permitidos)
+    const folderParam = request.nextUrl.searchParams.get("folder") ?? "products";
+    const folder = ["products", "billing", "about", "hero", "logo", "menu", "planilla"].includes(folderParam) ? folderParam : "products";
+
+    // Validar tipo de archivo. Solo "planilla" admite PDF, porque ahí se guardan los
+    // comprobantes de pago; en el resto del panel un PDF no tiene dónde mostrarse.
     const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (folder === "planilla") allowedTypes.push("application/pdf");
     if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
-        { error: "Solo se permiten imágenes (JPG, PNG, WEBP, GIF)" },
+        {
+          error: folder === "planilla"
+            ? "Solo se permiten imágenes (JPG, PNG, WEBP, GIF) o PDF"
+            : "Solo se permiten imágenes (JPG, PNG, WEBP, GIF)",
+        },
         { status: 400 }
       );
     }
@@ -36,14 +46,10 @@ export async function POST(request: NextRequest) {
     // Validar tamaño (máx 5 MB)
     if (file.size > 5 * 1024 * 1024) {
       return NextResponse.json(
-        { error: "La imagen no puede superar 5 MB" },
+        { error: "El archivo no puede superar 5 MB" },
         { status: 400 }
       );
     }
-
-    // Carpeta destino (solo valores permitidos)
-    const folderParam = request.nextUrl.searchParams.get("folder") ?? "products";
-    const folder = ["products", "billing", "about", "hero", "logo", "menu"].includes(folderParam) ? folderParam : "products";
 
     // Generar nombre único
     const ext = file.name.split(".").pop() ?? "jpg";
