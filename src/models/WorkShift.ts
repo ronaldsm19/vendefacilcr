@@ -17,6 +17,14 @@ export interface IWorkShift {
   closedBy: WorkShiftClosedBy;
   adjustedByName: string;
   adjustNote: string;
+  /**
+   * Pago que ya cubrió este turno, o null si todavía se debe.
+   *
+   * Se marca el turno en vez de restar montos por período: con adelantos, pagos parciales y
+   * correcciones de turnos, la resta se desincroniza enseguida y la dueña deja de confiar en
+   * el número. Así "horas trabajadas, pagadas y pendientes" sale de contar y siempre cuadra.
+   */
+  payrollPaymentId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,11 +42,14 @@ const WorkShiftSchema = new Schema(
     closedBy:       { type: String, enum: ["staff", "admin"], default: "staff" },
     adjustedByName: { type: String, default: "" },
     adjustNote:     { type: String, default: "" },
+    payrollPaymentId: { type: Schema.Types.ObjectId, ref: "PayrollPayment", default: null },
   },
   { timestamps: true }
 );
 
 WorkShiftSchema.index({ tenantId: 1, staffUserId: 1, startedAt: -1 });
+// Planilla: los turnos cerrados que todavía se deben, por persona.
+WorkShiftSchema.index({ tenantId: 1, staffUserId: 1, payrollPaymentId: 1, status: 1 });
 WorkShiftSchema.index({ tenantId: 1, status: 1 });
 WorkShiftSchema.index({ tenantId: 1, startedAt: -1 });
 // Nunca dos turnos abiertos para el mismo staffUserId: único parcial, solo aplica a "abierta".

@@ -30,7 +30,8 @@ export type Feature =
   | "perfil"
   | "usuarios"
   | "comandas"             // reservado para Fase 3
-  | "jornada";             // control de jornada laboral (marcaje + reportes)
+  | "jornada"             // control de jornada laboral (marcaje + reportes)
+  | "planilla";           // pagos al personal según sus horas
 
 export const PERMISSIONS: Record<Feature, Role[]> = {
   dashboard:          ["admin"],
@@ -51,10 +52,11 @@ export const PERMISSIONS: Record<Feature, Role[]> = {
   usuarios:           ["admin"],
   comandas:           ["admin", "cajero", "mesero"],
   jornada:            ["admin", "cajero"],
+  planilla:           ["admin"],
 };
 
 /** Features que además exigen plan premium (menú oculto + 403 en API). */
-export const PREMIUM_FEATURES: Feature[] = ["usuarios", "comandas"];
+export const PREMIUM_FEATURES: Feature[] = ["usuarios", "comandas", "planilla"];
 
 export function can(session: { role: Role } | null | undefined, feature: Feature): boolean {
   if (!session) return false;
@@ -94,6 +96,7 @@ export const ROUTE_FEATURES: Record<string, Feature> = {
   usuarios:         "usuarios",
   comandas:         "comandas",
   jornada:          "jornada",
+  planilla:         "planilla",
 };
 
 export function featureForPath(pathname: string, base: string): Feature | null {

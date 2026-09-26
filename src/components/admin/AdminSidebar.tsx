@@ -22,6 +22,7 @@ import {
   Users,
   ClipboardList,
   Clock,
+  Wallet,
 } from "lucide-react";
 import { can, ROLE_LABELS, type Role, type Feature } from "@/lib/permissions";
 
@@ -38,6 +39,7 @@ function buildNavItems(base: string): { href: string; label: string; icon: typeo
     { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck,    feature: "pos" },
     { href: `${base}/cierre-de-caja`,   label: "Cierre de caja", icon: BookCheck,       feature: "cierre-de-caja" },
     { href: `${base}/jornada`,          label: "Jornada laboral", icon: Clock,          feature: "jornada" },
+    { href: `${base}/planilla`,         label: "Planilla",        icon: Wallet,         feature: "planilla", premium: true },
     { href: `${base}/salon`,            label: "Salón",           icon: LayoutGrid,     feature: "salon" },
     { href: `${base}/comandas`,         label: "Comandas",       icon: ClipboardList,   feature: "comandas", premium: true },
     { href: `${base}/usuarios`,         label: "Usuarios",       icon: Users,           feature: "usuarios", premium: true },
