@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import type { StaffRole } from "@/lib/permissions";
-import { Plus, Pencil, KeyRound, Trash2, Loader2, Smartphone } from "lucide-react";
+import { Plus, Pencil, KeyRound, Trash2, Loader2, Smartphone, QrCode } from "lucide-react";
+import InviteQrDialog from "@/components/admin/InviteQrDialog";
 
 interface DeviceRow {
   id: string;
@@ -55,6 +56,10 @@ export default function UsuariosPage() {
   const [createForm, setCreateForm] = useState({ name: "", username: "", role: "cajero" as StaffRole, pin: "", pin2: "" });
   const [editForm, setEditForm] = useState({ name: "", role: "cajero" as StaffRole, active: true });
   const [pinForm, setPinForm] = useState({ pin: "", pin2: "" });
+
+  // Código para vincular un teléfono con el negocio en la app del mesero.
+  const [qrUser, setQrUser] = useState<StaffUserRow | null>(null);
+  const [qrBusiness, setQrBusiness] = useState(false);
 
   // Dispositivos con sesión viva de la app móvil, para poder cortar un teléfono perdido.
   const [devicesUser, setDevicesUser] = useState<StaffUserRow | null>(null);
@@ -249,9 +254,14 @@ export default function UsuariosPage() {
           <h1 className="font-brand text-2xl md:text-3xl font-bold text-brand-dark">Usuarios</h1>
           <p className="text-brand-dark/50 text-sm mt-1">Cajeros y meseros que entran al panel con usuario y PIN.</p>
         </div>
-        <Button onClick={openCreate} className="shrink-0">
-          <Plus className="w-4 h-4 mr-1" /> Nuevo usuario
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="secondary" onClick={() => setQrBusiness(true)}>
+            <QrCode className="w-4 h-4 mr-1" /> Código de la app
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="w-4 h-4 mr-1" /> Nuevo usuario
+          </Button>
+        </div>
       </div>
 
       {premiumError && (
@@ -298,6 +308,9 @@ export default function UsuariosPage() {
                           <button title="Cambiar PIN" onClick={() => openPin(u)} className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer">
                             <KeyRound className="w-4 h-4" />
                           </button>
+                          <button title="Código para vincular el teléfono" onClick={() => setQrUser(u)} className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer">
+                            <QrCode className="w-4 h-4" />
+                          </button>
                           <button title="Dispositivos" onClick={() => openDevices(u)} className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer">
                             <Smartphone className="w-4 h-4" />
                           </button>
@@ -329,6 +342,7 @@ export default function UsuariosPage() {
                   <div className="flex items-center gap-2 pt-1">
                     <Button variant="secondary" size="sm" className="flex-1" onClick={() => openEdit(u)}><Pencil className="w-3.5 h-3.5 mr-1" /> Editar</Button>
                     <Button variant="secondary" size="sm" className="flex-1" onClick={() => openPin(u)}><KeyRound className="w-3.5 h-3.5 mr-1" /> PIN</Button>
+                    <Button variant="secondary" size="sm" className="flex-1" onClick={() => setQrUser(u)}><QrCode className="w-3.5 h-3.5 mr-1" /> QR</Button>
                     <Button variant="destructive" size="sm" className="flex-1" onClick={() => setDeleteUser(u)}><Trash2 className="w-3.5 h-3.5 mr-1" /> Eliminar</Button>
                   </div>
                 </div>
@@ -565,6 +579,15 @@ export default function UsuariosPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Código para vincular un teléfono: uno por empleado y uno del negocio entero. */}
+      <InviteQrDialog
+        open={!!qrUser}
+        onClose={() => setQrUser(null)}
+        staffUserId={qrUser?._id}
+        staffName={qrUser?.name}
+      />
+      <InviteQrDialog open={qrBusiness} onClose={() => setQrBusiness(false)} />
     </div>
   );
 }
