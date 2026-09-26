@@ -5,6 +5,7 @@ import { WorkShift } from "@/models/WorkShift";
 import { PayrollPayment } from "@/models/PayrollPayment";
 import { computeServiceReport } from "@/server/services/serviceReport";
 import { ServiceError } from "@/server/errors";
+import { signPrivateUrl } from "@/lib/supabase";
 import {
   MAX_PAY_RATE,
   PAY_LINE_KINDS,
@@ -55,6 +56,11 @@ function toShiftView(s: { _id: mongoose.Types.ObjectId; startedAt: Date; endedAt
   };
 }
 
+/**
+ * Un pago tal como lo ve la pantalla. Los enlaces firmados se agregan aparte con
+ * `withSignedLinks`, porque firmar es una llamada a Supabase y no vale la pena hacerla en un
+ * listado donde nadie va a abrir los archivos.
+ */
 function toPaymentView(p: Record<string, unknown>): PaymentView {
   const basis = (p.basis ?? {}) as PaymentView["basis"];
   return {
@@ -70,7 +76,9 @@ function toPaymentView(p: Record<string, unknown>): PaymentView {
     method: p.method as PayMethod,
     reference: String(p.reference ?? ""),
     proofImage: String(p.proofImage ?? ""),
-    receiptPdf: String(p.receiptPdf ?? ""),
+    receiptPath: String(p.receiptPath ?? ""),
+    proofUrl: null,
+    receiptUrl: null,
     paidAt: (p.paidAt as Date).toISOString(),
     createdByName: String(p.createdByName ?? ""),
     notes: String(p.notes ?? ""),
@@ -78,6 +86,15 @@ function toPaymentView(p: Record<string, unknown>): PaymentView {
     voidedByName: String(p.voidedByName ?? ""),
     voidReason: String(p.voidReason ?? ""),
   };
+}
+
+/** Agrega los enlaces firmados a un pago. Se firma solo lo que existe. */
+async function withSignedLinks(view: PaymentView): Promise<PaymentView> {
+  const [proofUrl, receiptUrl] = await Promise.all([
+    signPrivateUrl(view.proofImage),
+    signPrivateUrl(view.receiptPath),
+  ]);
+  return { ...view, proofUrl, receiptUrl };
 }
 
 // ── Resumen ───────────────────────────────────────────────────────────────────
@@ -207,7 +224,8 @@ export async function getStaffPayrollDetail(
       pay: readStaffPay(staff.pay),
     },
     unpaidShifts: unpaid.map(toShiftView),
-    payments: payments.map(toPaymentView),
+    // Se firman acá: es la pantalla donde la dueña ve las miniaturas y manda los comprobantes.
+    payments: await Promise.all(payments.map((p) => withSignedLinks(toPaymentView(p)))),
   };
 }
 
@@ -224,7 +242,8 @@ export async function getPaymentWithShifts(tenantId: string, paymentId: string):
     .sort({ startedAt: 1 })
     .lean<{ _id: mongoose.Types.ObjectId; startedAt: Date; endedAt: Date; minutes: number }[]>();
 
-  return { ...toPaymentView(payment), shifts: shifts.map(toShiftView) };
+  const view = await withSignedLinks(toPaymentView(payment));
+  return { ...view, shifts: shifts.map(toShiftView) };
 }
 
 // ── Tarifa ────────────────────────────────────────────────────────────────────
@@ -403,15 +422,22 @@ export async function createPayment(
   return getPaymentWithShifts(tenantId, String(paymentId));
 }
 
-/** Guarda la URL del comprobante en PDF ya generado. */
-export async function attachReceiptPdf(tenantId: string, paymentId: string, url: string): Promise<void> {
+/**
+ * Guarda la RUTA del comprobante ya subido al almacén privado, y devuelve un enlace firmado
+ * recién hecho. Nunca se guarda el enlace: vence, y un enlace vencido guardado sería basura
+ * que alguien tendría que salir a limpiar.
+ */
+export async function attachReceiptPdf(
+  tenantId: string,
+  paymentId: string,
+  path: string
+): Promise<{ receiptUrl: string | null }> {
   if (!mongoose.isValidObjectId(paymentId)) throw new ServiceError(404, "Pago no encontrado");
   await connectToDatabase();
-  const res = await PayrollPayment.updateOne(
-    { _id: paymentId, tenantId },
-    { $set: { receiptPdf: String(url ?? "").trim() } }
-  );
+  const clean = String(path ?? "").trim();
+  const res = await PayrollPayment.updateOne({ _id: paymentId, tenantId }, { $set: { receiptPath: clean } });
   if (res.matchedCount === 0) throw new ServiceError(404, "Pago no encontrado");
+  return { receiptUrl: await signPrivateUrl(clean) };
 }
 
 /**

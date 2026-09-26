@@ -101,22 +101,25 @@ export default function StaffPayrollDetail({
     setError("");
     try {
       const full = await fetchFull(p._id);
-      let url = full.receiptPdf;
+      // El enlace viene ya firmado del servidor y vence a los siete días. Si el comprobante
+      // todavía no existe, se genera, se sube al almacén privado y se guarda su ruta.
+      let url = full.receiptUrl;
 
       if (!url) {
         const doc = await buildPayrollReceipt(full, { name: session.tenantName, slug: session.tenantSlug });
         const blob = doc.output("blob") as Blob;
         const form = new FormData();
         form.append("file", new File([blob], receiptFilename(full), { type: "application/pdf" }));
-        const up = await fetch("/api/admin/upload?folder=planilla", { method: "POST", body: form });
+        const up = await fetch("/api/admin/payroll/upload", { method: "POST", body: form });
         const upBody = await up.json();
         if (!up.ok) throw new Error(upBody.error ?? "No se pudo subir el comprobante");
-        url = upBody.url;
-        await fetch(`/api/admin/payroll/payments/${p._id}/receipt`, {
+
+        const saved = await fetch(`/api/admin/payroll/payments/${p._id}/receipt`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
-        });
+          body: JSON.stringify({ path: upBody.path }),
+        }).then((r) => r.json());
+        url = saved.receiptUrl ?? upBody.url;
       }
 
       const text =
@@ -239,15 +242,15 @@ export default function StaffPayrollDetail({
                               </p>
                             )}
                           </div>
-                          {p.proofImage && (
+                          {p.proofUrl && (
                             <a
-                              href={p.proofImage}
+                              href={p.proofUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="relative w-14 h-14 rounded-lg overflow-hidden border border-brand-muted shrink-0"
                               title="Ver el comprobante"
                             >
-                              <Image src={p.proofImage} alt="Comprobante" fill className="object-cover" sizes="56px" />
+                              <Image src={p.proofUrl} alt="Comprobante" fill className="object-cover" sizes="56px" />
                             </a>
                           )}
                         </div>
@@ -260,9 +263,9 @@ export default function StaffPayrollDetail({
                           <Button size="sm" variant="secondary" disabled={busyId === p._id} onClick={() => sendWhatsapp(p)}>
                             <MessageCircle className="w-3.5 h-3.5 mr-1" /> WhatsApp
                           </Button>
-                          {p.receiptPdf && (
+                          {p.receiptUrl && (
                             <a
-                              href={p.receiptPdf}
+                              href={p.receiptUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="text-xs text-brand-dark/50 hover:text-brand-dark flex items-center gap-1"

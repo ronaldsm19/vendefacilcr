@@ -180,8 +180,17 @@ export interface PaymentView {
   total: number;
   method: PayMethod;
   reference: string;
+  /** Ruta interna del pantallazo. No sirve para mostrarlo: para eso está `proofUrl`. */
   proofImage: string;
-  receiptPdf: string;
+  /** Ruta interna del comprobante en PDF. */
+  receiptPath: string;
+  /**
+   * Enlaces firmados que vencen. Se generan al leer el pago, no se guardan: así un enlace
+   * reenviado por WhatsApp deja de servir a los siete días en vez de quedar abierto para
+   * siempre. null cuando no hay archivo o cuando la firma falló.
+   */
+  proofUrl: string | null;
+  receiptUrl: string | null;
   paidAt: string;
   createdByName: string;
   notes: string;

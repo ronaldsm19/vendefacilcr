@@ -27,10 +27,10 @@ export interface IPayrollPayment {
   total: number;
   method: PayMethod;
   reference: string;
-  /** Pantallazo del SINPE o de la transferencia, en Supabase. */
+  /** Ruta del pantallazo del SINPE dentro del almacén privado. Nunca una dirección pública. */
   proofImage: string;
-  /** Comprobante en PDF, subido al generarlo. */
-  receiptPdf: string;
+  /** Ruta del comprobante en PDF dentro del almacén privado. */
+  receiptPath: string;
   paidAt: Date;
   createdByName: string;
   notes: string;
@@ -69,7 +69,7 @@ const PayrollPaymentSchema = new Schema(
     method:        { type: String, enum: PAY_METHODS, required: true },
     reference:     { type: String, default: "", trim: true, maxlength: 80 },
     proofImage:    { type: String, default: "" },
-    receiptPdf:    { type: String, default: "" },
+    receiptPath:   { type: String, default: "" },
     paidAt:        { type: Date, required: true },
     createdByName: { type: String, default: "", trim: true, maxlength: 80 },
     notes:         { type: String, default: "", trim: true, maxlength: 500 },
