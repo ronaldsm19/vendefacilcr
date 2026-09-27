@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Sale, type ISaleComandaClaim, type ISaleItem } from "@/models/Sale";
 import { Product } from "@/models/Product";
 import { Comanda, type IComandaItem } from "@/models/Comanda";
-import { Tenant } from "@/models/Tenant";
 import { AccessLog } from "@/models/AccessLog";
 import { getSession, requireFeature } from "@/lib/auth";
 import { syncTableWithComandas } from "@/lib/tableSync";
-import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
-
-const WINDOW_MS = 15 * 60 * 1000; // 15 minutos
-const MAX_ATTEMPTS = 5;
+import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { verifyAuthorizationPassword } from "@/server/services/authorizationPassword";
 
 interface SaleLean {
   _id: string;
@@ -40,35 +36,12 @@ export async function POST(
   const body = await request.json().catch(() => ({}));
   const { password } = body as { password?: unknown };
 
-  const tenant = await Tenant.findById(session.tenantId)
-    .select("saleDeletePasswordHash slug")
-    .lean() as { saleDeletePasswordHash?: string; slug?: string } | null;
-  if (!tenant) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
-
-  if (!tenant.saleDeletePasswordHash) {
-    return NextResponse.json(
-      { error: "Configurá la contraseña de eliminación en Configuración → Caja antes de poder borrar ventas." },
-      { status: 409 }
-    );
+  let tenant: { slug: string };
+  try {
+    tenant = await verifyAuthorizationPassword(session, password, "borrar ventas");
+  } catch (err) {
+    return serviceErrorResponse(err);
   }
-
-  if (typeof password !== "string" || !password) {
-    return NextResponse.json({ error: "Falta la contraseña" }, { status: 400 });
-  }
-
-  const rateKey = `sale-delete:${session.tenantId}:${session.userId}`;
-  if (!(await consumeAttempt(rateKey, MAX_ATTEMPTS, WINDOW_MS))) {
-    return NextResponse.json(
-      { error: "Demasiados intentos. Esperá unos minutos e intentá de nuevo." },
-      { status: 429 }
-    );
-  }
-
-  const match = await bcrypt.compare(password, tenant.saleDeletePasswordHash);
-  if (!match) {
-    return NextResponse.json({ error: "Contraseña incorrecta" }, { status: 403 });
-  }
-  await clearAttempts(rateKey);
 
   const sale = await Sale.findOne({ _id: id, tenantId: session.tenantId }).lean() as SaleLean | null;
   if (!sale) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -198,7 +171,7 @@ export async function POST(
 
   AccessLog.create({
     tenantId:   session.tenantId,
-    tenantSlug: tenant.slug ?? session.tenantSlug,
+    tenantSlug: tenant.slug || session.tenantSlug,
     userEmail:  session.email || session.name,
     ip:         request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown",
     userAgent:  request.headers.get("user-agent") ?? "",

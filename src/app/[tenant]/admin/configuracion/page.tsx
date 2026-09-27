@@ -2294,7 +2294,8 @@ export default function ConfiguracionPage() {
             <div>
               <h2 className="font-semibold text-brand-dark text-lg">Contraseña de eliminación de ventas</h2>
               <p className="text-sm text-brand-dark/50 mt-0.5">
-                Se pide en Pedidos y ventas para autorizar el borrado de una venta ya registrada.
+                Se pide para borrar una venta ya registrada, corregir la apertura de caja y editar un cierre de caja.
+                Sin contraseña configurada, esas acciones quedan bloqueadas.
               </p>
             </div>
             <div className="flex items-center gap-2 text-sm">
