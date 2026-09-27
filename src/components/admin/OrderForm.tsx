@@ -13,7 +13,10 @@ interface LineItemState {
   productId: string;
   quantity:  number;
   extras:    LineExtra[];   // copia de los extras elegidos (aplican a todas las unidades)
+  saved?:    { productName: string; price: number };  // copia del pedido, por si el producto ya no está en el catálogo
 }
+
+type LineProduct = Pick<IProduct, "name" | "price"> & Partial<Pick<IProduct, "offers" | "extras">>;
 
 interface OrderFormProps {
   initial?: {
@@ -37,7 +40,7 @@ interface OrderFormProps {
 }
 
 /** Misma fórmula que la tienda: oferta por volumen sobre el precio base + extras por unidad. */
-function calcSubtotal(item: LineItemState, product: IProduct): number {
+function calcSubtotal(item: LineItemState, product: LineProduct): number {
   return offerLineTotal({ unitPrice: product.price, quantity: item.quantity, extras: item.extras }, product.offers);
 }
 
@@ -49,6 +52,7 @@ function legacyExtras(names: string[], product: IProduct | undefined): LineExtra
 
 export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFormProps) {
   const [products, setProducts] = useState<IProduct[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [form, setForm] = useState({
     customerName: initial?.customerName ?? "",
     phone:        initial?.phone        ?? "",
@@ -59,6 +63,9 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
     notes:        initial?.notes ?? "",
   });
   const [manualTotal, setManualTotal] = useState<string | null>(null);
+  // Al editar, lo guardado manda hasta que se toque algún producto: se muestra el total del pedido
+  // (pudo haberse ajustado a mano) y al guardar no se reescriben sus líneas con los precios de hoy.
+  const [linesChanged, setLinesChanged] = useState(false);
 
   // Inicializar líneas de pedido (los toppings de pedidos viejos se completan cuando llega el catálogo)
   const [lineItems, setLineItems] = useState<LineItemState[]>(() => {
@@ -67,6 +74,7 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
         productId: it.productId,
         quantity:  it.quantity,
         extras:    it.extras ?? [],
+        saved:     { productName: it.productName, price: it.price },
       }));
     }
     // Legacy: convertir pedido viejo a línea única
@@ -82,6 +90,7 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
       .then(d => {
         const list: IProduct[] = d.products ?? [];
         setProducts(list);
+        setCatalogLoaded(Array.isArray(d.products));
         // Pedidos anteriores a los extras: sus toppings (por unidad) pasan a ser extras de la línea.
         setLineItems(prev => prev.map((line, i) => {
           if (line.extras.length > 0) return line;
@@ -95,26 +104,41 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
   }, []);
 
   // ── Helpers ─────────────────────────────────────────────────────
+  /** Producto que se borró del catálogo después del pedido: se sigue mostrando con su copia guardada. */
+  function goneProduct(item: LineItemState): LineProduct | null {
+    if (!catalogLoaded || !item.productId || !item.saved) return null;
+    if (products.some(p => String(p._id) === item.productId)) return null;
+    return { name: item.saved.productName, price: item.saved.price };
+  }
+
+  function lineProduct(item: LineItemState): LineProduct | null {
+    return products.find(p => String(p._id) === item.productId) ?? goneProduct(item);
+  }
+
   function addLineItem() {
     setLineItems(prev => [...prev, { productId: "", quantity: 1, extras: [] }]);
   }
 
   function removeLineItem(idx: number) {
+    setLinesChanged(true);
     setLineItems(prev => prev.filter((_, i) => i !== idx));
   }
 
   function setLineProduct(idx: number, productId: string) {
+    setLinesChanged(true);
     setLineItems(prev => prev.map((item, i) =>
-      i !== idx ? item : { ...item, productId, extras: [] }
+      i !== idx ? item : { productId, quantity: item.quantity, extras: [] }
     ));
   }
 
   function setLineQty(idx: number, newQty: number) {
     const q = Math.max(1, newQty);
+    setLinesChanged(true);
     setLineItems(prev => prev.map((item, i) => (i !== idx ? item : { ...item, quantity: q })));
   }
 
   function toggleExtra(lineIdx: number, extra: LineExtra) {
+    setLinesChanged(true);
     setLineItems(prev => prev.map((item, i) => {
       if (i !== lineIdx) return item;
       const has = item.extras.some(e => e.name === extra.name);
@@ -127,20 +151,29 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
 
   // ── Precio calculado ────────────────────────────────────────────
   const computedTotal = lineItems.reduce((sum, item) => {
-    const prod = products.find(p => String(p._id) === item.productId);
+    const prod = lineProduct(item);
     return prod ? sum + calcSubtotal(item, prod) : sum;
   }, 0);
 
-  const displayTotal = manualTotal !== null ? manualTotal : computedTotal.toString();
+  const savedTotal = linesChanged ? undefined : initial?.total;
+  const autoTotal = savedTotal ?? computedTotal;
+  const displayTotal = manualTotal !== null ? manualTotal : autoTotal.toString();
 
   // ── Submit ──────────────────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const validItems = lineItems.filter(i => i.productId);
     if (validItems.length === 0) return;
+    const total = Number(manualTotal !== null ? manualTotal : autoTotal);
+
+    // Productos sin tocar: las líneas se quedan como se guardaron (nombres, precios y extras de ese día).
+    if (savedTotal !== undefined) {
+      await onSave({ ...form, total });
+      return;
+    }
 
     const builtItems = validItems.map(item => {
-      const prod = products.find(p => String(p._id) === item.productId)!;
+      const prod = lineProduct(item)!;
       return {
         productId:   item.productId,
         productName: prod.name,
@@ -154,7 +187,7 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
     await onSave({
       ...form,
       items: builtItems,
-      total: Number(manualTotal !== null ? manualTotal : computedTotal),
+      total,
     });
   }
 
@@ -196,7 +229,8 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
 
         <div className="space-y-3">
           {lineItems.map((item, lineIdx) => {
-            const prod = products.find(p => String(p._id) === item.productId) ?? null;
+            const gone = goneProduct(item);
+            const prod = lineProduct(item);
             const subtotal = prod ? calcSubtotal(item, prod) : 0;
             const activeOffer = prod?.offers?.find(o => o.qty === item.quantity);
             // Extras del catálogo + los ya elegidos que ya no estén en el catálogo (se pueden quitar).
@@ -216,6 +250,9 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
                     className="flex-1 min-w-0 border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
                   >
                     <option value="">Seleccionar...</option>
+                    {gone && (
+                      <option value={item.productId}>{gone.name} (ya no está en el catálogo)</option>
+                    )}
                     {products.map(p => (
                       <option key={String(p._id)} value={String(p._id)}>
                         {p.name} — ₡{p.price.toLocaleString("es-CR")}
@@ -315,15 +352,17 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
         <div>
           <label className="block text-sm font-medium text-brand-dark mb-1">
             Total (₡) *
-            {manualTotal === null && computedTotal > 0 && (
-              <span className="text-brand-dark/40 font-normal ml-1 text-xs">(calculado)</span>
+            {manualTotal === null && (savedTotal !== undefined || computedTotal > 0) && (
+              <span className="text-brand-dark/40 font-normal ml-1 text-xs">
+                ({savedTotal !== undefined ? "guardado" : "calculado"})
+              </span>
             )}
           </label>
           <input
             type="number" required min={0}
             value={displayTotal}
             onChange={e => setManualTotal(e.target.value)}
-            onFocus={() => { if (manualTotal === null) setManualTotal(computedTotal.toString()); }}
+            onFocus={() => { if (manualTotal === null) setManualTotal(autoTotal.toString()); }}
             className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
           />
         </div>

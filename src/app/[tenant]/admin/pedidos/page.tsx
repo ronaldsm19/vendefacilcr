@@ -84,6 +84,8 @@ export default function AdminOrdersPage() {
   // Manual order dialogs
   const [showForm, setShowForm]         = useState(false);
   const [editOrder, setEditOrder]       = useState<OrderRow | null>(null);
+  const [openingOrderId, setOpeningOrderId] = useState<string | null>(null);
+  const [orderLoadError, setOrderLoadError] = useState<string | null>(null);
   const [saving, setSaving]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -145,6 +147,30 @@ export default function AdminOrdersPage() {
       setShowForm(false);
       await load();
     } finally { setSaving(false); }
+  }
+
+  /** El listado solo trae la cantidad de ítems: se carga el pedido completo antes de abrir la edición. */
+  async function openOrderEdit(id: string) {
+    setOpeningOrderId(id);
+    setOrderLoadError(null);
+    try {
+      const res = await fetch(`/api/admin/orders/${id}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.order) {
+        if (res.status === 404) {
+          setOrderLoadError("Ese pedido ya no existe; puede que lo hayan eliminado.");
+          await load();
+        } else {
+          setOrderLoadError(data.error ?? "No se pudo cargar el pedido");
+        }
+        return;
+      }
+      setEditOrder(data.order);
+    } catch {
+      setOrderLoadError("Error de conexión al cargar el pedido");
+    } finally {
+      setOpeningOrderId(null);
+    }
   }
 
   async function handleEditSave(data: Record<string, unknown>) {
@@ -481,6 +507,19 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
+      {/* No se pudo abrir un pedido para editarlo (descartable) */}
+      {orderLoadError && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <p>{orderLoadError}</p>
+          </div>
+          <button type="button" onClick={() => setOrderLoadError(null)} className="shrink-0 text-red-400 hover:text-red-600 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div className="text-brand-dark/40 text-sm">Cargando...</div>
@@ -599,13 +638,14 @@ export default function AdminOrdersPage() {
                               </button>
                             )}
                             <button
-                              onClick={() => {
-                                setEditOrder({ _id: item.id, customerName: item.customerName, phone: item.phone ?? "", items: [], total: item.total, paid: item.paid, orderedAt: new Date(item.date), notes: item.notes, createdAt: new Date(), updatedAt: new Date(), tenantId: "" } as OrderRow);
-                              }}
+                              onClick={() => openOrderEdit(item.id)}
+                              disabled={openingOrderId !== null}
                               title="Editar pedido"
-                              className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-brand-pink transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/40 hover:text-brand-pink transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <Pencil className="w-4 h-4" />
+                              {openingOrderId === item.id
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <Pencil className="w-4 h-4" />}
                             </button>
                             <Button size="icon-sm" variant="destructive" onClick={() => setConfirmDelete(item.id)} title="Eliminar pedido" aria-label="Eliminar pedido">
                               <Trash2 className="w-4 h-4" />
@@ -657,15 +697,7 @@ export default function AdminOrdersPage() {
             {editOrder && (
               <OrderForm
                 key={editOrder._id}
-                initial={{
-                  customerName: editOrder.customerName,
-                  phone:        editOrder.phone,
-                  items:        editOrder.items,
-                  total:        editOrder.total,
-                  paid:         editOrder.paid,
-                  orderedAt:    editOrder.orderedAt,
-                  notes:        editOrder.notes,
-                }}
+                initial={editOrder}
                 onSave={handleEditSave}
                 onCancel={() => setEditOrder(null)}
                 saving={saving}
