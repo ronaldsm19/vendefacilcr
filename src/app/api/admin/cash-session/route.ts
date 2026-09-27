@@ -3,6 +3,8 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { CashSession } from "@/models/CashSession";
 import { MAX_OPENING_CORRECTION_NOTE } from "@/models/CashOpeningCorrection";
 import { getSession, requireFeature } from "@/lib/auth";
+import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { verifyAuthorizationPassword } from "@/server/services/authorizationPassword";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -29,7 +31,8 @@ export async function GET(request: NextRequest) {
  * Corrige lo que se digitó al abrir la caja, solo mientras sigue abierta (un cierre ya hecho lo
  * corrige el admin desde el cierre). Lo digitado es la caja inicial en la primera apertura del
  * negocio, y el conteo en las demás: ahí la caja inicial es lo que quedó en el cierre anterior y no
- * se toca. Cada corrección queda anotada con el monto anterior y quién la hizo.
+ * se toca. Pide la contraseña de eliminación, y cada corrección queda anotada con el monto anterior
+ * y quién la hizo.
  */
 export async function PATCH(request: NextRequest) {
   const session = await getSession(request);
@@ -60,6 +63,12 @@ export async function PATCH(request: NextRequest) {
   const previousAmount = open[field] ?? undefined;
   if (previousAmount === amount) {
     return NextResponse.json({ error: "Es el mismo monto que ya tiene la caja" }, { status: 400 });
+  }
+
+  try {
+    await verifyAuthorizationPassword(session, body?.password, "corregir la apertura de caja");
+  } catch (err) {
+    return serviceErrorResponse(err);
   }
 
   const set: Record<string, number> = { [field]: amount };

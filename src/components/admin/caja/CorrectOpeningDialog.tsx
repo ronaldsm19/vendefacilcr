@@ -33,6 +33,7 @@ export default function CorrectOpeningDialog({ cashSession, onClose, onSaved }: 
   const current = isFirstOpening ? cashSession.openingAmount : cashSession.countedAmount;
   const [input, setInput] = useState(current != null ? String(current) : "");
   const [note, setNote] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -42,14 +43,14 @@ export default function CorrectOpeningDialog({ cashSession, onClose, onSaved }: 
   const difference = !isFirstOpening && valid ? amount - cashSession.openingAmount : null;
 
   async function handleSave() {
-    if (!changed) return;
+    if (!changed || !password) return;
     setError("");
     setSaving(true);
     try {
       const res = await fetch("/api/admin/cash-session", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, note }),
+        body: JSON.stringify({ amount, note, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -78,7 +79,7 @@ export default function CorrectOpeningDialog({ cashSession, onClose, onSaved }: 
         <div className="px-6 pb-6 pt-2 space-y-4">
           <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>El cambio queda registrado con tu nombre, la hora y el monto anterior.</span>
+            <span>Pide la contraseña de eliminación. El cambio queda registrado con tu nombre, la hora y el monto anterior.</span>
           </div>
 
           <div>
@@ -123,13 +124,27 @@ export default function CorrectOpeningDialog({ cashSession, onClose, onSaved }: 
             />
           </div>
 
+          <div>
+            <label htmlFor="opening-correction-password" className="block text-sm font-medium text-brand-dark mb-1">
+              Contraseña de eliminación
+            </label>
+            <input
+              id="opening-correction-password"
+              type="password" autoComplete="off"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+              className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+            />
+          </div>
+
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
           <Button type="button" variant="cancel" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button type="button" onClick={handleSave} disabled={saving || !changed}>
+          <Button type="button" onClick={handleSave} disabled={saving || !changed || !password}>
             {saving ? "Guardando..." : "Guardar corrección"}
           </Button>
         </DialogFooter>
