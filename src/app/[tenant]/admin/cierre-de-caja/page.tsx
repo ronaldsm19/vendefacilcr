@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Printer, Check, RefreshCw, Pencil, X } from "lucide-react";
+import { Loader2, Printer, Check, RefreshCw, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cashCloseTicket, DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@/lib/ticket";
 import { buildCashClosePayload, printCierre } from "@/lib/printBridge";
+import { CASH_DENOMINATIONS as DENOMS, expectedCash } from "@/lib/cashCount";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import CorrectOpeningDialog from "@/components/admin/caja/CorrectOpeningDialog";
+import EditCashCloseDialog from "@/components/admin/caja/EditCashCloseDialog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -89,21 +91,6 @@ interface CashSessionData {
   withdrawals: CashWithdrawal[];
 }
 
-const DENOMS = [
-  { valor: 5,     label: "₡5",       tipo: "moneda" },
-  { valor: 10,    label: "₡10",      tipo: "moneda" },
-  { valor: 25,    label: "₡25",      tipo: "moneda" },
-  { valor: 50,    label: "₡50",      tipo: "moneda" },
-  { valor: 100,   label: "₡100",     tipo: "moneda" },
-  { valor: 500,   label: "₡500",     tipo: "moneda" },
-  { valor: 1000,  label: "₡1.000",   tipo: "billete" },
-  { valor: 2000,  label: "₡2.000",   tipo: "billete" },
-  { valor: 5000,  label: "₡5.000",   tipo: "billete" },
-  { valor: 10000, label: "₡10.000",  tipo: "billete" },
-  { valor: 20000, label: "₡20.000",  tipo: "billete" },
-  { valor: 50000, label: "₡50.000",  tipo: "billete" },
-];
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
@@ -177,13 +164,11 @@ export default function CierreDeCajaPage() {
   const [cashLeft, setCashLeft]             = useState(0);
   const [cashLeftTouched, setCashLeftTouched] = useState(false);
   const [notes, setNotes]                   = useState("");
-  const [editMode, setEditMode]             = useState(false);
   const [todayCloseId, setTodayCloseId]     = useState<string | null>(null);
   const [closingWithdrawDone, setClosingWithdrawDone] = useState(false);
-  const [savingEdit, setSavingEdit]         = useState(false);
   const [correctingOpening, setCorrectingOpening] = useState(false);
+  const [editingCloseId, setEditingCloseId] = useState<string | null>(null);
   const [closeError, setCloseError]         = useState("");
-  const [editError, setEditError]           = useState("");
 
   const loadData = useCallback(async () => {
     const [todayRes, closesRes, meRes, sessionRes] = await Promise.all([
@@ -213,15 +198,13 @@ export default function CierreDeCajaPage() {
   const withdrawalsList = session.open?.withdrawals ?? [];
   const withdrawalsTotal = withdrawalsList.reduce((s, w) => s + (w.amount ?? 0), 0);
 
-  // En modo edición usa los datos guardados del cierre; si no, los de la sesión abierta
-  const editingClose = closes.find((c) => c._id === todayCloseId) ?? null;
-  const activeOpeningAmount = editMode
-    ? (editingClose?.openingAmount ?? 0)
-    : (session.open?.openingAmount ?? 0);
-  const activeWithdrawalsTotal = editMode
-    ? (editingClose?.withdrawalsTotal ?? 0)
-    : withdrawalsTotal;
-  const efectivoEsperado = activeOpeningAmount + (today?.paymentBreakdown.efectivo ?? 0) - activeWithdrawalsTotal;
+  const todayClose = closes.find((c) => c._id === todayCloseId) ?? null;
+  const editingClose = closes.find((c) => c._id === editingCloseId) ?? null;
+  const efectivoEsperado = expectedCash({
+    openingAmount: session.open?.openingAmount,
+    paymentBreakdown: today?.paymentBreakdown,
+    withdrawalsTotal,
+  });
   const diferencia = totalContado - efectivoEsperado;
   const defaultCashLeft = withdrawalsList.length > 0 ? withdrawalsList[withdrawalsList.length - 1].leftAmount : totalContado;
 
@@ -345,91 +328,30 @@ export default function CierreDeCajaPage() {
     }
   }
 
-  function handleEnterEdit() {
-    if (!editingClose) return;
-    const newCounts = Object.fromEntries(DENOMS.map((d) => [d.valor, 0]));
-    for (const denom of (editingClose.arqueo?.denominaciones ?? [])) {
-      newCounts[denom.valor] = denom.cantidad;
-    }
-    setCounts(newCounts);
-    setCashLeft(editingClose.cashLeft ?? 0);
-    setCashLeftTouched(true);
-    setNotes(editingClose.notes ?? "");
-    setEditError("");
-    setEditMode(true);
-  }
-
-  function handleCancelEdit() {
-    setEditError("");
-    setEditMode(false);
-    setCounts(Object.fromEntries(DENOMS.map((d) => [d.valor, 0])));
-    setCashLeft(0);
-    setCashLeftTouched(false);
-    setNotes("");
-  }
-
-  async function handleSaveEdit() {
-    if (!todayCloseId) return;
-    setEditError("");
-    setSavingEdit(true);
-    try {
-      const denominaciones = DENOMS
-        .filter((d) => (counts[d.valor] ?? 0) > 0)
-        .map((d) => ({ valor: d.valor, cantidad: counts[d.valor], subtotal: d.valor * counts[d.valor] }));
-
-      const res = await fetch(`/api/admin/cash-close/${todayCloseId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          arqueo: totalContado > 0 ? {
-            denominaciones,
-            totalContado,
-            totalEsperado: efectivoEsperado,
-            diferencia,
-          } : undefined,
-          cashLeft,
-          notes,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setEditError(data.error ?? "No se pudieron guardar los cambios");
-        return;
-      }
-      setEditMode(false);
-      setCashLeftTouched(false);
-      await loadData();
-    } catch {
-      setEditError("No se pudieron guardar los cambios. Revisá tu conexión.");
-    } finally {
-      setSavingEdit(false);
-    }
-  }
-
   function handlePrint() {
     if (!today) return;
     const closeNumber = closedToday
       ? (closes[0]?.closeNumber ?? closes.length)
       : (closes[0]?.closeNumber ?? 0) + 1;
-    // Cuando la caja ya está cerrada, los datos correctos están en editingClose (DB).
+    // Cuando la caja ya está cerrada, los datos correctos están en todayClose (DB).
     // session.open es null en ese punto y daría openingAmount=0 y withdrawals=[].
     cashCloseTicket({
       businessName: businessName || "Mi negocio",
       closeNumber,
-      date: editingClose?.closeDate ?? new Date().toISOString(),
+      date: todayClose?.closeDate ?? new Date().toISOString(),
       paymentBreakdown: today.paymentBreakdown,
       salesTotal: today.salesTotal,
       expensesTotal: today.expensesTotal,
       profit: today.profit,
       productsSummary: today.productsSummary,
-      arqueo: editingClose?.arqueo
+      arqueo: todayClose?.arqueo
         ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
-      openingAmount: editingClose?.openingAmount ?? session.open?.openingAmount ?? 0,
-      withdrawals: editingClose?.withdrawals ?? session.open?.withdrawals ?? [],
-      withdrawalsTotal: editingClose?.withdrawalsTotal ?? withdrawalsTotal,
-      cashLeft: editingClose?.cashLeft ?? cashLeft,
+      openingAmount: todayClose?.openingAmount ?? session.open?.openingAmount ?? 0,
+      withdrawals: todayClose?.withdrawals ?? session.open?.withdrawals ?? [],
+      withdrawalsTotal: todayClose?.withdrawalsTotal ?? withdrawalsTotal,
+      cashLeft: todayClose?.cashLeft ?? cashLeft,
       salesList: today.sales.map((s) => ({ ticketNumber: s.ticketNumber ?? 0, total: s.total })),
-      notes: editingClose?.notes ?? notes,
+      notes: todayClose?.notes ?? notes,
     }, ticketConfig);
   }
 
@@ -464,7 +386,7 @@ export default function CierreDeCajaPage() {
 
   const monedas  = DENOMS.filter((d) => d.tipo === "moneda");
   const billetes = DENOMS.filter((d) => d.tipo === "billete");
-  const showArqueo = (session.open && !closedToday) || editMode;
+  const showArqueo = !!session.open && !closedToday;
 
   return (
     <>
@@ -489,7 +411,7 @@ export default function CierreDeCajaPage() {
                 Caja abierta
               </span>
             )}
-            {closedToday && !editMode && (
+            {closedToday && (
               <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
                 <Check className="w-3 h-3" /> Caja cerrada
               </span>
@@ -511,26 +433,23 @@ export default function CierreDeCajaPage() {
                 className="py-1.5 px-3 text-sm"
                 getPayload={() => {
                   const closeNumber = closes[0]?.closeNumber ?? closes.length;
-                  const denominaciones = DENOMS
-                    .filter((d) => (counts[d.valor] ?? 0) > 0)
-                    .map((d) => ({ valor: d.valor, cantidad: counts[d.valor], subtotal: d.valor * counts[d.valor] }));
                   return buildCashClosePayload({
                     businessName: businessName || "Mi negocio",
                     closeNumber,
-                    date: editingClose?.closeDate ?? new Date().toISOString(),
+                    date: todayClose?.closeDate ?? new Date().toISOString(),
                     paymentBreakdown: today!.paymentBreakdown,
                     salesTotal: today!.salesTotal,
                     expensesTotal: today!.expensesTotal,
                     profit: today!.profit,
                     productsSummary: today!.productsSummary,
-                    arqueo: editingClose?.arqueo ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
-                    openingAmount: editingClose?.openingAmount ?? 0,
-                    withdrawals: editingClose?.withdrawals ?? [],
-                    withdrawalsTotal: editingClose?.withdrawalsTotal ?? withdrawalsTotal,
-                    cashLeft: editingClose?.cashLeft ?? cashLeft,
+                    arqueo: todayClose?.arqueo ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
+                    openingAmount: todayClose?.openingAmount ?? 0,
+                    withdrawals: todayClose?.withdrawals ?? [],
+                    withdrawalsTotal: todayClose?.withdrawalsTotal ?? withdrawalsTotal,
+                    cashLeft: todayClose?.cashLeft ?? cashLeft,
                     salesList: today!.sales.map((s) => ({ ticketNumber: s.ticketNumber ?? 0, total: s.total })),
-                    notes: editingClose?.notes ?? notes,
-                  }, ticketConfig, denominaciones);
+                    notes: todayClose?.notes ?? notes,
+                  }, ticketConfig, todayClose?.arqueo?.denominaciones);
                 }}
                 onPdfFallback={handlePrint}
               />
@@ -544,24 +463,13 @@ export default function CierreDeCajaPage() {
               <Printer className="w-4 h-4" />
               <span className="hidden sm:inline">Ticket </span>PDF
             </Button>
-            {closedToday && !editMode && isAdmin && (
-              <Button variant="secondary" onClick={handleEnterEdit} className="gap-2 text-sm">
+            {closedToday && isAdmin && todayClose && (
+              <Button variant="secondary" onClick={() => setEditingCloseId(todayClose._id)} className="gap-2 text-sm">
                 <Pencil className="w-4 h-4" />
                 Editar cierre
               </Button>
             )}
-            {editMode && (
-              <>
-                <Button variant="cancel" onClick={handleCancelEdit} className="gap-2 text-sm">
-                  <X className="w-4 h-4" /> Cancelar
-                </Button>
-                <Button onClick={handleSaveEdit} disabled={savingEdit} className="gap-2 text-sm">
-                  {savingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Guardar cambios
-                </Button>
-              </>
-            )}
-            {!closedToday && !editMode && (
+            {!closedToday && (
               <Button
                 onClick={handleClose}
                 disabled={closing || !today?.sales.length || !session.open}
@@ -574,9 +482,9 @@ export default function CierreDeCajaPage() {
           </div>
         </div>
 
-        {(closeError || editError) && (
+        {closeError && (
           <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 no-print">
-            {closeError || editError}
+            {closeError}
           </div>
         )}
 
@@ -662,7 +570,7 @@ export default function CierreDeCajaPage() {
               </section>
 
               {/* Retiros — solo con sesión abierta */}
-              {session.open && !editMode && (
+              {session.open && (
                 <section className="bg-white rounded-2xl border border-brand-muted p-4 space-y-3 no-print">
                   <div className="flex items-center justify-between">
                     <h2 className="font-semibold text-brand-dark">Retiros de caja</h2>
@@ -745,19 +653,12 @@ export default function CierreDeCajaPage() {
 
             {/* ── Columna derecha: arqueo compacto + cierre ────────── */}
             <div className="lg:col-span-3 space-y-4">
-              <section className={`bg-white rounded-2xl border p-4 space-y-3 no-print ${editMode ? "border-amber-300 ring-2 ring-amber-100" : "border-brand-muted"}`}>
+              <section className="bg-white rounded-2xl border border-brand-muted p-4 space-y-3 no-print">
 
                 {/* Header con total en vivo */}
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="font-semibold text-brand-dark">Arqueo de caja</h2>
-                      {editMode && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200">
-                          <Pencil className="w-2.5 h-2.5" /> Editando
-                        </span>
-                      )}
-                    </div>
+                    <h2 className="font-semibold text-brand-dark">Arqueo de caja</h2>
                     <p className="text-xs text-brand-dark/40 mt-0.5">Ingresá la cantidad de cada denominación.</p>
                   </div>
                   <div className="text-right shrink-0">
@@ -898,16 +799,14 @@ export default function CierreDeCajaPage() {
                 </div>
 
                 {/* Botón de cierre — dentro del panel en desktop */}
-                {!editMode && (
-                  <Button
-                    onClick={handleClose}
-                    disabled={closing || !today?.sales.length || !session.open}
-                    className="w-full gap-2"
-                  >
-                    {closing && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Cerrar el día
-                  </Button>
-                )}
+                <Button
+                  onClick={handleClose}
+                  disabled={closing || !today?.sales.length || !session.open}
+                  className="w-full gap-2"
+                >
+                  {closing && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Cerrar el día
+                </Button>
               </section>
             </div>
           </div>
@@ -977,7 +876,7 @@ export default function CierreDeCajaPage() {
         )}
 
         {/* ── ESTADO: Caja cerrada → resumen del cierre ────────────── */}
-        {closedToday && !editMode && editingClose && (
+        {closedToday && todayClose && (
           <section className="mt-5 bg-white rounded-2xl border border-emerald-200 p-4 space-y-3 no-print">
             <div className="flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-600" />
@@ -986,19 +885,19 @@ export default function CierreDeCajaPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
               <div className="bg-gray-50 rounded-xl p-2.5">
                 <p className="text-xs text-brand-dark/50 mb-0.5">C. Inicial</p>
-                <p className="font-semibold">{fmt(editingClose.openingAmount ?? 0)}</p>
+                <p className="font-semibold">{fmt(todayClose.openingAmount ?? 0)}</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-2.5">
                 <p className="text-xs text-brand-dark/50 mb-0.5">Dejo en caja</p>
-                <p className="font-semibold">{fmt(editingClose.cashLeft ?? 0)}</p>
+                <p className="font-semibold">{fmt(todayClose.cashLeft ?? 0)}</p>
               </div>
-              {editingClose.arqueo && (
+              {todayClose.arqueo && (
                 <div className="bg-gray-50 rounded-xl p-2.5">
                   <p className="text-xs text-brand-dark/50 mb-0.5">Arqueo contado</p>
-                  <p className={`font-semibold ${editingClose.arqueo.diferencia === 0 ? "text-emerald-600" : editingClose.arqueo.diferencia < 0 ? "text-red-500" : "text-amber-600"}`}>
-                    {fmt(editingClose.arqueo.totalContado)}
-                    {editingClose.arqueo.diferencia !== 0 && (
-                      <span className="ml-1 text-xs">({editingClose.arqueo.diferencia > 0 ? "+" : ""}{fmt(editingClose.arqueo.diferencia)})</span>
+                  <p className={`font-semibold ${todayClose.arqueo.diferencia === 0 ? "text-emerald-600" : todayClose.arqueo.diferencia < 0 ? "text-red-500" : "text-amber-600"}`}>
+                    {fmt(todayClose.arqueo.totalContado)}
+                    {todayClose.arqueo.diferencia !== 0 && (
+                      <span className="ml-1 text-xs">({todayClose.arqueo.diferencia > 0 ? "+" : ""}{fmt(todayClose.arqueo.diferencia)})</span>
                     )}
                   </p>
                 </div>
@@ -1010,9 +909,9 @@ export default function CierreDeCajaPage() {
                 </p>
               </div>
             </div>
-            <OpeningCorrectionsList items={editingClose.openingCorrections ?? []} />
-            {editingClose.notes && (
-              <p className="text-xs text-brand-dark/50 italic border-t border-brand-muted/50 pt-2">{editingClose.notes}</p>
+            <OpeningCorrectionsList items={todayClose.openingCorrections ?? []} />
+            {todayClose.notes && (
+              <p className="text-xs text-brand-dark/50 italic border-t border-brand-muted/50 pt-2">{todayClose.notes}</p>
             )}
           </section>
         )}
@@ -1075,6 +974,17 @@ export default function CierreDeCajaPage() {
                       >
                         <Printer className="w-4 h-4" />
                       </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingCloseId(c._id)}
+                          title="Editar cierre"
+                          aria-label={`Editar cierre del ${fmtDate(c.closeDate)}`}
+                          className="p-2 rounded-lg border border-brand-muted text-brand-dark/50 hover:text-brand-pink hover:border-brand-pink/40 transition-colors"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1084,6 +994,18 @@ export default function CierreDeCajaPage() {
         )}
 
       </div>
+
+      {editingClose && (
+        <EditCashCloseDialog
+          close={editingClose}
+          canEditCashLeft={editingClose._id === closes[0]?._id && !session.open}
+          onClose={() => setEditingCloseId(null)}
+          onSaved={async () => {
+            setEditingCloseId(null);
+            await loadData();
+          }}
+        />
+      )}
 
       {correctingOpening && session.open && (
         <CorrectOpeningDialog
