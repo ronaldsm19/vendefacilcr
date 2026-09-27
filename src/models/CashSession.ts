@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { CashOpeningCorrectionSchema, type ICashOpeningCorrection } from "@/models/CashOpeningCorrection";
 
 export interface ICashWithdrawal {
   amount: number;
@@ -16,6 +17,7 @@ export interface ICashSession {
   previousCashLeft?: number;
   countedAmount?: number;
   openingDifference?: number;
+  openingCorrections: ICashOpeningCorrection[];
   withdrawals: ICashWithdrawal[];
   closedAt?: Date;
   cashLeft?: number;
@@ -33,6 +35,7 @@ const CashSessionSchema = new Schema(
     previousCashLeft:  { type: Number },
     countedAmount:     { type: Number },
     openingDifference: { type: Number },
+    openingCorrections: { type: [CashOpeningCorrectionSchema], default: [] },
     withdrawals: {
       type: [{
         amount:     { type: Number, required: true },
