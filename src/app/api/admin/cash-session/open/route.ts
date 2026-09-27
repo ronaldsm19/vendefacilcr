@@ -17,13 +17,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Ya hay una caja abierta" }, { status: 409 });
   }
 
-  const openingAmount = Math.max(0, Number(body.openingAmount) || 0);
-  const countedAmount = body.countedAmount != null ? Math.max(0, Number(body.countedAmount) || 0) : undefined;
-
   const last = await CashSession.findOne({ tenantId: session.tenantId, status: "closed" })
     .sort({ closedAt: -1 })
     .lean() as { cashLeft?: number } | null;
   const previousCashLeft = last ? (last.cashLeft ?? 0) : undefined;
+
+  // Desde la segunda apertura, la caja inicial es lo que quedó en el último cierre y sale de acá, no
+  // de la pantalla: una pantalla cargada antes de que el admin corrigiera ese cierre traería el monto viejo.
+  const openingAmount = previousCashLeft !== undefined
+    ? previousCashLeft
+    : Math.max(0, Number(body.openingAmount) || 0);
+  const countedAmount = body.countedAmount != null ? Math.max(0, Number(body.countedAmount) || 0) : undefined;
 
   const cashSession = await CashSession.create({
     tenantId: session.tenantId,
