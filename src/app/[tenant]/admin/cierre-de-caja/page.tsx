@@ -10,6 +10,7 @@ import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import CorrectOpeningDialog from "@/components/admin/caja/CorrectOpeningDialog";
 import EditCashCloseDialog from "@/components/admin/caja/EditCashCloseDialog";
+import ConfirmOpeningDialog from "@/components/admin/caja/ConfirmOpeningDialog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -155,8 +156,11 @@ export default function CierreDeCajaPage() {
 
   // ── Apertura / retiros de caja ────────────────────────────────────
   const [session, setSession] = useState<{ open: CashSessionData | null; previousCashLeft: number | null }>({ open: null, previousCashLeft: null });
-  const [openingInput, setOpeningInput]   = useState(0);
+  // Texto, no número: el campo vacío no cuenta como ₡0 (abrir sin escribir nada dejaba avisos falsos de faltante).
+  const [openingInput, setOpeningInput]   = useState("");
   const [openingLoading, setOpeningLoading] = useState(false);
+  const [confirmingOpening, setConfirmingOpening] = useState(false);
+  const [openError, setOpenError]         = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState(0);
   const [withdrawLeft, setWithdrawLeft]     = useState(0);
   const [withdrawNote, setWithdrawNote]     = useState("");
@@ -213,22 +217,44 @@ export default function CierreDeCajaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultCashLeft, cashLeftTouched]);
 
+  const openingCounted = openingInput.trim() === "" ? NaN : Number(openingInput);
+  const openingValid = Number.isFinite(openingCounted) && openingCounted >= 0;
+
+  /** Si lo contado no coincide con lo que quedó en el último cierre, primero se confirma. */
+  function handleOpenClick() {
+    if (!openingValid || openingLoading) return;
+    if (session.previousCashLeft !== null && openingCounted !== session.previousCashLeft) {
+      setConfirmingOpening(true);
+      return;
+    }
+    handleOpenSession();
+  }
+
   async function handleOpenSession() {
+    if (!openingValid) return;
+    setOpenError("");
     setOpeningLoading(true);
     try {
       const body = session.previousCashLeft === null
-        ? { openingAmount: openingInput }
-        : { openingAmount: session.previousCashLeft, countedAmount: openingInput };
+        ? { openingAmount: openingCounted }
+        : { openingAmount: session.previousCashLeft, countedAmount: openingCounted };
       const res = await fetch("/api/admin/cash-session/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.ok) {
-        setOpeningInput(0);
-        await loadData();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setOpenError(data.error ?? "No se pudo abrir la caja");
+        return;
       }
+      setOpeningInput("");
+      await loadData();
+    } catch {
+      setOpenError("No se pudo abrir la caja. Revisá tu conexión.");
     } finally {
+      // También si falló: el error se muestra en el formulario, que queda detrás de la confirmación.
+      setConfirmingOpening(false);
       setOpeningLoading(false);
     }
   }
@@ -499,28 +525,31 @@ export default function CierreDeCajaPage() {
                 </p>
               ) : (
                 <p className="text-sm text-brand-dark/50">
-                  Caja inicial (lo dejado ayer):{" "}
+                  La caja inicial es lo que quedó en el último cierre:{" "}
                   <span className="font-semibold text-brand-dark">{fmt(session.previousCashLeft)}</span>.
-                  Contá el efectivo actual para verificarlo.
+                  Contá el efectivo que hay ahora y escribilo, aunque sea el mismo monto.
                 </p>
               )}
               <div className="flex flex-col sm:flex-row sm:items-end gap-3">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-brand-dark mb-1">
+                  <label htmlFor="opening-counted" className="block text-sm font-medium text-brand-dark mb-1">
                     {session.previousCashLeft === null ? "Efectivo actual en caja" : "Efectivo contado ahora"}
                   </label>
                   <input
-                    type="number" min={0} step={1}
-                    value={openingInput || ""} placeholder="0"
-                    onChange={(e) => setOpeningInput(Math.max(0, Number(e.target.value)))}
+                    id="opening-counted"
+                    type="number" min={0} step={1} inputMode="numeric"
+                    value={openingInput} placeholder="Escribí el monto"
+                    onChange={(e) => setOpeningInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleOpenClick(); }}
                     className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
                   />
                 </div>
-                <Button onClick={handleOpenSession} disabled={openingLoading} className="gap-2 shrink-0">
+                <Button onClick={handleOpenClick} disabled={openingLoading || !openingValid} className="gap-2 shrink-0">
                   {openingLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                   Abrir caja
                 </Button>
               </div>
+              {openError && <p className="text-sm text-red-600">{openError}</p>}
             </section>
           </div>
         )}
@@ -596,9 +625,11 @@ export default function CierreDeCajaPage() {
                         ? "bg-red-50 border border-red-200 text-red-700"
                         : "bg-amber-50 border border-amber-200 text-amber-700"
                     }`}>
+                      {session.open.openingDifference < 0 ? "⚠" : "ℹ"} Al abrir se contaron {fmt(session.open.countedAmount ?? 0)}:{" "}
                       {session.open.openingDifference < 0
-                        ? `⚠ Faltan ${fmt(Math.abs(session.open.openingDifference))} respecto a ayer.`
-                        : `ℹ Sobran ${fmt(session.open.openingDifference)} respecto a ayer.`}
+                        ? `faltan ${fmt(Math.abs(session.open.openingDifference))}`
+                        : `sobran ${fmt(session.open.openingDifference)}`}{" "}
+                      respecto a lo que quedó en el último cierre.
                     </div>
                   )}
 
@@ -994,6 +1025,20 @@ export default function CierreDeCajaPage() {
         )}
 
       </div>
+
+      {confirmingOpening && session.previousCashLeft !== null && openingValid && (
+        <ConfirmOpeningDialog
+          previousCashLeft={session.previousCashLeft}
+          countedAmount={openingCounted}
+          opening={openingLoading}
+          onCorrect={() => {
+            setConfirmingOpening(false);
+            // Después de que el modal devuelve el foco, para poder corregir el monto de una vez.
+            setTimeout(() => document.getElementById("opening-counted")?.focus(), 0);
+          }}
+          onConfirm={handleOpenSession}
+        />
+      )}
 
       {editingClose && (
         <EditCashCloseDialog
