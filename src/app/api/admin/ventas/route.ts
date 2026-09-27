@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
-import { Order } from "@/models/Order";
-import { Sale } from "@/models/Sale";
+import { Order, type IOrder } from "@/models/Order";
+import { Sale, type ISale } from "@/models/Sale";
 import { getSession, requireFeature } from "@/lib/auth";
 import { startOfDayCR, endOfDayExclusiveCR } from "@/lib/crDate";
 
@@ -37,11 +37,11 @@ export async function GET(request: NextRequest) {
     Order.find({
       tenantId: session.tenantId,
       orderedAt: { $gte: from, $lte: to },
-    }).lean(),
+    }).lean<IOrder[]>(),
     Sale.find({
       tenantId: session.tenantId,
       saleDate: { $gte: from, $lte: to },
-    }).lean(),
+    }).lean<ISale[]>(),
   ]);
 
   const METHOD_LABELS: Record<string, string> = {
@@ -51,9 +51,8 @@ export async function GET(request: NextRequest) {
     mixto:    "Mixto",
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items = [
-    ...orders.map((o: any) => ({
+    ...orders.map((o) => ({
       id:            String(o._id),
       source:        "manual" as const,
       date:          (o.orderedAt ?? o.createdAt).toISOString(),
@@ -62,9 +61,10 @@ export async function GET(request: NextRequest) {
       paid:          o.paid ?? false,
       phone:         o.phone ?? "",
       notes:         o.notes ?? "",
-      itemCount:     o.items?.length ?? (o.productId ? 1 : 0),
+      // Los pedidos viejos traen `items` vacío (default del esquema) y su único producto en la raíz.
+      itemCount:     o.items?.length || (o.productId ? 1 : 0),
     })),
-    ...sales.map((s: any) => ({
+    ...sales.map((s) => ({
       id:            String(s._id),
       source:        "pos" as const,
       date:          (s.saleDate ?? s.createdAt).toISOString(),
