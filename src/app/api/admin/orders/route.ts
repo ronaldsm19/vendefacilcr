@@ -4,7 +4,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
-import { normalizeOrderItems } from "@/server/services/orderItems";
+import { normalizeOrderItems, parseOrderedAt } from "@/server/services/orderItems";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -30,10 +30,14 @@ export async function POST(request: NextRequest) {
 
   await connectToDatabase();
   const body = await request.json();
-  const { customerName, phone, total, paid, orderedAt, notes } = body;
+  const { customerName, phone, total, paid, notes } = body;
 
   if (!customerName || !phone || !body.items?.length || !total) {
     return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
+  }
+  const orderedAt = parseOrderedAt(body.orderedAt);
+  if (orderedAt === "invalid") {
+    return NextResponse.json({ error: "Fecha del pedido inválida" }, { status: 400 });
   }
   const items = normalizeOrderItems(body.items);
   if (!items) {
@@ -47,7 +51,7 @@ export async function POST(request: NextRequest) {
     items,
     total:     Number(total),
     paid:      paid ?? false,
-    orderedAt: orderedAt ? new Date(orderedAt) : new Date(),
+    orderedAt: orderedAt ?? new Date(),
     notes,
     // Legacy fields from first item for backward compat display
     productId:   items[0]?.productId   ?? "",

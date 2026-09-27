@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { getSession, requireFeature } from "@/lib/auth";
-import { normalizeOrderItems } from "@/server/services/orderItems";
+import { normalizeOrderItems, parseOrderedAt } from "@/server/services/orderItems";
 
 // El listado de ventas solo trae la cantidad de ítems: editar un pedido lo carga completo de acá.
 export async function GET(
@@ -43,6 +43,11 @@ export async function PATCH(
     if (!items) return NextResponse.json({ error: "Extras inválidos en algún producto" }, { status: 400 });
     body.items = items;
   }
+  const orderedAt = parseOrderedAt(body.orderedAt);
+  if (orderedAt === "invalid") return NextResponse.json({ error: "Fecha del pedido inválida" }, { status: 400 });
+  // Sin fecha se conserva la que tenía: un "" la borraba y el pedido salía del listado de ventas.
+  if (orderedAt) body.orderedAt = orderedAt;
+  else delete body.orderedAt;
 
   const order = await Order.findOneAndUpdate({ _id: id, tenantId: session.tenantId }, body, { returnDocument: "after" }).lean();
   if (!order) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
