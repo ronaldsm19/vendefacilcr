@@ -164,11 +164,17 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
     e.preventDefault();
     const validItems = lineItems.filter(i => i.productId);
     if (validItems.length === 0) return;
-    const total = Number(manualTotal !== null ? manualTotal : autoTotal);
+    const data = {
+      ...form,
+      // Instante real (ISO con Z): el servidor corre en UTC y no tiene que adivinar la zona.
+      // Si la fecha quedó incompleta no se manda, y el servidor usa "ahora" o la que ya tenía.
+      orderedAt: crInputToUTC(form.orderedAt)?.toISOString(),
+      total: Number(manualTotal !== null ? manualTotal : autoTotal),
+    };
 
     // Productos sin tocar: las líneas se quedan como se guardaron (nombres, precios y extras de ese día).
     if (savedTotal !== undefined) {
-      await onSave({ ...form, total });
+      await onSave(data);
       return;
     }
 
@@ -184,14 +190,7 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
       };
     });
 
-    await onSave({
-      ...form,
-      // Instante real (ISO con Z): el servidor corre en UTC y no tiene que adivinar la zona.
-      // Si la fecha quedó incompleta no se manda, y el servidor usa "ahora" o la que ya tenía.
-      orderedAt: crInputToUTC(form.orderedAt)?.toISOString(),
-      items: builtItems,
-      total,
-    });
+    await onSave({ ...data, items: builtItems });
   }
 
   return (
