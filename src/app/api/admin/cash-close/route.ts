@@ -31,6 +31,20 @@ export async function POST(request: NextRequest) {
           expensesTotal, profit, productsSummary, arqueo,
           openingAmount, withdrawals, withdrawalsTotal, cashLeft, salesList, notes } = body;
 
+  // La caja inicial sale de la caja abierta, no de la pantalla: si alguien la corrigió desde otro
+  // equipo, la pantalla todavía calcula el arqueo con el monto viejo y el cierre quedaría mal.
+  const open = await CashSession.findOne({ tenantId: session.tenantId, status: "open" })
+    .lean() as { openingAmount: number; openingCorrections?: unknown[] } | null;
+  if (open && openingAmount != null && Number(openingAmount) !== open.openingAmount) {
+    return NextResponse.json(
+      {
+        error: "La caja inicial se corrigió desde otro equipo. Actualizá la pantalla y volvé a cerrar.",
+        code: "OPENING_CHANGED",
+      },
+      { status: 409 }
+    );
+  }
+
   const closeNumber = (await CashClose.countDocuments({ tenantId: session.tenantId })) + 1;
 
   const cashClose = await CashClose.create({
@@ -44,7 +58,8 @@ export async function POST(request: NextRequest) {
     profit:           profit           ?? 0,
     productsSummary:  productsSummary  ?? [],
     ...(arqueo ? { arqueo } : {}),
-    openingAmount:    openingAmount    ?? 0,
+    openingAmount:    open ? open.openingAmount : (openingAmount ?? 0),
+    openingCorrections: open?.openingCorrections ?? [],
     withdrawals:      withdrawals      ?? [],
     withdrawalsTotal: withdrawalsTotal ?? 0,
     cashLeft:         cashLeft         ?? 0,

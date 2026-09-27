@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { cashCloseTicket, DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@/lib/ticket";
 import { buildCashClosePayload, printCierre } from "@/lib/printBridge";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
+import { useAdminSession } from "@/components/admin/SessionContext";
+import CorrectOpeningDialog from "@/components/admin/caja/CorrectOpeningDialog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,15 @@ interface CashWithdrawal {
   date: string;
 }
 
+interface OpeningCorrection {
+  field: "openingAmount" | "countedAmount";
+  previousAmount?: number;
+  newAmount: number;
+  byName: string;
+  note?: string;
+  date: string;
+}
+
 interface CashCloseRow {
   _id: string;
   closeDate: string;
@@ -58,6 +69,7 @@ interface CashCloseRow {
     diferencia: number;
   };
   openingAmount?: number;
+  openingCorrections?: OpeningCorrection[];
   withdrawals?: CashWithdrawal[];
   withdrawalsTotal?: number;
   cashLeft?: number;
@@ -73,6 +85,7 @@ interface CashSessionData {
   previousCashLeft?: number;
   countedAmount?: number;
   openingDifference?: number;
+  openingCorrections?: OpeningCorrection[];
   withdrawals: CashWithdrawal[];
 }
 
@@ -112,9 +125,36 @@ const METHOD_LABELS: Record<string, string> = {
   mixto:    "🔀 Mixto",
 };
 
+const CORRECTION_FIELD_LABELS: Record<OpeningCorrection["field"], string> = {
+  openingAmount: "la caja inicial",
+  countedAmount: "el conteo de apertura",
+};
+
+/** Rastro de las correcciones de la apertura: quién, cuándo y de cuánto a cuánto. */
+function OpeningCorrectionsList({ items }: { items: OpeningCorrection[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      {items.map((c, i) => (
+        <p key={i} className="flex items-start gap-1.5 text-[11px] text-brand-dark/50">
+          <Pencil className="w-3 h-3 shrink-0 mt-0.5" />
+          <span>
+            <span className="font-mono">{fmtTime(c.date)}</span> · {c.byName || "Alguien"} corrigió {CORRECTION_FIELD_LABELS[c.field]}:{" "}
+            {c.previousAmount != null ? fmt(c.previousAmount) : "sin dato"} → <span className="font-semibold text-brand-dark/70">{fmt(c.newAmount)}</span>
+            {c.note && <span className="italic"> · {c.note}</span>}
+          </span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CierreDeCajaPage() {
+  const adminSession = useAdminSession();
+  // La apertura la corrige cualquiera con acceso a caja mientras está abierta; un cierre ya hecho, solo el admin.
+  const isAdmin = adminSession.role === "admin";
   const [today, setToday]         = useState<TodayData | null>(null);
   const [closes, setCloses]       = useState<CashCloseRow[]>([]);
   const [businessName, setBusinessName] = useState("");
@@ -141,6 +181,9 @@ export default function CierreDeCajaPage() {
   const [todayCloseId, setTodayCloseId]     = useState<string | null>(null);
   const [closingWithdrawDone, setClosingWithdrawDone] = useState(false);
   const [savingEdit, setSavingEdit]         = useState(false);
+  const [correctingOpening, setCorrectingOpening] = useState(false);
+  const [closeError, setCloseError]         = useState("");
+  const [editError, setEditError]           = useState("");
 
   const loadData = useCallback(async () => {
     const [todayRes, closesRes, meRes, sessionRes] = await Promise.all([
@@ -253,13 +296,14 @@ export default function CierreDeCajaPage() {
 
   async function handleClose() {
     if (!today) return;
+    setCloseError("");
     setClosing(true);
     try {
       const denominaciones = DENOMS
         .filter((d) => (counts[d.valor] ?? 0) > 0)
         .map((d) => ({ valor: d.valor, cantidad: counts[d.valor], subtotal: d.valor * counts[d.valor] }));
 
-      await fetch("/api/admin/cash-close", {
+      const res = await fetch("/api/admin/cash-close", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -283,10 +327,19 @@ export default function CierreDeCajaPage() {
           notes,
         }),
       });
+      if (!res.ok) {
+        // El conteo y las notas se conservan: solo hay que revisar el esperado y volver a cerrar.
+        const data = await res.json().catch(() => ({}));
+        setCloseError(data.error ?? "No se pudo cerrar la caja");
+        if (data.code === "OPENING_CHANGED") await loadData();
+        return;
+      }
       setCounts(Object.fromEntries(DENOMS.map((d) => [d.valor, 0])));
       setNotes("");
       setCashLeftTouched(false);
       await loadData();
+    } catch {
+      setCloseError("No se pudo cerrar la caja. Revisá tu conexión.");
     } finally {
       setClosing(false);
     }
@@ -302,10 +355,12 @@ export default function CierreDeCajaPage() {
     setCashLeft(editingClose.cashLeft ?? 0);
     setCashLeftTouched(true);
     setNotes(editingClose.notes ?? "");
+    setEditError("");
     setEditMode(true);
   }
 
   function handleCancelEdit() {
+    setEditError("");
     setEditMode(false);
     setCounts(Object.fromEntries(DENOMS.map((d) => [d.valor, 0])));
     setCashLeft(0);
@@ -315,13 +370,14 @@ export default function CierreDeCajaPage() {
 
   async function handleSaveEdit() {
     if (!todayCloseId) return;
+    setEditError("");
     setSavingEdit(true);
     try {
       const denominaciones = DENOMS
         .filter((d) => (counts[d.valor] ?? 0) > 0)
         .map((d) => ({ valor: d.valor, cantidad: counts[d.valor], subtotal: d.valor * counts[d.valor] }));
 
-      await fetch(`/api/admin/cash-close/${todayCloseId}`, {
+      const res = await fetch(`/api/admin/cash-close/${todayCloseId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -335,9 +391,16 @@ export default function CierreDeCajaPage() {
           notes,
         }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setEditError(data.error ?? "No se pudieron guardar los cambios");
+        return;
+      }
       setEditMode(false);
       setCashLeftTouched(false);
       await loadData();
+    } catch {
+      setEditError("No se pudieron guardar los cambios. Revisá tu conexión.");
     } finally {
       setSavingEdit(false);
     }
@@ -481,7 +544,7 @@ export default function CierreDeCajaPage() {
               <Printer className="w-4 h-4" />
               <span className="hidden sm:inline">Ticket </span>PDF
             </Button>
-            {closedToday && !editMode && (
+            {closedToday && !editMode && isAdmin && (
               <Button variant="secondary" onClick={handleEnterEdit} className="gap-2 text-sm">
                 <Pencil className="w-4 h-4" />
                 Editar cierre
@@ -510,6 +573,12 @@ export default function CierreDeCajaPage() {
             )}
           </div>
         </div>
+
+        {(closeError || editError) && (
+          <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 no-print">
+            {closeError || editError}
+          </div>
+        )}
 
         {/* ── ESTADO: Sin sesión, sin cierre → solo apertura ───────── */}
         {!session.open && !closedToday && (
@@ -597,10 +666,21 @@ export default function CierreDeCajaPage() {
                 <section className="bg-white rounded-2xl border border-brand-muted p-4 space-y-3 no-print">
                   <div className="flex items-center justify-between">
                     <h2 className="font-semibold text-brand-dark">Retiros de caja</h2>
-                    <span className="text-xs text-brand-dark/50">
+                    <span className="flex items-center gap-1.5 text-xs text-brand-dark/50">
                       C. inicial: <span className="font-semibold text-brand-dark">{fmt(session.open.openingAmount)}</span>
+                      <Button
+                        type="button" variant="ghost" size="icon-sm"
+                        onClick={() => setCorrectingOpening(true)}
+                        title="Corregir la apertura"
+                        aria-label="Corregir la apertura"
+                        className="text-brand-dark/50"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
                     </span>
                   </div>
+
+                  <OpeningCorrectionsList items={session.open.openingCorrections ?? []} />
 
                   {session.open.openingDifference != null && session.open.openingDifference !== 0 && (
                     <div className={`rounded-xl px-3 py-2 text-xs font-medium ${
@@ -930,6 +1010,7 @@ export default function CierreDeCajaPage() {
                 </p>
               </div>
             </div>
+            <OpeningCorrectionsList items={editingClose.openingCorrections ?? []} />
             {editingClose.notes && (
               <p className="text-xs text-brand-dark/50 italic border-t border-brand-muted/50 pt-2">{editingClose.notes}</p>
             )}
@@ -1003,6 +1084,18 @@ export default function CierreDeCajaPage() {
         )}
 
       </div>
+
+      {correctingOpening && session.open && (
+        <CorrectOpeningDialog
+          cashSession={session.open}
+          onClose={() => setCorrectingOpening(false)}
+          onSaved={async () => {
+            setCorrectingOpening(false);
+            setCloseError("");
+            await loadData();
+          }}
+        />
+      )}
     </>
   );
 }
