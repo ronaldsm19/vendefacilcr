@@ -16,3 +16,16 @@ export function normalizeOrderItems(raw: unknown): Record<string, unknown>[] | n
   }
   return out;
 }
+
+/**
+ * Fecha y hora del pedido manual. El formulario manda un instante ISO con zona (ej.
+ * "2026-09-26T02:00:00.000Z" para las 8:00 p. m. del 25 en Costa Rica), así que `new Date` da el
+ * mismo instante sin importar la zona del servidor. undefined si no viene (el POST usa "ahora" y el
+ * PATCH conserva la que tenía); "invalid" si no es una fecha, para responder 400 en vez de 500.
+ */
+export function parseOrderedAt(raw: unknown): Date | undefined | "invalid" {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (typeof raw !== "string") return "invalid";
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? "invalid" : d;
+}
