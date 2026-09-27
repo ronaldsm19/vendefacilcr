@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { CashOpeningCorrectionSchema, type ICashOpeningCorrection } from "@/models/CashOpeningCorrection";
 
 export interface IProductSummary {
   productId: string;
@@ -44,6 +45,8 @@ export interface ICashClose {
   productsSummary: IProductSummary[];
   arqueo?: IArqueo;
   openingAmount: number;
+  /** Copia de las correcciones de la apertura hechas mientras la caja estuvo abierta. */
+  openingCorrections: ICashOpeningCorrection[];
   withdrawals: ICashWithdrawal[];
   withdrawalsTotal: number;
   cashLeft: number;
@@ -91,6 +94,7 @@ const CashCloseSchema = new Schema(
       default: undefined,
     },
     openingAmount: { type: Number, default: 0 },
+    openingCorrections: { type: [CashOpeningCorrectionSchema], default: [] },
     withdrawals: {
       type: [{
         amount:     { type: Number, required: true },
