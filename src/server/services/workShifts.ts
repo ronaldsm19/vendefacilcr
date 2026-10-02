@@ -15,7 +15,31 @@ import {
 // las correcciones del admin —closeShiftAsAdmin (cerrar un turno olvidado) y editShiftAsAdmin
 // (corregir entrada y salida)—, que reciben las horas que elige el admin y las validan acá.
 
+/**
+ * Cuánto se puede mover una hora de un tirón al corregir.
+ *
+ * Se aplica a la entrada, y a la salida SOLO hacia adelante. Acortar una jornada no tiene tope
+ * a propósito: el caso más común de corrección es alguien que olvidó marcar la salida y la
+ * jornada quedó de dos días; esa salida hay que traerla muchas horas hacia atrás. Topar eso
+ * bloqueaba justo la corrección que el administrador necesita hacer.
+ */
 const MAX_EDIT_MOVE_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Duración máxima de una jornada corregida. Es el verdadero detector de dedazos: equivocarse de
+ * mes o de día en el selector da una jornada absurda, y eso se ve en el resultado mucho mejor
+ * que midiendo cuánto se movió cada hora.
+ */
+const MAX_SHIFT_HOURS = 18;
+const MAX_SHIFT_MS = MAX_SHIFT_HOURS * 60 * 60 * 1000;
+
+/**
+ * A partir de acá, cerrar una jornada olvidada pide confirmación. No la bloquea: puede ser real
+ * —una madrugada de inventario— pero casi siempre es un olvido, y conviene que quien la cierra
+ * lo vea antes de dejarlo escrito.
+ */
+export const LONG_SHIFT_WARN_HOURS = 14;
+const LONG_SHIFT_WARN_MS = LONG_SHIFT_WARN_HOURS * 60 * 60 * 1000;
 
 const PIN_MAX_ATTEMPTS = 5;
 const PIN_WINDOW_MS = 15 * 60 * 1000;
@@ -226,7 +250,7 @@ export async function getShiftsReport(tenantId: string, { from, to }: PeriodRang
 export async function closeShiftAsAdmin(
   tenantId: string,
   shiftId: string,
-  input: { endedAt: Date; note: string },
+  input: { endedAt: Date; note: string; confirmLong?: boolean },
   actor: AdjustActor
 ) {
   if (!mongoose.isValidObjectId(shiftId)) throw new ServiceError(404, "Turno no encontrado");
@@ -239,6 +263,24 @@ export async function closeShiftAsAdmin(
     throw new ServiceError(400, "La hora de salida debe ser posterior al inicio del turno");
   }
   if (input.endedAt > new Date()) throw new ServiceError(400, "La hora de salida no puede estar en el futuro");
+
+  // Una jornada larguísima casi siempre es un olvido de marcar la salida, no un turno real. No se
+  // bloquea —puede haber pasado— pero se pide confirmar, porque una vez cerrada esas horas entran
+  // en el reporte y en lo que se le paga a la persona.
+  const span = input.endedAt.getTime() - shift.startedAt.getTime();
+  if (span > LONG_SHIFT_WARN_MS && !input.confirmLong) {
+    // Se redondea a minutos ANTES de separar horas y minutos: redondear el resto por su lado
+    // daba textos como "29 h 60 min".
+    const totalMin = Math.round(span / 60_000);
+    const horas = Math.floor(totalMin / 60);
+    const mins = totalMin % 60;
+    const duracion = mins === 0 ? `${horas} h` : `${horas} h ${mins} min`;
+    throw new ServiceError(
+      409,
+      `Esta jornada quedaría de ${duracion}. Si se olvidó marcar la salida, corregí la hora antes de cerrar.`,
+      "LONG_SHIFT"
+    );
+  }
 
   const minutes = minutesBetween(shift.startedAt, input.endedAt);
   shift.endedAt = input.endedAt;
@@ -331,11 +373,29 @@ export async function editShiftAsAdmin(
   if (endedAt && endedAt > now) throw new ServiceError(400, "La hora de salida no puede estar en el futuro");
   if (endedAt && endedAt <= startedAt) throw new ServiceError(400, "La salida tiene que ser después de la entrada");
 
-  // Un salto mayor casi siempre es una fecha equivocada en el selector, no una corrección real.
-  const movedTooFar = (next: Date, current: Date | null) =>
-    !!current && Math.abs(next.getTime() - current.getTime()) > MAX_EDIT_MOVE_MS;
-  if (movedTooFar(startedAt, shift.startedAt) || (endedAt && movedTooFar(endedAt, shift.endedAt))) {
-    throw new ServiceError(400, "Una edición no puede mover la entrada ni la salida más de 12 horas. Revisá la fecha.");
+  // Mover la ENTRADA muy lejos casi siempre es una fecha equivocada en el selector.
+  if (Math.abs(startedAt.getTime() - shift.startedAt.getTime()) > MAX_EDIT_MOVE_MS) {
+    throw new ServiceError(
+      400,
+      `La hora de entrada no se puede mover más de ${MAX_EDIT_MOVE_MS / 3_600_000} horas de un tirón. Revisá la fecha.`
+    );
+  }
+
+  // La SALIDA se puede traer hacia atrás sin tope —así se arregla una jornada que quedó abierta
+  // dos días— pero alargarla mucho sí se topa: estirar una jornada no corrige ningún olvido.
+  if (endedAt && shift.endedAt && endedAt.getTime() - shift.endedAt.getTime() > MAX_EDIT_MOVE_MS) {
+    throw new ServiceError(
+      400,
+      `La hora de salida no se puede alargar más de ${MAX_EDIT_MOVE_MS / 3_600_000} horas de un tirón. Revisá la fecha.`
+    );
+  }
+
+  // Lo que de verdad delata un dedazo es el resultado, no el salto.
+  if (endedAt && endedAt.getTime() - startedAt.getTime() > MAX_SHIFT_MS) {
+    throw new ServiceError(
+      400,
+      `La jornada quedaría de más de ${MAX_SHIFT_HOURS} horas. Revisá las fechas de entrada y salida.`
+    );
   }
 
   const sameStart = startedAt.getTime() === shift.startedAt.getTime();

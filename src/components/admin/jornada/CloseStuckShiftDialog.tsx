@@ -27,10 +27,13 @@ export default function CloseStuckShiftDialog({ shift, onClose, onClosed }: Clos
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Aviso de jornada larga: el servidor lo devuelve con código LONG_SHIFT y hay que reintentar
+  // confirmando. Se guarda el texto que él mismo calculó, que ya trae las horas.
+  const [longWarning, setLongWarning] = useState("");
 
   if (!shift) return null;
 
-  async function handleConfirm() {
+  async function send(confirmLong: boolean) {
     if (!shift) return;
     setError("");
     const parsed = crInputToUTC(endedAt);
@@ -43,10 +46,14 @@ export default function CloseStuckShiftDialog({ shift, onClose, onClosed }: Clos
       const res = await fetch(`/api/admin/work-shifts/${shift._id}/close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endedAt: parsed.toISOString(), note }),
+        body: JSON.stringify({ endedAt: parsed.toISOString(), note, confirmLong }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.code === "LONG_SHIFT") {
+          setLongWarning(data.error ?? "Esta jornada quedaría muy larga.");
+          return;
+        }
         setError(data.error ?? "No se pudo cerrar el turno");
         return;
       }
@@ -56,6 +63,12 @@ export default function CloseStuckShiftDialog({ shift, onClose, onClosed }: Clos
     } finally {
       setSaving(false);
     }
+  }
+
+  // Cambiar la hora deja sin efecto el aviso: es justamente lo que se le pidió que hiciera.
+  function handleTimeChange(v: string) {
+    setEndedAt(v);
+    setLongWarning("");
   }
 
   return (
@@ -72,7 +85,7 @@ export default function CloseStuckShiftDialog({ shift, onClose, onClosed }: Clos
 
           <div>
             <label className="block text-sm font-medium text-brand-dark mb-1">Hora de salida real</label>
-            <DateTime12hInput value={endedAt} max={toCRInputValue(new Date())} onChange={setEndedAt} />
+            <DateTime12hInput value={endedAt} max={toCRInputValue(new Date())} onChange={handleTimeChange} />
           </div>
 
           <div>
@@ -86,15 +99,30 @@ export default function CloseStuckShiftDialog({ shift, onClose, onClosed }: Clos
             />
           </div>
 
+          {longWarning && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                {longWarning} Esas horas van a contar en el reporte y en lo que se le paga.
+              </span>
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
           <Button type="button" variant="cancel" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button type="button" onClick={handleConfirm} disabled={saving}>
-            {saving ? "Guardando..." : "Cerrar jornada"}
-          </Button>
+          {longWarning ? (
+            <Button type="button" variant="destructive" onClick={() => send(true)} disabled={saving}>
+              {saving ? "Guardando..." : "Cerrar así de todos modos"}
+            </Button>
+          ) : (
+            <Button type="button" onClick={() => send(false)} disabled={saving}>
+              {saving ? "Guardando..." : "Cerrar jornada"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
