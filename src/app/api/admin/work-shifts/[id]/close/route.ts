@@ -23,7 +23,8 @@ export async function POST(
   }
 
   try {
-    const shift = await closeShiftAsAdmin(session.tenantId, id, { endedAt, note }, {
+    // confirmLong: el segundo intento, después de que la pantalla mostró el aviso de jornada larga.
+    const shift = await closeShiftAsAdmin(session.tenantId, id, { endedAt, note, confirmLong: body.confirmLong === true }, {
       name:       session.name,
       email:      session.email,
       tenantSlug: session.tenantSlug,
