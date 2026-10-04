@@ -33,6 +33,8 @@ const STATION_BADGE: Record<ProductStation, string> = {
 export default function AdminProductsPage() {
   const session = useAdminSession();
   const canEdit = can(session, "productos:editar");
+  // La caja puede ajustar precio y extras de lo que ya existe, pero no crear ni borrar.
+  const canPrices = can(session, "productos:precios");
   const isPremium = session.isPremium;
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
@@ -150,7 +152,7 @@ export default function AdminProductsPage() {
         <div className="flex-1">
           <h1 className="font-brand text-2xl md:text-3xl font-bold text-brand-dark">Productos</h1>
           <p className="text-brand-dark/50 text-sm mt-1">
-            {products.length} productos en catálogo{!canEdit && " · Solo lectura"}
+            {products.length} productos en catálogo{!canPrices && " · Solo lectura"}{canPrices && !canEdit && " · Podés ajustar precios y extras"}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -220,7 +222,7 @@ export default function AdminProductsPage() {
                 <th className="text-left px-4 py-3">Precio</th>
                 <th className="text-left px-4 py-3 hidden sm:table-cell">Stock</th>
                 <th className="text-left px-4 py-3 hidden sm:table-cell">Estado</th>
-                {canEdit && <th className="text-right px-4 py-3">Acciones</th>}
+                {(canEdit || canPrices) && <th className="text-right px-4 py-3">Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -284,24 +286,28 @@ export default function AdminProductsPage() {
                       {p.available ? "Disponible" : "No disponible"}
                     </span>
                   </td>
-                  {canEdit && (
+                  {(canEdit || canPrices) && (
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => openEdit(p)}
+                          title={canEdit ? "Editar producto" : "Ajustar precio y extras"}
+                          aria-label={canEdit ? "Editar producto" : "Ajustar precio y extras"}
                           className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-pink transition-colors cursor-pointer"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
-                        <Button
-                          size="icon-sm"
-                          variant="destructive"
-                          title="Eliminar producto"
-                          aria-label="Eliminar producto"
-                          onClick={() => setConfirmDelete(p._id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        {canEdit && (
+                          <Button
+                            size="icon-sm"
+                            variant="destructive"
+                            title="Eliminar producto"
+                            aria-label="Eliminar producto"
+                            onClick={() => setConfirmDelete(p._id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   )}
@@ -309,7 +315,7 @@ export default function AdminProductsPage() {
               ))}
               {pageItems.length === 0 && (
                 <tr>
-                  <td colSpan={5 + (isPremium ? 1 : 0) + (canEdit ? 1 : 0)} className="px-4 py-8 text-center text-brand-dark/40">
+                  <td colSpan={5 + (isPremium ? 1 : 0) + (canEdit || canPrices ? 1 : 0)} className="px-4 py-8 text-center text-brand-dark/40">
                     {search ? "Sin resultados para esa búsqueda." : "No hay productos. Crea el primero."}
                   </td>
                 </tr>
@@ -334,7 +340,7 @@ export default function AdminProductsPage() {
       <Dialog open={showForm} onOpenChange={(v) => { if (!v) { setShowForm(false); setEditing(null); } }}>
         <DialogContent className="max-w-lg lg:max-w-4xl">
           <DialogHeader className="pb-4">
-            <DialogTitle>{editing ? "Editar producto" : "Nuevo producto"}</DialogTitle>
+            <DialogTitle>{!editing ? "Nuevo producto" : canEdit ? "Editar producto" : "Precio y extras"}</DialogTitle>
           </DialogHeader>
           <div className="px-6 pb-6">
             <ProductForm
@@ -343,6 +349,7 @@ export default function AdminProductsPage() {
               onCancel={() => { setShowForm(false); setEditing(null); }}
               saving={saving}
               showStation={isPremium}
+              scope={canEdit ? "full" : "precios"}
             />
           </div>
         </DialogContent>
