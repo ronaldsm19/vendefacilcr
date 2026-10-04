@@ -13,6 +13,8 @@ import { buildSalePayload, checkAgent, printReceipt } from "@/lib/printBridge";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import AddToComandaPanel from "@/components/admin/AddToComandaPanel";
 import { useAdminSession } from "@/components/admin/SessionContext";
+import PendingComandasBanner from "@/components/admin/PendingComandasBanner";
+import { notifyComandasUpdated } from "@/components/admin/PendingComandasContext";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
@@ -881,6 +883,8 @@ function PosPageInner() {
       }
       localStorage.removeItem(DRAFT_KEY);
       window.dispatchEvent(new CustomEvent("pos-cart-update"));
+      // Una comanda recién cobrada tiene que salir del contador ya, no en el siguiente ciclo.
+      notifyComandasUpdated();
       setTimeout(() => { setShowSuccess(false); setLastTableNote(null); setAutoPrintError(null); }, 10000);
       // "Cobrar a la siguiente persona" no se ata al toast de 10s: entre cobrar, dar el
       // vuelto y decidir si reimprime, el cajero fácilmente tarda más que eso. Se le da
@@ -947,6 +951,21 @@ function PosPageInner() {
           <UserCircle className="w-4 h-4" /> {session.name}
         </div>
       </div>
+
+      {/* Comandas sin cobrar — a la vista apenas se abre la caja, no escondido en el menú */}
+      {isPremium && (
+        <PendingComandasBanner
+          className="mx-4 mt-3 shrink-0"
+          actionLabel="Ver mesas"
+          onAction={() => {
+            setShowTablesPanel(true);
+            setActiveTable(null);
+            setPicked({});
+            setPanelNotice(null);
+            loadOpenTables();
+          }}
+        />
+      )}
 
       {/* ── Body: dos columnas ── */}
       <div className="flex-1 flex overflow-hidden min-h-0">

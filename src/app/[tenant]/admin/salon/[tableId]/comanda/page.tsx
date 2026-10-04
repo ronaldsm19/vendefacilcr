@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { usePolling } from "@/hooks/usePolling";
+import { notifyComandasUpdated } from "@/components/admin/PendingComandasContext";
 import { TABLE_STATUS_META, type TableStatus } from "@/lib/tableStatus";
 import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaConfig";
 import type { ProductStation } from "@/lib/station";
@@ -371,6 +372,7 @@ export default function TomarComandaPage() {
         return;
       }
       setSuccessMsg(`Comanda #${data.comanda.number} ${editId ? "actualizada" : "enviada"}`);
+      notifyComandasUpdated();
       resetForm();
       await Promise.all([
         fetch("/api/admin/comandas/next-number").then((r) => r.json()).then((d) => setNextNumber(d.nextNumber ?? 1)),

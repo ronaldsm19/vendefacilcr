@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
+import PendingComandasBanner from "@/components/admin/PendingComandasBanner";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePolling } from "@/hooks/usePolling";
@@ -961,6 +962,9 @@ export default function SalonPage() {
           )}
         </div>
       </div>
+
+      {/* Comandas sin cobrar — el salón es la pantalla donde vive la mesera */}
+      {session.isPremium && <PendingComandasBanner className="mx-4 mt-3 shrink-0" />}
 
       {/* Area tabs */}
       <div className="shrink-0 flex items-center border-b border-brand-muted bg-white overflow-x-auto px-2">

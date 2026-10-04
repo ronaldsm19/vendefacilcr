@@ -25,6 +25,10 @@ import {
   Wallet,
 } from "lucide-react";
 import { can, ROLE_LABELS, type Role, type Feature } from "@/lib/permissions";
+import { usePendingComandas } from "@/components/admin/PendingComandasContext";
+
+/** Secciones donde se resuelve una comanda sin cobrar: ahí va el contador de pendientes. */
+const PENDING_BADGE_FEATURES: Feature[] = ["salon", "comandas"];
 
 function buildNavItems(base: string): { href: string; label: string; icon: typeof LayoutDashboard; feature: Feature; premium?: true }[] {
   return [
@@ -72,6 +76,7 @@ export default function AdminSidebar({
     (i) => can({ role }, i.feature) && (!i.premium || isPremium)
   );
 
+  const { badgeCount: pendingComandas } = usePendingComandas();
   const [posCartCount, setPosCartCount] = useState(0);
 
   useEffect(() => {
@@ -136,6 +141,8 @@ export default function AdminSidebar({
               ? pathname === base
               : pathname.startsWith(item.href);
           const Icon = item.icon;
+          // El contador ya viene filtrado por rol: al mesero le llegan solo las suyas.
+          const alert = PENDING_BADGE_FEATURES.includes(item.feature) && pendingComandas > 0;
 
           return (
             <Link
@@ -144,11 +151,26 @@ export default function AdminSidebar({
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
                 isActive
                   ? "gradient-bg text-white shadow-md"
+                  : alert
+                  // Resaltado aunque no sea la sección abierta: es lo que hace que se note sin
+                  // tener que entrar a buscar.
+                  ? "text-amber-200 bg-amber-400/10 ring-1 ring-amber-400/30 hover:bg-amber-400/15"
                   : "text-white/50 hover:text-white hover:bg-white/8"
               }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span className="flex-1">{item.label}</span>
+              {alert && (
+                <span
+                  title={`${pendingComandas} ${pendingComandas === 1 ? "comanda pendiente" : "comandas pendientes"} de cobrar`}
+                  className={`relative text-xs font-bold rounded-full min-w-5 h-5 px-1.5 flex items-center justify-center shrink-0 ${
+                    isActive ? "bg-white/25 text-white" : "bg-amber-400 text-brand-dark"
+                  }`}
+                >
+                  <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-40" />
+                  <span className="relative">{pendingComandas}</span>
+                </span>
+              )}
               {item.label === "Punto de venta" && posCartCount > 0 && (
                 <span className="text-xs font-bold bg-white/20 text-white rounded-full w-5 h-5 flex items-center justify-center shrink-0">
                   {posCartCount}

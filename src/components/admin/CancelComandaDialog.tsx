@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ComandaRow } from "@/components/admin/ComandaCard";
+import { notifyComandasUpdated } from "@/components/admin/PendingComandasContext";
 
 interface CancelComandaDialogProps {
   comanda: ComandaRow;
@@ -30,6 +31,7 @@ export default function CancelComandaDialog({ comanda, onClose, onDone }: Cancel
         setError(data.error ?? "No se pudo anular la comanda");
         return;
       }
+      notifyComandasUpdated();
       onDone(data.comanda, data.table);
     } finally {
       setSaving(false);

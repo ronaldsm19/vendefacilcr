@@ -5,6 +5,7 @@ import { CashSession } from "@/models/CashSession";
 import { AccessLog } from "@/models/AccessLog";
 import { getSession, requireFeature, requireRole } from "@/lib/auth";
 import { buildArqueo, expectedCash } from "@/lib/cashCount";
+import { checkCardReconciliation, type CardReconciliation } from "@/lib/cardReconciliation";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { verifyAuthorizationPassword } from "@/server/services/authorizationPassword";
 import mongoose from "mongoose";
@@ -16,6 +17,7 @@ interface CloseLean {
   paymentBreakdown?: { efectivo?: number };
   withdrawalsTotal?: number;
   cashLeft?: number;
+  cardReconciliation?: CardReconciliation;
 }
 
 /**
@@ -40,10 +42,10 @@ export async function PUT(
 
   await connectToDatabase();
   const body = await request.json().catch(() => ({}));
-  const { arqueo, cashLeft, notes, password } = body as Record<string, unknown>;
+  const { arqueo, cashLeft, notes, password, cardReconciliation } = body as Record<string, unknown>;
 
   const existing = await CashClose.findOne({ _id: id, tenantId: session.tenantId })
-    .select("closeNumber openingAmount paymentBreakdown withdrawalsTotal cashLeft")
+    .select("closeNumber openingAmount paymentBreakdown withdrawalsTotal cashLeft cardReconciliation")
     .lean() as CloseLean | null;
   if (!existing) return NextResponse.json({ error: "Cierre no encontrado" }, { status: 404 });
 
@@ -60,6 +62,21 @@ export async function PUT(
     update.cashLeft = cashLeft;
   }
   if (notes !== undefined) update.notes = String(notes);
+  // Corregir un dedazo en el total del datáfono. Lo esperado NO se toca: es lo que vendió el
+  // sistema ese día y cambiarlo sería reescribir las ventas. Solo se re-digita lo que marcó el
+  // datáfono, y la diferencia se recalcula contra lo guardado.
+  if (cardReconciliation !== undefined) {
+    if (!existing.cardReconciliation) {
+      return NextResponse.json({ error: "Este cierre no tiene cuadre de datáfono" }, { status: 400 });
+    }
+    const check = checkCardReconciliation(
+      existing.cardReconciliation.expected,
+      cardReconciliation as { reported?: unknown; note?: unknown },
+      session.name
+    );
+    if (!check.ok) return NextResponse.json({ error: check.error, code: check.code }, { status: 400 });
+    update.cardReconciliation = check.value;
+  }
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "No hay cambios para guardar" }, { status: 400 });
   }
