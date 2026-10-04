@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Printer, Check, RefreshCw, Pencil } from "lucide-react";
+import { Loader2, Printer, Check, RefreshCw, Pencil, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cashCloseTicket, DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@/lib/ticket";
 import { buildCashClosePayload, printCierre } from "@/lib/printBridge";
 import { CASH_DENOMINATIONS as DENOMS, expectedCash } from "@/lib/cashCount";
+import { cardDifferenceLabel, MAX_CARD_NOTE, type CardReconciliation } from "@/lib/cardReconciliation";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import CorrectOpeningDialog from "@/components/admin/caja/CorrectOpeningDialog";
@@ -71,6 +72,7 @@ interface CashCloseRow {
     totalEsperado: number;
     diferencia: number;
   };
+  cardReconciliation?: Omit<CardReconciliation, "checkedAt"> & { checkedAt: string };
   openingAmount?: number;
   openingCorrections?: OpeningCorrection[];
   withdrawals?: CashWithdrawal[];
@@ -168,6 +170,8 @@ export default function CierreDeCajaPage() {
   const [cashLeft, setCashLeft]             = useState(0);
   const [cashLeftTouched, setCashLeftTouched] = useState(false);
   const [notes, setNotes]                   = useState("");
+  const [cardReported, setCardReported]     = useState("");
+  const [cardNote, setCardNote]             = useState("");
   const [todayCloseId, setTodayCloseId]     = useState<string | null>(null);
   const [closingWithdrawDone, setClosingWithdrawDone] = useState(false);
   const [correctingOpening, setCorrectingOpening] = useState(false);
@@ -210,6 +214,25 @@ export default function CierreDeCajaPage() {
     withdrawalsTotal,
   });
   const diferencia = totalContado - efectivoEsperado;
+
+  // ── Cuadre del datáfono ───────────────────────────────────────────
+  // Solo se pide cuando el día tuvo ventas con tarjeta: un día de puro efectivo y SINPE cierra
+  // igual que siempre. El servidor repite esta misma validación con las ventas de la base, así
+  // que desactivar el botón es comodidad, no la barrera.
+  const cardExpected = today?.paymentBreakdown.tarjeta ?? 0;
+  const cardRequired = cardExpected > 0;
+  const cardReportedNum = cardReported.trim() === "" ? NaN : Number(cardReported);
+  const cardFilled = Number.isFinite(cardReportedNum) && cardReportedNum >= 0;
+  const cardDiff = cardFilled ? Math.round((cardReportedNum - cardExpected) * 100) / 100 : 0;
+  const cardNeedsNote = cardFilled && cardDiff !== 0 && cardNote.trim() === "";
+  const cardReady = !cardRequired || (cardFilled && !cardNeedsNote);
+  const blockReason =
+    !session.open ? "Primero abrí la caja"
+    : !today?.sales.length ? "No hay ventas para cerrar"
+    : cardRequired && !cardFilled ? "Falta comparar el cierre del datáfono"
+    : cardNeedsNote ? "Explicá la diferencia del datáfono"
+    : "";
+
   const defaultCashLeft = withdrawalsList.length > 0 ? withdrawalsList[withdrawalsList.length - 1].leftAmount : totalContado;
 
   useEffect(() => {
@@ -304,7 +327,7 @@ export default function CierreDeCajaPage() {
   }
 
   async function handleClose() {
-    if (!today) return;
+    if (!today || !cardReady) return;
     setCloseError("");
     setClosing(true);
     try {
@@ -334,6 +357,7 @@ export default function CierreDeCajaPage() {
           cashLeft,
           salesList: today.sales.map((s) => ({ ticketNumber: s.ticketNumber ?? 0, total: s.total })),
           notes,
+          ...(cardRequired ? { cardReconciliation: { reported: cardReportedNum, note: cardNote } } : {}),
         }),
       });
       if (!res.ok) {
@@ -345,6 +369,8 @@ export default function CierreDeCajaPage() {
       }
       setCounts(Object.fromEntries(DENOMS.map((d) => [d.valor, 0])));
       setNotes("");
+      setCardReported("");
+      setCardNote("");
       setCashLeftTouched(false);
       await loadData();
     } catch {
@@ -372,6 +398,7 @@ export default function CierreDeCajaPage() {
       productsSummary: today.productsSummary,
       arqueo: todayClose?.arqueo
         ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
+      cardReconciliation: todayClose?.cardReconciliation,
       openingAmount: todayClose?.openingAmount ?? session.open?.openingAmount ?? 0,
       withdrawals: todayClose?.withdrawals ?? session.open?.withdrawals ?? [],
       withdrawalsTotal: todayClose?.withdrawalsTotal ?? withdrawalsTotal,
@@ -393,6 +420,7 @@ export default function CierreDeCajaPage() {
       expensesTotal: c.expensesTotal,
       profit: c.profit,
       arqueo: c.arqueo,
+      cardReconciliation: c.cardReconciliation,
       openingAmount: c.openingAmount,
       withdrawals: c.withdrawals,
       withdrawalsTotal: c.withdrawalsTotal,
@@ -469,6 +497,7 @@ export default function CierreDeCajaPage() {
                     profit: today!.profit,
                     productsSummary: today!.productsSummary,
                     arqueo: todayClose?.arqueo ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
+                    cardReconciliation: todayClose?.cardReconciliation,
                     openingAmount: todayClose?.openingAmount ?? 0,
                     withdrawals: todayClose?.withdrawals ?? [],
                     withdrawalsTotal: todayClose?.withdrawalsTotal ?? withdrawalsTotal,
@@ -498,7 +527,8 @@ export default function CierreDeCajaPage() {
             {!closedToday && (
               <Button
                 onClick={handleClose}
-                disabled={closing || !today?.sales.length || !session.open}
+                disabled={closing || !today?.sales.length || !session.open || !cardReady}
+                title={blockReason || undefined}
                 className="gap-2 text-sm"
               >
                 {closing && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -806,6 +836,70 @@ export default function CierreDeCajaPage() {
                   )}
                 </div>
 
+                {/* ── Cuadre del datáfono ── */}
+                {cardRequired && (
+                  <div className={`rounded-xl border p-3 space-y-2 ${
+                    !cardFilled ? "border-amber-300 bg-amber-50"
+                    : cardDiff === 0 ? "border-emerald-200 bg-emerald-50"
+                    : "border-red-200 bg-red-50"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-brand-dark/60 shrink-0" />
+                      <h3 className="text-sm font-semibold text-brand-dark">Cierre del datáfono</h3>
+                    </div>
+                    <p className="text-[11px] text-brand-dark/60">
+                      Sacá el cierre del datáfono y escribí el total que imprime. Sin esa comparación no se
+                      puede cerrar el día.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-brand-dark/40">Tarjeta en el sistema</p>
+                        <p className="text-base font-bold tabular-nums text-brand-dark">{fmt(cardExpected)}</p>
+                      </div>
+                      <div>
+                        <label htmlFor="card-reported" className="block text-[10px] uppercase tracking-wider text-brand-dark/40 mb-1">
+                          Total del datáfono
+                        </label>
+                        <input
+                          id="card-reported"
+                          type="number" min={0} step={1} inputMode="numeric"
+                          value={cardReported} placeholder="0"
+                          onChange={(e) => setCardReported(e.target.value)}
+                          className="w-full border border-brand-muted bg-white rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-brand-pink"
+                        />
+                      </div>
+                    </div>
+
+                    {cardFilled && (
+                      <div className={`flex justify-between items-center text-xs font-semibold rounded-lg px-3 py-2 ${
+                        cardDiff === 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                      }`}>
+                        <span>{cardDiff === 0 ? "✓ Cuadra con el sistema" : `⚠ ${cardDifferenceLabel(cardDiff)}`}</span>
+                        <span className="tabular-nums">
+                          {cardDiff !== 0 && `${cardDiff > 0 ? "+" : ""}${fmt(cardDiff)}`}
+                        </span>
+                      </div>
+                    )}
+
+                    {cardFilled && cardDiff !== 0 && (
+                      <div>
+                        <label htmlFor="card-note" className="block text-[11px] font-medium text-brand-dark mb-1">
+                          ¿Por qué no cuadra? *
+                        </label>
+                        <textarea
+                          id="card-note"
+                          rows={2}
+                          maxLength={MAX_CARD_NOTE}
+                          value={cardNote}
+                          placeholder="Ej: una venta se cobró en tarjeta y se anotó en efectivo"
+                          onChange={(e) => setCardNote(e.target.value)}
+                          className="w-full border border-brand-muted bg-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-brand-pink resize-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Dejo en caja + Observaciones */}
                 <div className="grid grid-cols-2 gap-3 pt-1 border-t border-brand-muted/50">
                   <div>
@@ -832,12 +926,16 @@ export default function CierreDeCajaPage() {
                 {/* Botón de cierre — dentro del panel en desktop */}
                 <Button
                   onClick={handleClose}
-                  disabled={closing || !today?.sales.length || !session.open}
+                  disabled={closing || !today?.sales.length || !session.open || !cardReady}
+                  title={blockReason || undefined}
                   className="w-full gap-2"
                 >
                   {closing && <Loader2 className="w-4 h-4 animate-spin" />}
                   Cerrar el día
                 </Button>
+                {blockReason && !closing && (
+                  <p className="text-[11px] text-center text-amber-600 -mt-1">{blockReason}</p>
+                )}
               </section>
             </div>
           </div>
@@ -940,6 +1038,24 @@ export default function CierreDeCajaPage() {
                 </p>
               </div>
             </div>
+            {todayClose.cardReconciliation && (
+              <div className={`rounded-xl px-3 py-2 text-xs border ${
+                todayClose.cardReconciliation.difference === 0
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-red-200 bg-red-50 text-red-700"
+              }`}>
+                <p className="font-semibold">
+                  Datáfono: {fmt(todayClose.cardReconciliation.reported)} · Sistema: {fmt(todayClose.cardReconciliation.expected)}
+                  {todayClose.cardReconciliation.difference !== 0 && (
+                    <> · {cardDifferenceLabel(todayClose.cardReconciliation.difference)}{" "}
+                      {todayClose.cardReconciliation.difference > 0 ? "+" : ""}{fmt(todayClose.cardReconciliation.difference)}</>
+                  )}
+                </p>
+                {todayClose.cardReconciliation.note && (
+                  <p className="mt-0.5 italic opacity-80">{todayClose.cardReconciliation.note}</p>
+                )}
+              </div>
+            )}
             <OpeningCorrectionsList items={todayClose.openingCorrections ?? []} />
             {todayClose.notes && (
               <p className="text-xs text-brand-dark/50 italic border-t border-brand-muted/50 pt-2">{todayClose.notes}</p>
@@ -971,6 +1087,12 @@ export default function CierreDeCajaPage() {
                           {c.arqueo.diferencia !== 0 && ` (${c.arqueo.diferencia > 0 ? "+" : ""}${fmt(c.arqueo.diferencia)})`}
                         </p>
                       )}
+                      {c.cardReconciliation && (
+                        <p className={`text-xs mt-0.5 ${c.cardReconciliation.difference === 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          Datáfono: {fmt(c.cardReconciliation.reported)}
+                          {c.cardReconciliation.difference !== 0 && ` (${c.cardReconciliation.difference > 0 ? "+" : ""}${fmt(c.cardReconciliation.difference)})`}
+                        </p>
+                      )}
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <ThermalPrintButton
@@ -988,6 +1110,7 @@ export default function CierreDeCajaPage() {
                           profit: c.profit,
                           productsSummary: [],
                           arqueo: c.arqueo,
+                          cardReconciliation: c.cardReconciliation,
                           openingAmount: c.openingAmount,
                           withdrawals: c.withdrawals,
                           withdrawalsTotal: c.withdrawalsTotal,

@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import { CashOpeningCorrectionSchema, type ICashOpeningCorrection } from "@/models/CashOpeningCorrection";
+import type { CardReconciliation } from "@/lib/cardReconciliation";
 
 export interface IProductSummary {
   productId: string;
@@ -44,6 +45,8 @@ export interface ICashClose {
   profit: number;
   productsSummary: IProductSummary[];
   arqueo?: IArqueo;
+  /** Cuadre del datáfono. Solo existe en cierres de días que tuvieron ventas con tarjeta. */
+  cardReconciliation?: CardReconciliation;
   openingAmount: number;
   /** Copia de las correcciones de la apertura hechas mientras la caja estuvo abierta. */
   openingCorrections: ICashOpeningCorrection[];
@@ -89,6 +92,20 @@ const CashCloseSchema = new Schema(
         totalContado:  { type: Number, required: true },
         totalEsperado: { type: Number, required: true },
         diferencia:    { type: Number, required: true },
+      },
+      required: false,
+      default: undefined,
+    },
+    // Sin `default: undefined` Mongoose guardaría un subdocumento vacío en todos los cierres y
+    // la pantalla no podría distinguir "no hubo tarjeta" de "se cuadró en cero".
+    cardReconciliation: {
+      type: {
+        expected:   { type: Number, required: true },
+        reported:   { type: Number, required: true },
+        difference: { type: Number, required: true },
+        note:       { type: String, default: "" },
+        checkedBy:  { type: String, default: "" },
+        checkedAt:  { type: Date,   required: true },
       },
       required: false,
       default: undefined,

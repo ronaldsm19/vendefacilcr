@@ -358,6 +358,7 @@ export interface CashCloseTicketData {
   expensesTotal: number;
   profit: number;
   arqueo?: { totalContado: number; totalEsperado: number; diferencia: number };
+  cardReconciliation?: { expected: number; reported: number; difference: number; note?: string };
   productsSummary?: { productName: string; unitsSold: number }[];
   openingAmount?: number;
   withdrawals?: { amount: number; leftAmount: number; note?: string; date: Date | string }[];
@@ -432,6 +433,14 @@ export function buildCashCloseRows(d: CashCloseTicketData, cfg: TicketConfigData
   rows.push({ t: "lr", left: "  Efectivo", right: money(d.paymentBreakdown.efectivo) });
   rows.push({ t: "lr", left: "  SINPE", right: money(d.paymentBreakdown.sinpe) });
   rows.push({ t: "lr", left: "  Tarjeta", right: money(d.paymentBreakdown.tarjeta) });
+  // El cuadre del datáfono queda impreso junto al total de tarjeta: es el papel que la dueña
+  // compara contra el rollo del datáfono cuando revisa el día.
+  if (d.cardReconciliation) {
+    const { reported, difference, note } = d.cardReconciliation;
+    rows.push({ t: "lr", left: "  Datafono", right: money(reported) });
+    rows.push({ t: "lr", left: "  Dif. datafono", right: `${difference > 0 ? "+" : ""}${money(difference)}` });
+    if (note) rows.push({ t: "left", text: clip(`    ${note}`, 34), size: 7 });
+  }
   rows.push({ t: "divider" });
 
   // CONTEO TURNO ACTUAL

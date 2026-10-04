@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { CASH_DENOMINATIONS, MAX_DENOMINATION_COUNT, expectedCash } from "@/lib/cashCount";
+import { cardDifferenceLabel, MAX_CARD_NOTE, type CardReconciliation } from "@/lib/cardReconciliation";
 
 export interface EditableCashClose {
   _id: string;
@@ -18,6 +19,7 @@ export interface EditableCashClose {
   cashLeft?: number;
   notes?: string;
   arqueo?: { denominaciones?: { valor: number; cantidad: number }[] };
+  cardReconciliation?: Omit<CardReconciliation, "checkedAt"> & { checkedAt: string };
 }
 
 interface EditCashCloseDialogProps {
@@ -48,6 +50,8 @@ export default function EditCashCloseDialog({ close, canEditCashLeft, onClose, o
   const [counts, setCounts] = useState(initialCounts);
   const [cashLeft, setCashLeft] = useState(String(close.cashLeft ?? 0));
   const [notes, setNotes] = useState(close.notes ?? "");
+  const [cardReported, setCardReported] = useState(String(close.cardReconciliation?.reported ?? ""));
+  const [cardNote, setCardNote] = useState(close.cardReconciliation?.note ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -60,8 +64,20 @@ export default function EditCashCloseDialog({ close, canEditCashLeft, onClose, o
   const cashLeftValid = Number.isFinite(cashLeftAmount) && cashLeftAmount >= 0;
   const cashLeftChanged = canEditCashLeft && cashLeftValid && cashLeftAmount !== (close.cashLeft ?? 0);
   const notesChanged = notes !== (close.notes ?? "");
-  const hasChanges = countsChanged || cashLeftChanged || notesChanged;
-  const canSave = hasChanges && !!password && (!canEditCashLeft || cashLeftValid) && !saving;
+
+  // Lo esperado del datáfono no se edita: es lo que vendió el sistema ese día. Solo se re-digita
+  // lo que marcó el aparato, y la diferencia se recalcula sola.
+  const card = close.cardReconciliation;
+  const cardExpected = card?.expected ?? 0;
+  const cardReportedNum = cardReported.trim() === "" ? NaN : Number(cardReported);
+  const cardValid = Number.isFinite(cardReportedNum) && cardReportedNum >= 0;
+  const cardDiff = cardValid ? Math.round((cardReportedNum - cardExpected) * 100) / 100 : 0;
+  const cardNeedsNote = cardValid && cardDiff !== 0 && cardNote.trim() === "";
+  const cardChanged = !!card && cardValid && (cardReportedNum !== card.reported || cardNote.trim() !== (card.note ?? "").trim());
+  const cardBlocked = !!card && (!cardValid || cardNeedsNote);
+
+  const hasChanges = countsChanged || cashLeftChanged || notesChanged || cardChanged;
+  const canSave = hasChanges && !!password && (!canEditCashLeft || cashLeftValid) && !cardBlocked && !saving;
 
   function setCount(valor: number, raw: string) {
     const n = Math.min(MAX_DENOMINATION_COUNT, Math.max(0, parseInt(raw) || 0));
@@ -83,6 +99,7 @@ export default function EditCashCloseDialog({ close, canEditCashLeft, onClose, o
             : {}),
           ...(cashLeftChanged ? { cashLeft: cashLeftAmount } : {}),
           ...(notesChanged ? { notes } : {}),
+          ...(cardChanged ? { cardReconciliation: { reported: cardReportedNum, note: cardNote } } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -169,6 +186,52 @@ export default function EditCashCloseDialog({ close, canEditCashLeft, onClose, o
               </div>
             )}
           </div>
+
+          {card && (
+            <div className="rounded-xl border border-brand-muted p-3 space-y-2">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-brand-dark">Cierre del datáfono</p>
+                  <p className="text-xs text-brand-dark/50">Tarjeta en el sistema: {fmt(cardExpected)}</p>
+                </div>
+                <div className="w-32 shrink-0">
+                  <label htmlFor="edit-close-card" className="block text-[10px] uppercase tracking-wider text-brand-dark/40 mb-1">
+                    Total del datáfono
+                  </label>
+                  <input
+                    id="edit-close-card"
+                    type="number" min={0} step={1} inputMode="numeric"
+                    value={cardReported} placeholder="0"
+                    onChange={(e) => setCardReported(e.target.value)}
+                    className="w-full border border-brand-muted rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-brand-pink"
+                  />
+                </div>
+              </div>
+              {cardValid && (
+                <div className={`flex justify-between items-center text-xs font-semibold rounded-lg px-3 py-2 ${
+                  cardDiff === 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                }`}>
+                  <span>{cardDiff === 0 ? "✓ Cuadra con el sistema" : `⚠ ${cardDifferenceLabel(cardDiff)}`}</span>
+                  <span className="tabular-nums">{cardDiff !== 0 && `${cardDiff > 0 ? "+" : ""}${fmt(cardDiff)}`}</span>
+                </div>
+              )}
+              {cardValid && cardDiff !== 0 && (
+                <div>
+                  <label htmlFor="edit-close-card-note" className="block text-[11px] font-medium text-brand-dark mb-1">
+                    ¿Por qué no cuadra? *
+                  </label>
+                  <textarea
+                    id="edit-close-card-note"
+                    rows={2}
+                    maxLength={MAX_CARD_NOTE}
+                    value={cardNote}
+                    onChange={(e) => setCardNote(e.target.value)}
+                    className="w-full border border-brand-muted rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-brand-pink resize-none"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

@@ -6,6 +6,7 @@ import { Menu } from "lucide-react";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import ReminderToast from "@/components/admin/ReminderToast";
 import { AdminSessionProvider, type AdminSession } from "@/components/admin/SessionContext";
+import { PendingComandasProvider, usePendingComandas } from "@/components/admin/PendingComandasContext";
 import { can, featureForPath, homePathFor, PREMIUM_FEATURES } from "@/lib/permissions";
 
 interface TenantBranding {
@@ -23,6 +24,30 @@ const DEFAULT_BRANDING: TenantBranding = {
   secondaryColor: "#8B5CF6",
   accentColor: "#F59E0B",
 };
+
+/**
+ * En el teléfono el menú vive cerrado, así que el contador de comandas pendientes no se vería
+ * nunca: el botón de la hamburguesa lleva su propio aviso. Va aparte porque necesita leer el
+ * provider que monta AdminShell.
+ */
+function MobileMenuButton({ onOpen }: { onOpen: () => void }) {
+  const { badgeCount } = usePendingComandas();
+  return (
+    <button
+      onClick={onOpen}
+      className="relative p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+      aria-label={badgeCount > 0 ? `Abrir menú · ${badgeCount} comandas pendientes de cobrar` : "Abrir menú"}
+    >
+      <Menu className="w-5 h-5" />
+      {badgeCount > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-amber-400 text-brand-dark text-[10px] font-bold flex items-center justify-center">
+          <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-50" />
+          <span className="relative">{badgeCount}</span>
+        </span>
+      )}
+    </button>
+  );
+}
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -117,6 +142,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   return (
     <AdminSessionProvider value={session}>
+      {/* Dentro del provider de sesión y por fuera del layout: así el contador de comandas se pide
+          una sola vez y lo leen tanto el menú (que se monta dos veces: escritorio y cajón) como la
+          pantalla de turno. */}
+      <PendingComandasProvider>
       <div className="flex h-screen overflow-hidden bg-brand-muted/20">
         {/* Desktop sidebar — el propio AdminSidebar maneja su altura y su scroll interno */}
         <div className="hidden lg:flex shrink-0 h-screen">
@@ -140,13 +169,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Mobile/tablet top bar */}
           <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-brand-dark shrink-0 z-30">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              aria-label="Abrir menú"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+            <MobileMenuButton onOpen={() => setSidebarOpen(true)} />
             <p className="font-brand text-lg font-bold gradient-text">{branding.tenantName}</p>
           </header>
 
@@ -155,6 +178,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
         <ReminderToast />
       </div>
+      </PendingComandasProvider>
     </AdminSessionProvider>
   );
 }

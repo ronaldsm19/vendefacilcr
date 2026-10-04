@@ -5,6 +5,7 @@ import { Expense } from "@/models/Expense";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
 import { dayRangeCR } from "@/lib/crDate";
+import { splitPayments } from "@/lib/payments";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -40,19 +41,10 @@ export async function GET(request: NextRequest) {
   // Totales de ventas
   const salesTotal = sales.reduce((s, sale) => s + (sale.total ?? 0), 0);
 
-  // Desglose por método de pago (los pagos mixtos se reparten por porción)
-  const paymentBreakdown = { efectivo: 0, sinpe: 0, tarjeta: 0 };
-  for (const sale of sales) {
-    if (sale.paymentMethod === "mixto" && sale.mixedPayment) {
-      const mp = sale.mixedPayment as { efectivo?: number; sinpe?: number; tarjeta?: number };
-      paymentBreakdown.efectivo += mp.efectivo ?? 0;
-      paymentBreakdown.sinpe    += mp.sinpe    ?? 0;
-      paymentBreakdown.tarjeta  += mp.tarjeta  ?? 0;
-    } else {
-      const method = sale.paymentMethod as "efectivo" | "sinpe" | "tarjeta";
-      if (method in paymentBreakdown) paymentBreakdown[method] += sale.total ?? 0;
-    }
-  }
+  // Desglose por método de pago (los pagos mixtos se reparten por porción). El cierre vuelve a
+  // calcularlo con esta misma función para validar el datáfono contra las ventas, no contra lo
+  // que mande la pantalla.
+  const paymentBreakdown = splitPayments(sales);
 
   // Gastos del día
   const expensesTotal = expenses.reduce((s, e) => s + (e.total ?? 0), 0);
