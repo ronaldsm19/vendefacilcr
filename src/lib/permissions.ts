@@ -35,7 +35,9 @@ export type Feature =
 
 export const PERMISSIONS: Record<Feature, Role[]> = {
   dashboard:          ["admin"],
-  productos:          ["admin", "cajero"],
+  // Ver el catálogo lo necesita todo el personal: el precio de un producto se lo preguntan al
+  // mesero en la mesa. Editarlo sigue siendo solo del dueño — es lo que se cobra.
+  productos:          ["admin", "cajero", "mesero"],
   "productos:editar": ["admin"],
   inventario:         ["admin"],
   materiales:         ["admin"],

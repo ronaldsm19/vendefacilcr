@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { effectiveStation, isStation } from "@/lib/station";
 import { normalizeExtras } from "@/lib/pricing";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
@@ -14,7 +15,14 @@ export async function GET(request: NextRequest) {
 
   await connectToDatabase();
   await ensureExtrasMigrated(session.tenantId);
-  const raw = await Product.find({ tenantId: session.tenantId }).select("-toppings").sort({ createdAt: -1 }).lean() as Array<Record<string, unknown>>;
+  // El costo es el margen del negocio y no lo muestra ninguna pantalla del personal; solo lo usa
+  // Recetas, que es del dueño. Quien no puede editar productos tampoco se lo lleva en la
+  // respuesta: si no, bastaría abrir las herramientas del navegador para ver cuánto se gana.
+  const hideCost = !can(session, "productos:editar");
+  const raw = await Product.find({ tenantId: session.tenantId })
+    .select(hideCost ? "-toppings -cost" : "-toppings")
+    .sort({ createdAt: -1 })
+    .lean() as Array<Record<string, unknown>>;
   const products = raw.map((p) => ({
     ...p,
     extras: normalizeExtras(p.extras) ?? [],
