@@ -16,9 +16,17 @@ interface ProductFormProps {
   onCancel: () => void;
   saving?: boolean;
   showStation?: boolean;
+  /**
+   * Qué puede tocar quien abrió el formulario. "precios" deja únicamente el precio de venta y
+   * los extras: es lo que la caja necesita cuando sube un costo, sin exponerle el resto de la
+   * ficha. El servidor descarta igual cualquier otro campo, pero mostrarlos editables y después
+   * no guardarlos sería peor que no mostrarlos.
+   */
+  scope?: "full" | "precios";
 }
 
-export default function ProductForm({ initial, onSave, onCancel, saving, showStation }: ProductFormProps) {
+export default function ProductForm({ initial, onSave, onCancel, saving, showStation, scope = "full" }: ProductFormProps) {
+  const full = scope === "full";
   const [form, setForm] = useState({
     name:         initial?.name         ?? "",
     description:  initial?.description  ?? "",
@@ -182,6 +190,25 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-x-8 lg:items-start">
       {/* Columna izquierda: datos del producto */}
       <div className="space-y-4">
+      {!full && (
+        <>
+          <div>
+            <p className="text-sm text-brand-dark/50">Producto</p>
+            <p className="font-semibold text-brand-dark">{initial?.name}</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-brand-dark mb-1">Precio de venta (₡) *</label>
+            <input
+              type="number" required min={0}
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+            />
+          </div>
+        </>
+      )}
+      {full && (
+      <>
       {/* Nombre */}
       <div>
         <label className="block text-sm font-medium text-brand-dark mb-1">Nombre *</label>
@@ -335,10 +362,14 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
           />
         </div>
       )}
+      </>
+      )}
       </div>
 
       {/* Columna derecha (en escritorio): imágenes, extras y ofertas */}
       <div className="space-y-4">
+      {full && (
+      <>
       {/* ── Imagen principal ── */}
       <div>
         <label className="block text-sm font-medium text-brand-dark mb-2">
@@ -478,6 +509,8 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
           Se mostrarán en carrusel · cambian automáticamente cada 1 minuto
         </p>
       </div>
+      </>
+      )}
 
       {/* ── Extras con precio ── */}
       <div>
@@ -539,6 +572,8 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
         {extrasError && <p className="mt-1.5 text-xs text-red-500">{extrasError}</p>}
       </div>
 
+      {full && (
+      <>
       {/* ── Ofertas por cantidad ── */}
       <div>
         <div className="flex items-center justify-between mb-1">
@@ -599,6 +634,8 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
           </div>
         )}
       </div>
+      </>
+      )}
 
       </div>
       </div>
@@ -606,7 +643,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
       {/* Acciones */}
       <div className="flex gap-3 pt-2">
         <Button type="submit" disabled={saving || uploading || uploadingExtra} className="flex-1">
-          {saving ? "Guardando..." : initial?._id ? "Actualizar producto" : "Crear producto"}
+          {saving ? "Guardando..." : !initial?._id ? "Crear producto" : full ? "Actualizar producto" : "Guardar precio y extras"}
         </Button>
         <Button type="button" variant="cancel" onClick={onCancel}>Cancelar</Button>
       </div>
