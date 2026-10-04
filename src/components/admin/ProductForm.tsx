@@ -17,12 +17,12 @@ interface ProductFormProps {
   saving?: boolean;
   showStation?: boolean;
   /**
-   * Qué puede tocar quien abrió el formulario. "precios" deja únicamente el precio de venta y
-   * los extras: es lo que la caja necesita cuando sube un costo, sin exponerle el resto de la
-   * ficha. El servidor descarta igual cualquier otro campo, pero mostrarlos editables y después
-   * no guardarlos sería peor que no mostrarlos.
+   * Qué puede tocar quien abrió el formulario. "ajustes" deja únicamente el precio de venta, los
+   * extras y la disponibilidad: es lo que la caja necesita cuando sube un costo o se acaba algo,
+   * sin exponerle el resto de la ficha. El servidor descarta igual cualquier otro campo, pero
+   * mostrarlos editables y después no guardarlos sería peor que no mostrarlos.
    */
-  scope?: "full" | "precios";
+  scope?: "full" | "ajustes";
 }
 
 export default function ProductForm({ initial, onSave, onCancel, saving, showStation, scope = "full" }: ProductFormProps) {
@@ -184,6 +184,20 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
     });
   }
 
+  // Mismo control en los dos alcances: la caja también lo necesita cuando se acaba algo a media
+  // tarde, y no tiene sentido escribirlo dos veces.
+  const disponibleCheck = (
+    <div className="flex items-center gap-2">
+      <input
+        type="checkbox" id="available"
+        checked={form.available}
+        onChange={(e) => setForm({ ...form, available: e.target.checked })}
+        className="rounded"
+      />
+      <label htmlFor="available" className="text-sm text-brand-dark">Disponible para la venta</label>
+    </div>
+  );
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Dos columnas en escritorio, una en el teléfono */}
@@ -204,6 +218,10 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
               onChange={(e) => setForm({ ...form, price: e.target.value })}
               className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
             />
+          </div>
+          <div>
+            {disponibleCheck}
+            <p className="text-xs text-brand-dark/50 mt-1">Desmarcalo cuando se acabe: deja de aparecer al tomar comandas y en el menú.</p>
           </div>
         </>
       )}
@@ -314,15 +332,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
       </div>
 
       {/* Disponible */}
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox" id="available"
-          checked={form.available}
-          onChange={(e) => setForm({ ...form, available: e.target.checked })}
-          className="rounded"
-        />
-        <label htmlFor="available" className="text-sm text-brand-dark">Disponible para la venta</label>
-      </div>
+      {disponibleCheck}
 
       <div className="flex items-center gap-2">
         <input
@@ -643,7 +653,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
       {/* Acciones */}
       <div className="flex gap-3 pt-2">
         <Button type="submit" disabled={saving || uploading || uploadingExtra} className="flex-1">
-          {saving ? "Guardando..." : !initial?._id ? "Crear producto" : full ? "Actualizar producto" : "Guardar precio y extras"}
+          {saving ? "Guardando..." : !initial?._id ? "Crear producto" : full ? "Actualizar producto" : "Guardar cambios"}
         </Button>
         <Button type="button" variant="cancel" onClick={onCancel}>Cancelar</Button>
       </div>

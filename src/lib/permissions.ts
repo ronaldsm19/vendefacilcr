@@ -15,7 +15,7 @@ export const ERROR_PREMIUM = "Disponible en el plan Premium";
 export type Feature =
   | "dashboard"
   | "productos"            // ver
-  | "productos:precios"    // cambiar precio y extras de un producto que ya existe
+  | "productos:ajustar"    // precio, extras y disponibilidad de un producto que ya existe
   | "productos:editar"     // crear, editar, borrar, importar, categorías, stock
   | "inventario"
   | "materiales"
@@ -39,10 +39,10 @@ export const PERMISSIONS: Record<Feature, Role[]> = {
   // Ver el catálogo lo necesita todo el personal: el precio de un producto se lo preguntan al
   // mesero en la mesa.
   productos:          ["admin", "cajero", "mesero"],
-  // La caja ajusta precios y extras de lo que ya existe, porque es quien está delante cuando
-  // sube un costo o cambia una porción. Crear, borrar e importar siguen siendo del dueño: son
-  // las acciones de las que no se vuelve.
-  "productos:precios": ["admin", "cajero"],
+  // La caja ajusta precio, extras y disponibilidad de lo que ya existe, porque es quien está
+  // delante cuando sube un costo, cambia una porción o se acaba algo a media tarde. Crear,
+  // borrar e importar siguen siendo del dueño: son las acciones de las que no se vuelve.
+  "productos:ajustar": ["admin", "cajero"],
   "productos:editar": ["admin"],
   inventario:         ["admin"],
   materiales:         ["admin"],

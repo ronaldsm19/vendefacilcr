@@ -33,8 +33,8 @@ export async function PUT(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  // La caja puede llegar acá para ajustar precio y extras; el resto de los campos es del dueño.
-  const denied = requireFeature(session, "productos:precios");
+  // La caja llega acá para ajustar precio, extras y disponibilidad; el resto es del dueño.
+  const denied = requireFeature(session, "productos:ajustar");
   if (denied) return denied;
   const fullEdit = can(session, "productos:editar");
 
@@ -51,14 +51,15 @@ export async function PUT(
   delete body._id;
   delete body.toppings;
 
-  // Sin permiso completo solo sobreviven precio y extras. Se descarta todo lo demás en vez de
-  // rechazar la petición: la pantalla ya manda el producto entero y lo que importa es que un
-  // campo que la caja no debería tocar no llegue a guardarse, aunque alguien arme la petición
-  // a mano.
+  // Sin permiso completo solo sobreviven estos tres. Se descarta el resto en vez de rechazar la
+  // petición: la pantalla ya manda el producto entero y lo que importa es que un campo que la
+  // caja no debería tocar no llegue a guardarse, aunque alguien arme la petición a mano.
+  const AJUSTABLES = ["price", "extras", "available"];
   if (!fullEdit) {
     for (const campo of Object.keys(body)) {
-      if (campo !== "price" && campo !== "extras") delete body[campo];
+      if (!AJUSTABLES.includes(campo)) delete body[campo];
     }
+    if (body.available !== undefined) body.available = body.available === true;
   }
   if (body.extras !== undefined) {
     const extras = normalizeExtras(body.extras);
