@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { isStation } from "@/lib/station";
 import { normalizeExtras } from "@/lib/pricing";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
@@ -18,7 +19,10 @@ export async function GET(
   const { id } = await params;
   await connectToDatabase();
   await ensureExtrasMigrated(session.tenantId);
-  const product = await Product.findOne({ _id: id, tenantId: session.tenantId }).select("-toppings").lean();
+  // Mismo criterio que el listado: sin permiso de edición, el costo no viaja.
+  const product = await Product.findOne({ _id: id, tenantId: session.tenantId })
+    .select(can(session, "productos:editar") ? "-toppings" : "-toppings -cost")
+    .lean();
   if (!product) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json({ product });
 }
