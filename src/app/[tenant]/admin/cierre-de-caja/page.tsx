@@ -7,6 +7,8 @@ import { cashCloseTicket, DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@
 import { buildCashClosePayload, printCierre } from "@/lib/printBridge";
 import { CASH_DENOMINATIONS as DENOMS, expectedCash } from "@/lib/cashCount";
 import { cardDifferenceLabel, MAX_CARD_NOTE, type CardReconciliation } from "@/lib/cardReconciliation";
+import { PaymentMethodLabel } from "@/components/admin/PaymentMethodPicker";
+import { SPLIT_METHODS, isPaymentMethod } from "@/lib/payments";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import CorrectOpeningDialog from "@/components/admin/caja/CorrectOpeningDialog";
@@ -107,13 +109,6 @@ function fmtTime(iso: string) {
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("es-CR", { day: "2-digit", month: "long", year: "numeric" });
 }
-
-const METHOD_LABELS: Record<string, string> = {
-  efectivo: "💵 Efectivo",
-  sinpe:    "📱 SINPE",
-  tarjeta:  "💳 Tarjeta",
-  mixto:    "🔀 Mixto",
-};
 
 const CORRECTION_FIELD_LABELS: Record<OpeningCorrection["field"], string> = {
   openingAmount: "la caja inicial",
@@ -619,9 +614,9 @@ export default function CierreDeCajaPage() {
                   ))}
                 </div>
                 <div className="grid grid-cols-3 gap-2 pt-1 border-t border-brand-muted/50">
-                  {(["efectivo", "sinpe", "tarjeta"] as const).map((m) => (
+                  {SPLIT_METHODS.map((m) => (
                     <div key={m} className="text-center">
-                      <p className="text-[10px] text-brand-dark/40 mb-0.5">{METHOD_LABELS[m]}</p>
+                      <PaymentMethodLabel method={m} iconClass="w-3 h-3" className="text-[10px] text-brand-dark/40 mb-0.5" />
                       <p className="text-sm font-bold text-brand-dark">{fmt(today?.paymentBreakdown[m] ?? 0)}</p>
                     </div>
                   ))}
@@ -965,13 +960,15 @@ export default function CierreDeCajaPage() {
                           <td className="py-1.5 pr-3 text-brand-dark/60 font-mono text-xs">{fmtTime(sale.saleDate)}</td>
                           <td className="py-1.5 pr-3 text-brand-dark/70 text-xs">{sale.cashUserName || "—"}</td>
                           <td className="py-1.5 pr-3">
-                            <span className="text-xs">{METHOD_LABELS[sale.paymentMethod] ?? sale.paymentMethod}</span>
+                            {isPaymentMethod(sale.paymentMethod)
+                              ? <PaymentMethodLabel method={sale.paymentMethod} iconClass="w-3.5 h-3.5" className="text-xs font-medium text-brand-dark" />
+                              : <span className="text-xs">{sale.paymentMethod}</span>}
                             {sale.paymentMethod === "mixto" && sale.mixedPayment && (
                               <div className="mt-0.5 space-y-0.5">
-                                {(["efectivo", "sinpe", "tarjeta"] as const).map((m) =>
+                                {SPLIT_METHODS.map((m) =>
                                   (sale.mixedPayment![m] ?? 0) > 0 ? (
                                     <div key={m} className="text-[10px] text-brand-dark/40">
-                                      {METHOD_LABELS[m]}: {fmt(sale.mixedPayment![m])}
+                                      <PaymentMethodLabel method={m} iconClass="w-2.5 h-2.5" />: {fmt(sale.mixedPayment![m])}
                                     </div>
                                   ) : null
                                 )}

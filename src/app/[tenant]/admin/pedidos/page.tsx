@@ -11,6 +11,8 @@ import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
 import { computeSaleTotals, extraLabel, extraQty, isOrderType, lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
+import PaymentMethodPicker, { PaymentMethodChip, PaymentMethodLabel } from "@/components/admin/PaymentMethodPicker";
+import { SPLIT_METHODS, isPaymentMethod } from "@/lib/payments";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -572,8 +574,8 @@ export default function AdminOrdersPage() {
                       {new Date(item.date).toLocaleTimeString("es-CR", { hour:"2-digit", minute:"2-digit" })}
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell text-brand-dark/60 text-xs">
-                      {item.source === "pos" && item.paymentMethod
-                        ? <span className="px-2 py-0.5 rounded-full bg-brand-muted text-brand-dark/70">{item.paymentMethod}</span>
+                      {item.source === "pos" && isPaymentMethod(item.paymentMethod)
+                        ? <PaymentMethodChip method={item.paymentMethod} variant="soft" />
                         : item.notes || `${item.itemCount} ítem${item.itemCount !== 1 ? "s" : ""}`
                       }
                     </td>
@@ -829,20 +831,16 @@ export default function AdminOrdersPage() {
                 {/* Método de pago */}
                 <div>
                   <label className="block text-xs font-medium text-brand-dark/60 mb-2">Método de pago</label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(["efectivo", "sinpe", "tarjeta", "mixto"] as const).map((m) => (
-                      <button key={m} type="button"
-                        onClick={() => setEditSale({ ...editSale, paymentMethod: m })}
-                        className={`py-2 rounded-xl text-xs font-semibold border-2 transition-all ${editSale.paymentMethod === m ? "border-brand-pink bg-brand-pink/10 text-brand-pink" : "border-brand-muted text-brand-dark/40"}`}>
-                        {m === "efectivo" ? "💵 Efectivo" : m === "sinpe" ? "📱 SINPE" : m === "tarjeta" ? "💳 Tarjeta" : "🔀 Mixto"}
-                      </button>
-                    ))}
-                  </div>
+                  <PaymentMethodPicker
+                    compact
+                    value={editSale.paymentMethod}
+                    onChange={(m) => setEditSale({ ...editSale, paymentMethod: m })}
+                  />
                   {editSale.paymentMethod === "mixto" && (
                     <div className="mt-3 space-y-2">
-                      {(["efectivo", "sinpe", "tarjeta"] as const).map((m) => (
+                      {SPLIT_METHODS.map((m) => (
                         <div key={m} className="flex items-center gap-3">
-                          <span className="text-sm text-gray-600 w-20 shrink-0">{m === "efectivo" ? "💵 Efectivo" : m === "sinpe" ? "📱 SINPE" : "💳 Tarjeta"}</span>
+                          <PaymentMethodLabel method={m} iconClass="w-4 h-4" className="text-sm font-semibold text-brand-dark w-24 shrink-0" />
                           <input type="number" min={0} value={editSale.mixedPayment[m]}
                             onChange={(e) => setEditSale({ ...editSale, mixedPayment: { ...editSale.mixedPayment, [m]: Number(e.target.value) } })}
                             className="flex-1 text-right border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-semibold focus:outline-none focus:border-brand-pink" />

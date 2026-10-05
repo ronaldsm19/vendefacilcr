@@ -18,6 +18,11 @@ export function emptyBreakdown(): PaymentBreakdown {
 /** Orden en que se ofrecen al cobrar: de la más usada a la menos. */
 export const PAYMENT_METHODS: PaymentMethod[] = ["efectivo", "sinpe", "tarjeta", "mixto"];
 
+/** Para datos que vienen de la base o de una API y podrían traer cualquier cosa. */
+export function isPaymentMethod(v: unknown): v is PaymentMethod {
+  return typeof v === "string" && (PAYMENT_METHODS as string[]).includes(v);
+}
+
 /** Las tres que pueden repartirse en un pago mixto. "mixto" no se reparte a sí mismo. */
 export const SPLIT_METHODS: Exclude<PaymentMethod, "mixto">[] = ["efectivo", "sinpe", "tarjeta"];
 
