@@ -1,3 +1,4 @@
+import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/payments";
 // Generador de tickets en PDF con formato térmico (80mm, monoespaciado).
 // Se usa en el POS (venta), Cierre de caja, y como preview en vivo en Configuración.
 //
@@ -122,13 +123,6 @@ export const DEFAULT_TICKET_CONFIG: TicketConfigData = {
   footerMessage: "¡Gracias por su compra!",
   terminalNumber: "1",
   ticketPrefix: "",
-};
-
-const METHOD_LABEL: Record<string, string> = {
-  efectivo: "Efectivo",
-  sinpe: "SINPE",
-  tarjeta: "Tarjeta",
-  mixto: "Mixto",
 };
 
 // ── Ticket de VENTA ───────────────────────────────────────────────
@@ -320,11 +314,14 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
     rows.push({ t: "lr", left: "Recibido", right: money(d.amountPaid ?? 0) });
     rows.push({ t: "lr", left: "Vuelto", right: money(d.changeGiven ?? 0), bold: true });
   }
-  rows.push({ t: "center", text: `Forma de pago: ${METHOD_LABEL[d.paymentMethod] ?? d.paymentMethod}` });
+  // El tipo admite cualquier cadena por compatibilidad con tickets viejos: si no es una de las
+  // cuatro, se imprime tal cual en vez de dejar el renglón vacío.
+  const metodo = isPaymentMethod(d.paymentMethod) ? PAYMENT_METHOD_LABELS[d.paymentMethod] : d.paymentMethod;
+  rows.push({ t: "center", text: `Forma de pago: ${metodo}` });
   if (d.paymentMethod === "mixto" && d.mixedPayment) {
     for (const m of ["efectivo", "sinpe", "tarjeta"] as const) {
       if ((d.mixedPayment[m] ?? 0) > 0)
-        rows.push({ t: "center", text: `${METHOD_LABEL[m]}: ${money(d.mixedPayment[m])}`, size: 8 });
+        rows.push({ t: "center", text: `${PAYMENT_METHOD_LABELS[m]}: ${money(d.mixedPayment[m])}`, size: 8 });
     }
   }
 

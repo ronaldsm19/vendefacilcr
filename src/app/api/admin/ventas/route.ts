@@ -44,13 +44,6 @@ export async function GET(request: NextRequest) {
     }).lean<ISale[]>(),
   ]);
 
-  const METHOD_LABELS: Record<string, string> = {
-    efectivo: "Efectivo",
-    sinpe:    "SINPE",
-    tarjeta:  "Tarjeta",
-    mixto:    "Mixto",
-  };
-
   const items = [
     ...orders.map((o) => ({
       id:            String(o._id),
@@ -72,7 +65,8 @@ export async function GET(request: NextRequest) {
       ticketNumber:  s.ticketNumber ?? null,
       total:         s.total ?? 0,
       paid:          true,
-      paymentMethod: METHOD_LABELS[s.paymentMethod] ?? s.paymentMethod,
+      // La clave cruda: la pantalla le pone nombre, icono y color con lib/payments.
+      paymentMethod: s.paymentMethod,
       cashierName:   s.cashUserName ?? "",
       notes:         s.notes ?? "",
       itemCount:     s.items?.length ?? 0,

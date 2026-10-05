@@ -81,16 +81,59 @@ export default function PaymentMethodPicker({
   );
 }
 
-/** La forma de pago ya elegida, para recordarla al confirmar el cobro o en un resumen. */
-export function PaymentMethodChip({ method, className = "" }: { method: PaymentMethod; className?: string }) {
+/**
+ * La forma de pago ya elegida, para recordarla al confirmar el cobro o marcarla en una lista.
+ * `solid` pesa y sirve para un solo dato destacado; `soft` es para una columna de tabla, donde
+ * cuatro píldoras llenas de color pelearían con todo lo demás.
+ */
+export function PaymentMethodChip({
+  method,
+  variant = "solid",
+  className = "",
+}: {
+  method: PaymentMethod;
+  variant?: "solid" | "soft";
+  className?: string;
+}) {
   const Icon = PAYMENT_METHOD_ICONS[method];
   const style = PAYMENT_METHOD_STYLE[method];
+  const solid = variant === "solid";
   return (
     <span
-      style={{ background: style.bg, color: style.ink }}
+      style={
+        solid
+          ? { background: style.bg, color: style.ink }
+          : { background: `${style.accent}1a`, color: style.accent }
+      }
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${className}`}
     >
-      <Icon className="w-3.5 h-3.5" strokeWidth={2.4} />
+      <Icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2.4} />
+      {PAYMENT_METHOD_LABELS[method]}
+    </span>
+  );
+}
+
+/**
+ * Icono y nombre sueltos, sin fondo: para filas densas y resúmenes donde lo que manda es el
+ * monto y la forma de pago solo tiene que reconocerse de reojo. El color va en el icono.
+ */
+export function PaymentMethodLabel({
+  method,
+  className = "",
+  iconClass = "w-3.5 h-3.5",
+}: {
+  method: PaymentMethod;
+  className?: string;
+  iconClass?: string;
+}) {
+  const Icon = PAYMENT_METHOD_ICONS[method];
+  return (
+    <span className={`inline-flex items-center gap-1 ${className}`}>
+      <Icon
+        className={`${iconClass} shrink-0`}
+        strokeWidth={2.4}
+        style={{ color: PAYMENT_METHOD_STYLE[method].accent }}
+      />
       {PAYMENT_METHOD_LABELS[method]}
     </span>
   );
