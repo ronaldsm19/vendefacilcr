@@ -15,6 +15,51 @@ export function emptyBreakdown(): PaymentBreakdown {
   return { efectivo: 0, sinpe: 0, tarjeta: 0 };
 }
 
+/** Orden en que se ofrecen al cobrar: de la más usada a la menos. */
+export const PAYMENT_METHODS: PaymentMethod[] = ["efectivo", "sinpe", "tarjeta", "mixto"];
+
+/** Las tres que pueden repartirse en un pago mixto. "mixto" no se reparte a sí mismo. */
+export const SPLIT_METHODS: Exclude<PaymentMethod, "mixto">[] = ["efectivo", "sinpe", "tarjeta"];
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  efectivo: "Efectivo",
+  sinpe:    "SINPE",
+  tarjeta:  "Tarjeta",
+  mixto:    "Mixto",
+};
+
+/** Para el ticket y cualquier texto plano, donde no hay iconos. */
+export const PAYMENT_METHOD_EMOJI: Record<PaymentMethod, string> = {
+  efectivo: "💵",
+  sinpe:    "📱",
+  tarjeta:  "💳",
+  mixto:    "🔀",
+};
+
+export interface PaymentMethodStyle {
+  /** Relleno de la opción elegida. */
+  bg: string;
+  /** Texto e icono sobre `bg`. */
+  ink: string;
+  /** Borde e icono cuando la opción NO está elegida, sobre blanco. */
+  accent: string;
+}
+
+/**
+ * Un color fijo por forma de pago, a propósito fuera de la paleta del negocio: acá el color no
+ * decora, dice cuál es, y tiene que significar lo mismo en todos los negocios. Verde plata,
+ * gris SINPE, azul tarjeta y ámbar para el repartido.
+ *
+ * `accent` no siempre es `bg`: el ámbar sobre blanco casi no se ve, así que el borde y el icono
+ * van en un tono más oscuro que el relleno.
+ */
+export const PAYMENT_METHOD_STYLE: Record<PaymentMethod, PaymentMethodStyle> = {
+  efectivo: { bg: "#16a34a", ink: "#ffffff", accent: "#16a34a" },
+  sinpe:    { bg: "#475569", ink: "#ffffff", accent: "#475569" },
+  tarjeta:  { bg: "#2563eb", ink: "#ffffff", accent: "#2563eb" },
+  mixto:    { bg: "#f59e0b", ink: "#1a1a2e", accent: "#b45309" },
+};
+
 interface SaleLike {
   total?: number;
   paymentMethod?: string;

@@ -14,6 +14,8 @@ import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import AddToComandaPanel from "@/components/admin/AddToComandaPanel";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import PendingComandasBanner from "@/components/admin/PendingComandasBanner";
+import PaymentMethodPicker, { PaymentMethodChip, PAYMENT_METHOD_ICONS } from "@/components/admin/PaymentMethodPicker";
+import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_STYLE, SPLIT_METHODS, type PaymentMethod } from "@/lib/payments";
 import { notifyComandasUpdated } from "@/components/admin/PendingComandasContext";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
@@ -341,7 +343,7 @@ function PosPageInner() {
   const [customerName, setCustomerName] = useState("");
   const [tableNumber, setTableNumber]   = useState("");
   const [observaciones, setObservaciones] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "sinpe" | "tarjeta" | "mixto">("efectivo");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [showMixedModal, setShowMixedModal] = useState(false);
   const [mixedAmounts, setMixedAmounts]     = useState({ efectivo: 0, sinpe: 0, tarjeta: 0 });
   const [showCartPanel, setShowCartPanel]   = useState(false);
@@ -553,6 +555,15 @@ function PosPageInner() {
     setOrderType(type);
     if (type !== "PICKUP")  setPickupTime("");
     if (type !== "EXPRESS") { setDeliveryAddress(""); setDeliveryPhone(""); setDeliveryFee(0); }
+  }
+
+  /** Elegir "mixto" abre de una el reparto, con todo puesto en efectivo como punto de partida. */
+  function choosePaymentMethod(m: PaymentMethod) {
+    setPaymentMethod(m);
+    if (m === "mixto") {
+      setMixedAmounts({ efectivo: total, sinpe: 0, tarjeta: 0 });
+      setShowMixedModal(true);
+    }
   }
 
   function openQtyModal(product: ProductRow) {
@@ -1211,27 +1222,9 @@ function PosPageInner() {
             </div>
 
             {/* Método de pago */}
-            <div className="grid grid-cols-2 gap-1.5">
-              {(["efectivo", "sinpe", "tarjeta", "mixto"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => {
-                    setPaymentMethod(m);
-                    if (m === "mixto") {
-                      setMixedAmounts({ efectivo: total, sinpe: 0, tarjeta: 0 });
-                      setShowMixedModal(true);
-                    }
-                  }}
-                  className={`py-1.5 rounded-xl text-xs font-semibold border-2 transition-all ${
-                    paymentMethod === m
-                      ? "border-brand-pink bg-brand-pink/10 text-brand-pink"
-                      : "border-brand-muted text-brand-dark/40 hover:border-brand-pink/40"
-                  }`}
-                >
-                  {m === "efectivo" ? "💵 Efectivo" : m === "sinpe" ? "📱 SINPE" : m === "tarjeta" ? "💳 Tarjeta" : "🔀 Mixto"}
-                </button>
-              ))}
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-dark/40 mb-1.5">¿Cómo paga?</p>
+              <PaymentMethodPicker compact value={paymentMethod} onChange={choosePaymentMethod} />
             </div>
 
             {/* Error de venta */}
@@ -1515,17 +1508,9 @@ function PosPageInner() {
               <span className="text-brand-pink text-lg">{fmt(total)}</span>
             </div>
             {/* Métodos de pago */}
-            <div className="grid grid-cols-2 gap-1.5">
-              {(["efectivo", "sinpe", "tarjeta", "mixto"] as const).map((m) => (
-                <button key={m} type="button"
-                  onClick={() => {
-                    setPaymentMethod(m);
-                    if (m === "mixto") { setMixedAmounts({ efectivo: total, sinpe: 0, tarjeta: 0 }); setShowMixedModal(true); }
-                  }}
-                  className={`py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${paymentMethod === m ? "border-brand-pink bg-brand-pink/10 text-brand-pink" : "border-brand-muted text-brand-dark/40 hover:border-brand-pink/40"}`}>
-                  {m === "efectivo" ? "💵 Efectivo" : m === "sinpe" ? "📱 SINPE" : m === "tarjeta" ? "💳 Tarjeta" : "🔀 Mixto"}
-                </button>
-              ))}
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-dark/40 mb-1.5">¿Cómo paga?</p>
+              <PaymentMethodPicker value={paymentMethod} onChange={choosePaymentMethod} />
             </div>
             {renderSaleError()}
             <Button className="w-full py-3 text-base" disabled={cart.length === 0 || saving} onClick={openPaymentModal}>
@@ -1584,14 +1569,14 @@ function PosPageInner() {
             <div className="text-center py-2.5 bg-gray-50 rounded-2xl">
               <p className="text-xs text-gray-500 mb-0.5">Total a pagar</p>
               <p className="text-3xl font-bold text-brand-pink">{fmt(total)}</p>
-              {paymentMethod !== "efectivo" && (
-                <p className="text-xs text-gray-400 mt-1">
-                  {paymentMethod === "sinpe" ? "📱 SINPE" : paymentMethod === "tarjeta" ? "💳 Tarjeta" : "🔀 Mixto"}
-                  {paymentMethod === "mixto" && mixedAmounts.efectivo > 0 && (
-                    <span className="ml-1">· efectivo {fmt(mixedAmounts.efectivo)}</span>
-                  )}
-                </p>
-              )}
+              {/* La forma de pago se repite acá, también cuando es efectivo: es el último momento
+                  para darse cuenta de que se marcó la que no era. */}
+              <div className="mt-1.5 flex items-center justify-center gap-1.5 flex-wrap">
+                <PaymentMethodChip method={paymentMethod} />
+                {paymentMethod === "mixto" && mixedAmounts.efectivo > 0 && (
+                  <span className="text-xs text-gray-400">efectivo {fmt(mixedAmounts.efectivo)}</span>
+                )}
+              </div>
             </div>
 
             {needsChangeCalc ? (<>
@@ -1686,23 +1671,28 @@ function PosPageInner() {
           </DialogHeader>
           <div className="space-y-4 px-6 pb-6 pt-2">
             <p className="text-sm text-gray-500">Total a repartir: <span className="font-bold text-gray-900">{fmt(total)}</span></p>
-            {(["efectivo", "sinpe", "tarjeta"] as const).map((m) => (
-              <div key={m} className="flex items-center gap-4">
-                <span className="text-sm text-gray-600 w-20 shrink-0">
-                  {m === "efectivo" ? "💵 Efectivo" : m === "sinpe" ? "📱 SINPE" : "💳 Tarjeta"}
-                </span>
-                <div className="flex items-center gap-1 flex-1">
-                  <span className="text-xs text-gray-400">₡</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={mixedAmounts[m]}
-                    onChange={(e) => setMixedAmounts((prev) => ({ ...prev, [m]: Math.max(0, Number(e.target.value)) }))}
-                    className="flex-1 text-right border border-gray-200 rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none focus:border-brand-pink"
-                  />
+            {SPLIT_METHODS.map((m) => {
+              const Icon = PAYMENT_METHOD_ICONS[m];
+              const style = PAYMENT_METHOD_STYLE[m];
+              return (
+                <div key={m} className="flex items-center gap-3">
+                  <span className="flex items-center gap-1.5 w-24 shrink-0 text-sm font-semibold text-brand-dark">
+                    <Icon className="w-4 h-4 shrink-0" style={{ color: style.accent }} strokeWidth={2.4} />
+                    {PAYMENT_METHOD_LABELS[m]}
+                  </span>
+                  <div className="flex items-center gap-1 flex-1">
+                    <span className="text-xs text-gray-400">₡</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={mixedAmounts[m]}
+                      onChange={(e) => setMixedAmounts((prev) => ({ ...prev, [m]: Math.max(0, Number(e.target.value)) }))}
+                      className="flex-1 text-right border border-gray-200 rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none focus:border-brand-pink"
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {/* Restante */}
             <div className={`flex justify-between text-sm font-semibold pt-2 border-t ${mixedRemainder === 0 ? "text-emerald-600" : "text-red-500"}`}>
               <span>{mixedRemainder > 0 ? "Restante" : mixedRemainder < 0 ? "Exceso" : "✓ Cuadra"}</span>
