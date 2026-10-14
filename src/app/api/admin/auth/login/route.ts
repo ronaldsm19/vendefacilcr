@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { signJwt, COOKIE_NAME } from "@/lib/auth";
+import { signJwt, setSessionCookie } from "@/lib/auth";
 import { authenticate } from "@/server/services/auth";
 import { ServiceError } from "@/server/errors";
 
@@ -37,15 +37,7 @@ export async function POST(request: NextRequest) {
       redirectTo: result.redirectTo,
     });
 
-    response.cookies.set(COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24, // 24 horas
-    });
-
-    return response;
+    return setSessionCookie(response, token);
   } catch (error) {
     if (error instanceof ServiceError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

@@ -2,20 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Tenant } from "@/models/Tenant";
 import { StaffUser } from "@/models/StaffUser";
-import { getSession, COOKIE_NAME } from "@/lib/auth";
+import { getSession, signJwt, setSessionCookie, clearSessionCookie } from "@/lib/auth";
 import { isPremiumPlan } from "@/lib/permissions";
 import { DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@/lib/ticket";
 
 function loggedOut(): NextResponse {
-  const response = NextResponse.json({ error: "No autenticado" }, { status: 401 });
-  response.cookies.set(COOKIE_NAME, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 0,
-  });
-  return response;
+  return clearSessionCookie(NextResponse.json({ error: "No autenticado" }, { status: 401 }));
 }
 
 export async function GET(request: NextRequest) {
@@ -45,7 +37,7 @@ export async function GET(request: NextRequest) {
     if (!alive) return loggedOut();
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     email:          session.email ?? "",
     role:           session.role,
     userId:         session.userId,
@@ -62,4 +54,11 @@ export async function GET(request: NextRequest) {
     accentColor:    (tenant?.theme?.accentColor    as string) ?? "#F59E0B",
     ticketConfig:   { ...DEFAULT_TICKET_CONFIG, ...(tenant?.ticketConfig ?? {}) },
   });
+
+  // Sesión deslizante. El panel llama a este endpoint al abrirse, al navegar y cada pocos minutos,
+  // así que la computadora del negocio renueva su sesión sola mientras se usa. Antes la cookie se
+  // emitía solo al entrar y a las 24 h moría en silencio: la pantalla seguía pintada con los datos
+  // viejos y el primer marcaje del día respondía "No autorizado", que se leía como un PIN malo.
+  // Lo de arriba ya revalidó contra la base que el personal siga activo, así que renovar es seguro.
+  return setSessionCookie(response, await signJwt(session));
 }
