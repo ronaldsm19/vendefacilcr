@@ -16,12 +16,42 @@ export interface AdminPayload {
   email?: string;           // solo admin
 }
 
+/**
+ * Cuánto vive la sesión del panel sin que nadie la toque. Se renueva sola mientras el panel está
+ * abierto (ver setSessionCookie), así que esto es el tiempo que aguanta una computadora apagada o
+ * una pestaña cerrada, no el turno de trabajo.
+ */
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24;
+
 export async function signJwt(payload: AdminPayload): Promise<string> {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("24h")
+    // La misma constante que la cookie: si se separaran, el token moriría antes que la cookie y
+    // la pantalla seguiría creyéndose con sesión.
+    .setExpirationTime(`${SESSION_MAX_AGE_SECONDS}s`)
     .sign(JWT_SECRET);
+}
+
+/** Opciones de la cookie de sesión, en un solo lugar para que login, renovación y cierre coincidan. */
+function sessionCookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge,
+  };
+}
+
+export function setSessionCookie(response: NextResponse, token: string): NextResponse {
+  response.cookies.set(COOKIE_NAME, token, sessionCookieOptions(SESSION_MAX_AGE_SECONDS));
+  return response;
+}
+
+export function clearSessionCookie(response: NextResponse): NextResponse {
+  response.cookies.set(COOKIE_NAME, "", sessionCookieOptions(0));
+  return response;
 }
 
 export async function verifyJwt(token: string): Promise<AdminPayload | null> {

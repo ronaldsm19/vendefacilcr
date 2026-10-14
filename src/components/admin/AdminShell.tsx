@@ -1,13 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import ReminderToast from "@/components/admin/ReminderToast";
 import { AdminSessionProvider, type AdminSession } from "@/components/admin/SessionContext";
 import { PendingComandasProvider, usePendingComandas } from "@/components/admin/PendingComandasContext";
+import SessionExpiredDialog from "@/components/admin/SessionExpiredDialog";
+import { usePolling } from "@/hooks/usePolling";
+import { watchUnauthorized } from "@/lib/sessionWatch";
 import { can, featureForPath, homePathFor, PREMIUM_FEATURES } from "@/lib/permissions";
+
+/**
+ * Cada diez minutos el panel vuelve a preguntar quién es, y esa llamada renueva la cookie. Una
+ * computadora de negocio que queda abierta todo el día nunca se queda sin sesión; una que nadie
+ * tocó en 24 h sí, que es lo que se quiere. usePolling se duerme con la pestaña escondida y hace
+ * un tiro apenas vuelve a verse, así que al despertar la máquina lo primero que pasa es esto.
+ */
+const SESSION_PING_MS = 10 * 60 * 1000;
 
 interface TenantBranding {
   tenantName: string;
@@ -56,6 +67,18 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const [authChecked, setAuthChecked] = useState(false);
   const [branding, setBranding] = useState<TenantBranding>(DEFAULT_BRANDING);
   const [session, setSession] = useState<AdminSession | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  const isLoginPage = pathname.endsWith("/admin/login");
+
+  // Cualquier 401 del panel significa que ya no hay sesión, venga de la pantalla que venga.
+  useEffect(() => watchUnauthorized(() => setSessionExpired(true)), []);
+
+  const pingSession = useCallback(async () => {
+    const res = await fetch("/api/admin/auth/me");
+    if (res.status === 401) setSessionExpired(true);
+  }, []);
+  usePolling(pingSession, SESSION_PING_MS, authChecked && !isLoginPage);
 
   // Close sidebar on navigation
   useEffect(() => {
@@ -177,6 +200,11 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
         </div>
 
         <ReminderToast />
+        {sessionExpired && (
+          <SessionExpiredDialog
+            onLogin={() => router.replace(`/${pathname.split("/")[1]}/admin/login`)}
+          />
+        )}
       </div>
       </PendingComandasProvider>
     </AdminSessionProvider>

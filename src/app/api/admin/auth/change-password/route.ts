@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { connectToDatabase } from "@/lib/mongodb";
 import { User } from "@/models/User";
 import { Tenant } from "@/models/Tenant";
-import { getSession, COOKIE_NAME, forbidden } from "@/lib/auth";
+import { getSession, clearSessionCookie, forbidden } from "@/lib/auth";
 import { sendMail, passwordChangedEmailHtml } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
@@ -50,12 +50,5 @@ export async function POST(request: NextRequest) {
 
   // Cerrar la sesión: borrar la cookie
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(COOKIE_NAME, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 0,
-  });
-  return response;
+  return clearSessionCookie(response);
 }
