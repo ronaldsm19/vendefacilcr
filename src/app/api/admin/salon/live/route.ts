@@ -5,9 +5,17 @@ import { TableArea } from "@/models/TableArea";
 import { SalonTable } from "@/models/SalonTable";
 import { Tenant } from "@/models/Tenant";
 import { Comanda } from "@/models/Comanda";
+import { PrintJob } from "@/models/PrintJob";
 import { getSession } from "@/lib/auth";
 import { isTableStatus } from "@/lib/tableStatus";
 import { readComandaConfig } from "@/lib/comandaConfig";
+
+/**
+ * El agente de la PC toma cada comanda en pocos segundos (consulta cada 2,5 s). Una que lleva
+ * más de esto esperando significa que nadie la está tomando: el agente está apagado, trabado o
+ * con el token equivocado, y en la cocina no salió nada.
+ */
+const PRINT_STUCK_MS = 60_000;
 
 interface ComandaStatsRow {
   _id: mongoose.Types.ObjectId;
@@ -24,12 +32,17 @@ export async function GET(request: NextRequest) {
   await connectToDatabase();
 
   const now = new Date();
-  const [areas, tables, tenant, comandaRows] = await Promise.all([
+  const pendingPrint = { tenantId: session.tenantId, type: "comanda", status: "pending" };
+  const [areas, tables, tenant, comandaRows, oldestPendingPrint, pendingPrintCount] = await Promise.all([
     TableArea.find({ tenantId: session.tenantId }).sort({ order: 1 }).select("name color order").lean(),
     SalonTable.find({ tenantId: session.tenantId })
       .select("areaId label shape seats x y status statusNote occupiedAt dirtyAt")
       .lean(),
-    Tenant.findById(session.tenantId).select("comandaConfig").lean() as Promise<{ comandaConfig?: { warnMinutes?: number; alertMinutes?: number } } | null>,
+    Tenant.findById(session.tenantId).select("comandaConfig plan printAgentLastSeenAt").lean() as Promise<{
+      comandaConfig?: { warnMinutes?: number; alertMinutes?: number };
+      plan?: string;
+      printAgentLastSeenAt?: Date | null;
+    } | null>,
     Comanda.aggregate<ComandaStatsRow>([
       { $match: { tenantId: new mongoose.Types.ObjectId(session.tenantId), status: { $in: ["enviada", "servida"] } } },
       { $group: {
@@ -40,7 +53,19 @@ export async function GET(request: NextRequest) {
           activeMinutes: { $push: { $cond: [ { $eq: ["$status", "enviada"] }, { $divide: [ { $subtract: [now, "$sentAt"] }, 60000 ] }, null ] } },
       } },
     ]),
+    PrintJob.findOne(pendingPrint).sort({ createdAt: 1 }).select("createdAt").lean() as Promise<{ createdAt: Date } | null>,
+    PrintJob.countDocuments(pendingPrint),
   ]);
+
+  // Solo premium imprime comandas. El aviso sale cuando la más vieja en espera pasó el límite.
+  const printAlert = tenant?.plan === "premium" && oldestPendingPrint
+    && now.getTime() - new Date(oldestPendingPrint.createdAt).getTime() >= PRINT_STUCK_MS
+    ? {
+        pendingCount: pendingPrintCount,
+        oldestPendingAt: new Date(oldestPendingPrint.createdAt).toISOString(),
+        agentLastSeenAt: tenant.printAgentLastSeenAt ? new Date(tenant.printAgentLastSeenAt).toISOString() : null,
+      }
+    : null;
 
   const statsByTable = new Map(comandaRows.map((r) => {
     const nonNull = r.activeMinutes.filter((m): m is number => m !== null);
@@ -58,6 +83,7 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.json({
     now: now.toISOString(),
     comandaConfig: readComandaConfig(tenant?.comandaConfig),
+    printAlert,
     areas: areas.map((a) => ({
       _id: String(a._id),
       name: a.name,

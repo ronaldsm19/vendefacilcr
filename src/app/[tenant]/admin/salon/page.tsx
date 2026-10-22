@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import PendingComandasBanner from "@/components/admin/PendingComandasBanner";
+import PrintAlertBanner, { type PrintAlert } from "@/components/admin/PrintAlertBanner";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePolling } from "@/hooks/usePolling";
@@ -453,6 +454,7 @@ export default function SalonPage() {
   // badge de comandas, que ya usa el `now` del servidor — de lo contrario el desfase entre cuándo
   // llegó la respuesta y cuándo se pinta el render sumaba minutos de diferencia entre los dos.
   const [liveNow, setLiveNow] = useState<Date>(new Date());
+  const [printAlert, setPrintAlert] = useState<PrintAlert | null>(null);
 
   // Mobile view state
   const [view, setView] = useState<"map" | "list">("map");
@@ -507,6 +509,7 @@ export default function SalonPage() {
     setTables(liveRes.tables ?? []);
     setLiveConfig(liveRes.comandaConfig ?? DEFAULT_COMANDA_CONFIG);
     if (liveRes.now) setLiveNow(new Date(liveRes.now));
+    setPrintAlert(liveRes.printAlert ?? null);
     setWalls(wallsRes.walls ?? []);
     setActiveAreaId(prev => prev ?? loadedAreas[0]?._id ?? null);
     setLoading(false);
@@ -522,6 +525,7 @@ export default function SalonPage() {
     setTables(d.tables ?? []);
     setLiveConfig(d.comandaConfig ?? DEFAULT_COMANDA_CONFIG);
     if (d.now) setLiveNow(new Date(d.now));
+    setPrintAlert(d.printAlert ?? null);
     setActiveAreaId(prev => prev ?? d.areas?.[0]?._id ?? null);
   }, []);
 
@@ -965,6 +969,9 @@ export default function SalonPage() {
 
       {/* Comandas sin cobrar — el salón es la pantalla donde vive la mesera */}
       {session.isPremium && <PendingComandasBanner className="mx-4 mt-3 shrink-0" />}
+
+      {/* Comandas que no se imprimen: el agente de la PC no las está tomando */}
+      <PrintAlertBanner alert={printAlert} role={session.role} slug={slug} className="mx-4 mt-3 shrink-0" />
 
       {/* Area tabs */}
       <div className="shrink-0 flex items-center border-b border-brand-muted bg-white overflow-x-auto px-2">
