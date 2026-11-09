@@ -10,6 +10,7 @@ import { PendingComandasProvider, usePendingComandas } from "@/components/admin/
 import SessionExpiredDialog from "@/components/admin/SessionExpiredDialog";
 import { usePolling } from "@/hooks/usePolling";
 import { watchUnauthorized } from "@/lib/sessionWatch";
+import { startApiErrorReporting } from "@/lib/apiErrorReporter";
 import { can, featureForPath, homePathFor, PREMIUM_FEATURES } from "@/lib/permissions";
 
 /**
@@ -73,6 +74,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   // Cualquier 401 del panel significa que ya no hay sesión, venga de la pantalla que venga.
   useEffect(() => watchUnauthorized(() => setSessionExpired(true)), []);
+
+  // Lo que el panel no pudo hacer (respuestas con error, pedidos sin respuesta) va al registro de
+  // errores del superadmin.
+  useEffect(() => { startApiErrorReporting(); }, []);
 
   const pingSession = useCallback(async () => {
     const res = await fetch("/api/admin/auth/me");
