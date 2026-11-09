@@ -145,6 +145,55 @@ export function welcomeEmailHtml({
   return layout("¡Bienvenido a VendeFácil!", body);
 }
 
+/** Escapa texto que viene de afuera (mensajes de error, nombres) antes de meterlo en el HTML del correo. */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export interface AlertEmailSection {
+  heading: string;
+  /** Cada fila: texto a la izquierda y cifra a la derecha. Ya escapados. */
+  rows: { label: string; value: string }[];
+}
+
+/** Correo de alerta de errores para el superadmin. Los textos de las secciones ya vienen escapados. */
+export function errorAlertEmailHtml({
+  title,
+  intro,
+  sections,
+  panelUrl,
+}: {
+  title: string;
+  intro: string;
+  sections: AlertEmailSection[];
+  panelUrl: string;
+}): string {
+  const blocks = sections
+    .filter((s) => s.rows.length)
+    .map((s) => `
+      <p style="margin:24px 0 8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#1A1A2E99;">${s.heading}</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        ${s.rows.map((r) => `
+          <tr>
+            <td style="padding:8px 0;border-bottom:1px solid #F0E6EE;font-size:14px;color:#1A1A2E;">${r.label}</td>
+            <td style="padding:8px 0 8px 12px;border-bottom:1px solid #F0E6EE;font-size:14px;font-weight:700;color:#1A1A2E;text-align:right;white-space:nowrap;">${r.value}</td>
+          </tr>`).join("")}
+      </table>`)
+    .join("");
+  const body = `
+    <p style="margin:0 0 8px;">${intro}</p>
+    ${blocks}
+    <p style="margin:28px 0 0;text-align:center;">
+      <a href="${panelUrl}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:${BRAND_GRADIENT};color:#ffffff;font-weight:700;text-decoration:none;">Ver el panel de errores</a>
+    </p>`;
+  return layout(title, body);
+}
+
 export function passwordChangedEmailHtml({ name }: { name: string }): string {
   const body = `
     <p style="margin:0 0 16px;">Hola <strong>${name}</strong>,</p>

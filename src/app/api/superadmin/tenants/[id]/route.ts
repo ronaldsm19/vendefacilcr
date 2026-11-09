@@ -21,6 +21,7 @@ import { SiteSettings } from "@/models/SiteSettings";
 import { TenantRequest } from "@/models/TenantRequest";
 import { Comanda } from "@/models/Comanda";
 import { PrintJob } from "@/models/PrintJob";
+import { ErrorEvent } from "@/models/ErrorEvent";
 import { SalonTable } from "@/models/SalonTable";
 import { SalonWall } from "@/models/SalonWall";
 import { SalonReservation } from "@/models/SalonReservation";
@@ -117,6 +118,7 @@ export async function DELETE(
     ["tenantRequests", TenantRequest],
     ["comandas",      Comanda],
     ["printJobs",     PrintJob],
+    ["errorEvents",   ErrorEvent],
     ["salonTables",   SalonTable],
     ["salonWalls",    SalonWall],
     ["salonReservations", SalonReservation],
