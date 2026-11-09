@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Save, Shield, Clock, CreditCard, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import TenantErrorsCard from "@/components/superadmin/errores/TenantErrorsCard";
 
 interface Tenant {
   _id: string;
@@ -351,6 +352,8 @@ export default function TenantDetailPage() {
           </div>
         )}
       </div>
+
+      <TenantErrorsCard tenantId={id} />
 
       {/* Access logs */}
       <div

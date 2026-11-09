@@ -8,6 +8,7 @@ import {
   ClipboardList,
   CreditCard,
   Activity,
+  Bug,
   LogOut,
   X,
   Zap,
@@ -19,6 +20,7 @@ const navItems = [
   { href: "/superadmin/solicitudes",label: "Solicitudes", icon: ClipboardList },
   { href: "/superadmin/pagos",      label: "Pagos",       icon: CreditCard },
   { href: "/superadmin/actividad",  label: "Actividad",   icon: Activity },
+  { href: "/superadmin/errores",    label: "Errores",     icon: Bug },
 ];
 
 export default function SuperadminSidebar({ onClose }: { onClose?: () => void }) {
