@@ -1,10 +1,8 @@
 // Piezas que comparten varias secciones del landing: la marca, el enlace de WhatsApp y su ícono.
 
-const WA_NUMBER = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50661266865").replace(/\D/g, "");
+import { VENDEFACIL_WHATSAPP as WA_NUMBER, waLink } from "@/lib/contacto";
 
-export function waLink(message: string): string {
-  return `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`;
-}
+export { waLink };
 
 export const WA_DEMO = waLink("Hola, quiero ver una demostración de VendeFácil para mi negocio.");
 

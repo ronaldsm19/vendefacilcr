@@ -4,6 +4,7 @@ import { CashClose } from "@/models/CashClose";
 import { CashSession } from "@/models/CashSession";
 import { Sale } from "@/models/Sale";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { dayRangeCR } from "@/lib/crDate";
 import { splitPayments } from "@/lib/payments";
 import { checkCardReconciliation } from "@/lib/cardReconciliation";
@@ -11,6 +12,8 @@ import { checkCardReconciliation } from "@/lib/cardReconciliation";
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "cierre-de-caja");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "cierre-de-caja");
   if (denied) return denied;
 
@@ -25,6 +28,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "cierre-de-caja");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "cierre-de-caja");
   if (denied) return denied;
 

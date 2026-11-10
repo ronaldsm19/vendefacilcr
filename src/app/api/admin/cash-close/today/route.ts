@@ -4,12 +4,15 @@ import { Sale } from "@/models/Sale";
 import { Expense } from "@/models/Expense";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { dayRangeCR } from "@/lib/crDate";
 import { splitPayments } from "@/lib/payments";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "cierre-de-caja");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "cierre-de-caja");
   if (denied) return denied;
 

@@ -14,7 +14,10 @@ import type { SuspensionNotice } from "@/lib/suspension";
 import { usePolling } from "@/hooks/usePolling";
 import { watchUnauthorized } from "@/lib/sessionWatch";
 import { startApiErrorReporting } from "@/lib/apiErrorReporter";
-import { can, featureForPath, homePathFor, PREMIUM_FEATURES } from "@/lib/permissions";
+import {
+  can, featureForPath, homePathFor, planAllows, planNeededFor, seesLockedSections, SECTION_LABELS,
+} from "@/lib/permissions";
+import PlanLockedScreen from "@/components/admin/PlanLockedScreen";
 
 /**
  * Cada diez minutos el panel vuelve a preguntar quién es, y esa llamada renueva la cookie. Una
@@ -142,6 +145,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           email: data.email ?? "",
           plan: data.plan ?? "emprende",
           isPremium: !!data.isPremium,
+          planLimits: !!data.planLimits,
           tenantSlug: data.tenantSlug,
           tenantName: data.tenantName || pathname.split("/")[1],
         };
@@ -151,7 +155,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           return;
         }
         const feature = featureForPath(pathname, base);
-        if (feature && (!can(s, feature) || (PREMIUM_FEATURES.includes(feature) && !s.isPremium))) {
+        // Sin permiso por rol, o fuera del plan para quien no ve esas secciones con candado: al
+        // inicio. El dueño de un negocio con límites sí entra y ve qué plan la incluye.
+        if (feature && (!can(s, feature) || (!planAllows(s, feature) && !seesLockedSections(s)))) {
           router.replace(homePathFor(s.role, base));
           return;                                                  // no setAuthChecked: el cambio de pathname re-ejecuta el efecto
         }
@@ -215,6 +221,11 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     );
   }
 
+  const base = `/${pathname.split("/")[1]}/admin`;
+  const feature = featureForPath(pathname, base);
+  const lockedPlan = feature ? planNeededFor(session, feature) : null;
+  const section = pathname.slice(base.length).replace(/^\//, "").split("/")[0] ?? "";
+
   return (
     <AdminSessionProvider value={session}>
       {/* Dentro del provider de sesión y por fuera del layout: así el contador de comandas se pide
@@ -224,7 +235,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       <div className="flex h-screen overflow-hidden bg-brand-muted/20">
         {/* Desktop sidebar — el propio AdminSidebar maneja su altura y su scroll interno */}
         <div className="hidden lg:flex shrink-0 h-screen">
-          <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} isPremium={session.isPremium} userName={session.name} />
+          <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} plan={session.plan} planLimits={session.planLimits} userName={session.name} />
         </div>
 
         {/* Mobile/tablet sidebar drawer */}
@@ -235,7 +246,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               onClick={() => setSidebarOpen(false)}
             />
             <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
-              <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} isPremium={session.isPremium} userName={session.name} onClose={() => setSidebarOpen(false)} />
+              <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} plan={session.plan} planLimits={session.planLimits} userName={session.name} onClose={() => setSidebarOpen(false)} />
             </div>
           </>
         )}
@@ -250,7 +261,17 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
           <TenantNotices />
 
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          <main className="flex-1 overflow-y-auto">
+            {lockedPlan ? (
+              <PlanLockedScreen
+                section={SECTION_LABELS[section] ?? "Esta sección"}
+                plan={lockedPlan}
+                currentPlan={session.plan}
+                tenantName={session.tenantName}
+                homeHref={homePathFor(session.role, base)}
+              />
+            ) : children}
+          </main>
         </div>
 
         <ReminderToast />

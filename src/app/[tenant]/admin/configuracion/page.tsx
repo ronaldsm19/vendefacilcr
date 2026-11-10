@@ -13,6 +13,7 @@ import {
   type TicketConfigData, type SaleTicketData, type CashCloseTicketData,
 } from "@/lib/ticket";
 import { useAdminSession } from "@/components/admin/SessionContext";
+import { planAllows } from "@/lib/permissions";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 import { DEFAULT_POS_CHARGES, readPosCharges, type PosCharges } from "@/lib/pricing";
 import {
@@ -312,6 +313,8 @@ function IconYouTube({ className }: { className?: string }) {
 export default function ConfiguracionPage() {
   const session = useAdminSession();
   const showComandas = session.role === "admin" && session.isPremium;
+  // El tiquete y los cobros de caja son del punto de venta: sin él en el plan, esas pestañas sobran.
+  const showPos = planAllows(session, "pos");
 
   // ── Logo state ───────────────────────────────────────────────────
   const [logoUrl, setLogoUrl] = useState("");
@@ -456,13 +459,15 @@ export default function ConfiguracionPage() {
       .then((r) => r.json())
       .then((d) => setTicketConfig({ ...DEFAULT_TICKET_CONFIG, ...(d.ticketConfig ?? {}) }));
 
-    // Comanda config (403 si no es admin premium; se ignora)
-    fetch("/api/admin/comanda-config")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setComandaConfig(readComandaConfig(d)); });
+    // Comanda config: solo si la pestaña existe (admin de un negocio Premium)
+    if (showComandas) {
+      fetch("/api/admin/comanda-config")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d) setComandaConfig(readComandaConfig(d)); });
+    }
 
-    // Cobros del punto de venta
-    fetch("/api/admin/pos-config")
+    // Cobros del punto de venta: solo si el plan lo incluye (sin él la pestaña Caja no aparece)
+    if (showPos) fetch("/api/admin/pos-config")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d) return;
@@ -478,7 +483,7 @@ export default function ConfiguracionPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setSaleDeleteConfigured(!!d.configured); })
       .finally(() => setLoadingSaleDeletePw(false));
-  }, []);
+  }, [showComandas, showPos]);
 
   // ── Handlers: logo ───────────────────────────────────────────────
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -937,7 +942,9 @@ export default function ConfiguracionPage() {
     { key: "caja",     label: "Caja",     icon: "🔒", title: "Caja",                     desc: "Impuesto, servicio y propina del punto de venta, y la contraseña para eliminar ventas." },
   ] as const;
 
-  const TABS = ALL_TABS.filter((t) => t.key !== "comandas" || showComandas);
+  const TABS = ALL_TABS.filter((t) =>
+    (t.key !== "comandas" || showComandas) && ((t.key !== "ticket" && t.key !== "caja") || showPos)
+  );
   const currentTab = TABS.find((t) => t.key === activeTab) ?? TABS[0];
 
   return (
@@ -2009,7 +2016,7 @@ export default function ConfiguracionPage() {
       </>}
 
       {/* ── TAB: TICKET ── Ticket electrónico ───────────────────────── */}
-      {activeTab === "ticket" && <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+      {activeTab === "ticket" && showPos && <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
 
       <div className="xl:col-span-3">
       <form onSubmit={handleSaveTicketConfig}>
@@ -2217,7 +2224,7 @@ export default function ConfiguracionPage() {
       </div>}
 
       {/* ── TAB: CAJA ── Cobros del punto de venta + contraseña de eliminación ─ */}
-      {activeTab === "caja" && <div className="max-w-xl space-y-6">
+      {activeTab === "caja" && showPos && <div className="max-w-xl space-y-6">
         <form onSubmit={handleSavePosCharges}>
           <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">
             <div>

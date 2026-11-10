@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requireProductRoom } from "@/lib/plan";
 import { isStation } from "@/lib/station";
 import { MAX_EXTRA_NAME, normalizeExtras, type LineExtra } from "@/lib/pricing";
 
@@ -134,6 +135,12 @@ export async function POST(request: NextRequest) {
       sold:         0,
     });
   });
+
+  // Si no caben todos, no entra ninguno: importar a medias deja un catálogo que nadie eligió.
+  if (docs.length > 0) {
+    const full = await requireProductRoom(session.tenantId, docs.length);
+    if (full) return full;
+  }
 
   let imported = 0;
   if (docs.length > 0) {

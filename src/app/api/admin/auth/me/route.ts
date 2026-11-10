@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   await connectToDatabase();
   const tenant = await Tenant.findById(session.tenantId)
-    .select("name logoUrl theme plan whatsappNumber passwordChanged ticketConfig status suspendedReason suspendedMessage")
+    .select("name logoUrl theme plan planLimits whatsappNumber passwordChanged ticketConfig status suspendedReason suspendedMessage")
     .lean() as {
       status?: string;
       suspendedReason?: string;
@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
       logoUrl?: string;
       theme?: Record<string, unknown>;
       plan?: string;
+      planLimits?: boolean;
       whatsappNumber?: string;
       passwordChanged?: boolean;
       ticketConfig?: Partial<TicketConfigData>;
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
     logoUrl:        tenant?.logoUrl  ?? "",
     plan:           tenant?.plan           ?? "emprende",
     isPremium,
+    planLimits:     tenant?.planLimits === true,
     whatsappNumber: tenant?.whatsappNumber ?? "",
     passwordChanged: session.role === "admin" ? (tenant?.passwordChanged ?? false) : true,
     primaryColor:   (tenant?.theme?.primaryColor   as string) ?? "#6366F1",

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { RawMaterial } from "@/models/RawMaterial";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 
 export async function GET(
   request: NextRequest,
@@ -9,6 +10,8 @@ export async function GET(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "materiales");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "materiales");
   if (denied) return denied;
 
@@ -25,6 +28,8 @@ export async function PATCH(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "materiales");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "materiales");
   if (denied) return denied;
 
@@ -49,6 +54,8 @@ export async function PUT(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "materiales");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "materiales");
   if (denied) return denied;
 
@@ -71,6 +78,8 @@ export async function DELETE(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "materiales");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "materiales");
   if (denied) return denied;
 

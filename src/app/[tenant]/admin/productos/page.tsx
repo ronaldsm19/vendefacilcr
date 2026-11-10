@@ -12,7 +12,7 @@ import { IProduct } from "@/models/Product";
 import { Plus, Pencil, Trash2, Search, Upload, UtensilsCrossed, Loader2 } from "lucide-react";
 import ImportProductsModal from "@/components/admin/ImportProductsModal";
 import { useAdminSession } from "@/components/admin/SessionContext";
-import { can } from "@/lib/permissions";
+import { can, productLimit } from "@/lib/permissions";
 import { STATIONS, STATION_LABELS, effectiveStation, type ProductStation } from "@/lib/station";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 
@@ -36,7 +36,10 @@ export default function AdminProductsPage() {
   // La caja puede ajustar precio y extras de lo que ya existe, pero no crear ni borrar.
   const canAdjust = can(session, "productos:ajustar");
   const isPremium = session.isPremium;
+  // Tope de productos del plan (Emprende con límites); null = sin tope.
+  const limit = productLimit(session);
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [saveError, setSaveError] = useState("");
   const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -73,6 +76,7 @@ export default function AdminProductsPage() {
 
   async function handleSave(data: Partial<IProduct>) {
     setSaving(true);
+    setSaveError("");
     try {
       if (editing) {
         await fetch(`/api/admin/products/${editing._id}`, {
@@ -81,11 +85,16 @@ export default function AdminProductsPage() {
           body: JSON.stringify(data),
         });
       } else {
-        await fetch("/api/admin/products", {
+        const res = await fetch("/api/admin/products", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
         });
+        // El tope del plan se revisa en el servidor; acá solo se cuenta por qué no se guardó.
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setSaveError(body.error ?? "No se pudo crear el producto");
+        }
       }
       setShowForm(false);
       setEditing(null);
@@ -104,6 +113,7 @@ export default function AdminProductsPage() {
   function openCreate() { setEditing(null); setShowForm(true); }
   function openEdit(p: ProductRow) { setEditing(p); setShowForm(true); }
 
+  const atLimit = limit !== null && products.length >= limit;
   const categories = orderCategories(categoryOrder, products.map((p) => p.category));
   const unassignedCount = products.filter((p) => p.stationAssigned === false).length;
 
@@ -152,7 +162,7 @@ export default function AdminProductsPage() {
         <div className="flex-1">
           <h1 className="font-brand text-2xl md:text-3xl font-bold text-brand-dark">Productos</h1>
           <p className="text-brand-dark/50 text-sm mt-1">
-            {products.length} productos en catálogo{!canAdjust && " · Solo lectura"}{canAdjust && !canEdit && " · Podés ajustar precios, extras y disponibilidad"}
+            {limit !== null ? `${products.length} de ${limit} productos de tu plan` : `${products.length} productos en catálogo`}{!canAdjust && " · Solo lectura"}{canAdjust && !canEdit && " · Podés ajustar precios, extras y disponibilidad"}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -173,16 +183,22 @@ export default function AdminProductsPage() {
           )}
           {canEdit && (
             <>
-              <Button variant="secondary" size="sm" onClick={() => setShowImport(true)} className="shrink-0">
+              <Button variant="secondary" size="sm" onClick={() => setShowImport(true)} disabled={atLimit} className="shrink-0">
                 <Upload className="w-4 h-4" /> Importar
               </Button>
-              <Button onClick={openCreate} className="shrink-0">
+              <Button onClick={openCreate} disabled={atLimit} className="shrink-0">
                 <Plus className="w-4 h-4 mr-1" /> Nuevo
               </Button>
             </>
           )}
         </div>
       </div>
+
+      {canEdit && (atLimit || saveError) && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm" role="status">
+          {saveError || `Llegaste a los ${limit} productos de tu plan Emprende. Para agregar más, pasá al plan Pro, que no tiene límite.`}
+        </div>
+      )}
 
       {canEdit && isPremium && unassignedCount > 0 && (
         <div className="bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2">

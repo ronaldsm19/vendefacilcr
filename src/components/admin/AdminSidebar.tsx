@@ -23,14 +23,16 @@ import {
   ClipboardList,
   Clock,
   Wallet,
+  Lock,
 } from "lucide-react";
-import { can, ROLE_LABELS, type Role, type Feature } from "@/lib/permissions";
+import { can, planNeededFor, seesLockedSections, ROLE_LABELS, type Role, type Feature } from "@/lib/permissions";
+import { PLAN_KEYS, PLAN_LABELS } from "@/lib/billing";
 import { usePendingComandas } from "@/components/admin/PendingComandasContext";
 
 /** Secciones donde se resuelve una comanda sin cobrar: ahí va el contador de pendientes. */
 const PENDING_BADGE_FEATURES: Feature[] = ["salon", "comandas"];
 
-function buildNavItems(base: string): { href: string; label: string; icon: typeof LayoutDashboard; feature: Feature; premium?: true }[] {
+function buildNavItems(base: string): { href: string; label: string; icon: typeof LayoutDashboard; feature: Feature }[] {
   return [
     { href: base,                       label: "Dashboard",     icon: LayoutDashboard, feature: "dashboard" },
     { href: `${base}/productos`,        label: "Productos",     icon: Package,         feature: "productos" },
@@ -43,10 +45,10 @@ function buildNavItems(base: string): { href: string; label: string; icon: typeo
     { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck,    feature: "pos" },
     { href: `${base}/cierre-de-caja`,   label: "Cierre de caja", icon: BookCheck,       feature: "cierre-de-caja" },
     { href: `${base}/jornada`,          label: "Jornada laboral", icon: Clock,          feature: "jornada" },
-    { href: `${base}/planilla`,         label: "Planilla",        icon: Wallet,         feature: "planilla", premium: true },
+    { href: `${base}/planilla`,         label: "Planilla",        icon: Wallet,         feature: "planilla" },
     { href: `${base}/salon`,            label: "Salón",           icon: LayoutGrid,     feature: "salon" },
-    { href: `${base}/comandas`,         label: "Comandas",       icon: ClipboardList,   feature: "comandas", premium: true },
-    { href: `${base}/usuarios`,         label: "Usuarios",       icon: Users,           feature: "usuarios", premium: true },
+    { href: `${base}/comandas`,         label: "Comandas",       icon: ClipboardList,   feature: "comandas" },
+    { href: `${base}/usuarios`,         label: "Usuarios",       icon: Users,           feature: "usuarios" },
     { href: `${base}/configuracion`,    label: "Configuración",  icon: Settings,        feature: "configuracion" },
     { href: `${base}/perfil`,           label: "Perfil",         icon: UserCircle,      feature: "perfil" },
   ];
@@ -57,14 +59,16 @@ export default function AdminSidebar({
   tenantName,
   logoUrl,
   role,
-  isPremium,
+  plan,
+  planLimits,
   userName,
 }: {
   onClose?: () => void;
   tenantName?: string;
   logoUrl?: string;
   role: Role;
-  isPremium: boolean;
+  plan: string;
+  planLimits: boolean;
   userName?: string;
 }) {
   const pathname = usePathname();
@@ -72,9 +76,14 @@ export default function AdminSidebar({
 
   const tenant = pathname.split("/")[1];
   const base = `/${tenant}/admin`;
-  const navItems = buildNavItems(base).filter(
-    (i) => can({ role }, i.feature) && (!i.premium || isPremium)
-  );
+  // Lo que el plan no incluye se oculta, salvo para el dueño de un negocio con límites: a él se le
+  // muestra al final, con candado, para que sepa que existe y en qué plan está.
+  const showLocked = seesLockedSections({ role, planLimits });
+  const allowed = buildNavItems(base)
+    .filter((i) => can({ role }, i.feature))
+    .map((i) => ({ ...i, lockedPlan: planNeededFor({ plan, planLimits }, i.feature) }));
+  const navItems = allowed.filter((i) => !i.lockedPlan);
+  const lockedItems = showLocked ? allowed.filter((i) => i.lockedPlan) : [];
 
   const { badgeCount: pendingComandas } = usePendingComandas();
   const [posCartCount, setPosCartCount] = useState(0);
@@ -177,6 +186,36 @@ export default function AdminSidebar({
                 </span>
               )}
             </Link>
+          );
+        })}
+
+        {PLAN_KEYS.map((planKey) => {
+          const items = lockedItems.filter((i) => i.lockedPlan === planKey);
+          if (items.length === 0) return null;
+          return (
+            <div key={planKey} className="pt-4">
+              <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/30">
+                Plan {PLAN_LABELS[planKey]}
+              </p>
+              {items.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={`Disponible en el plan ${PLAN_LABELS[planKey]}`}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors ${
+                      isActive ? "bg-white/10 text-white/80" : "text-white/35 hover:text-white/70 hover:bg-white/5"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="flex-1 min-w-0 truncate">{item.label}</span>
+                    <Lock className="w-3 h-3 shrink-0 text-white/30" aria-label="Bloqueada" />
+                  </Link>
+                );
+              })}
+            </div>
           );
         })}
       </nav>

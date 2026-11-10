@@ -11,6 +11,7 @@ import TenantErrorsCard from "@/components/superadmin/errores/TenantErrorsCard";
 import TenantBillingCard from "@/components/superadmin/cobros/TenantBillingCard";
 import { SUSPENSION_REASONS, SUSPENSION_MESSAGE_MAX, suspensionReasonLabel } from "@/lib/suspension";
 import { formatCRC, DEFAULT_PLAN_PRICES, PLAN_KEYS, PLAN_LABELS, type PlanKey } from "@/lib/billing";
+import { lockedSections, productLimit } from "@/lib/permissions";
 
 interface Tenant {
   _id: string;
@@ -21,6 +22,8 @@ interface Tenant {
   logoUrl: string;
   description: string;
   plan: string;
+  /** Si se le aplican los límites de su plan; los negocios de antes no lo tienen. */
+  planLimits?: boolean;
   status: string;
   suspendedReason?: string;
   suspendedMessage?: string;
@@ -51,6 +54,37 @@ interface TenantDetail {
   tenant: Tenant;
   payments: Payment[];
   accessLogs: AccessLog[];
+  productCount?: number;
+}
+
+/** Nombres en una frase: "A", "A y B", "A, B y C". */
+function listaDe(items: string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}`;
+}
+
+/** Qué significa, para este negocio, tener o no los límites de su plan. */
+function limitsHelp(plan: string, planLimits: boolean, productCount: number): string {
+  const label = PLAN_LABELS[plan as PlanKey] ?? plan;
+  const withLimits = lockedSections({ plan, planLimits: true }).map((s) => s.label);
+  const always = new Set(lockedSections({ plan, planLimits: false }).map((s) => s.label));
+  const limit = productLimit({ plan, planLimits: true });
+  const overLimit = limit !== null && productCount > limit
+    ? ` Tiene ${productCount} productos: los conserva, pero no puede agregar más mientras pase de ${limit}.`
+    : "";
+
+  if (planLimits) {
+    const locked = withLimits.length ? ` Le salen con candado: ${listaDe(withLimits)}.` : "";
+    const cap = limit !== null ? ` Hasta ${limit} productos.` : "";
+    return `Ve solo lo que incluye el plan ${label}.${locked}${cap}${overLimit}`;
+  }
+  const wouldLose = withLimits.filter((s) => !always.has(s));
+  const sections = wouldLose.length ? ` dejaría de ver ${listaDe(wouldLose)}` : "";
+  const cap = limit !== null ? `${sections ? ", y" : ""} tendría un tope de ${limit} productos` : "";
+  const lose = sections || cap
+    ? ` Si los aplicás con el plan ${label},${sections}${cap}.${overLimit}`
+    : ` Con el plan ${label} no pierde nada al aplicarlos.`;
+  return `Negocio de antes de los límites: conserva todo lo que tenía, menos lo que siempre fue de Premium.${lose}`;
 }
 
 const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -105,7 +139,7 @@ export default function TenantDetailPage() {
         setForm({
           name: t.name, email: t.email, whatsappNumber: t.whatsappNumber,
           logoUrl: t.logoUrl, description: t.description,
-          plan: t.plan, status: t.status,
+          plan: t.plan, planLimits: t.planLimits === true, status: t.status,
           // Si está activo, el motivo arranca en "falta de pago" por si lo suspenden desde acá.
           suspendedReason: t.suspendedReason || "falta_pago",
           suspendedMessage: t.suspendedMessage ?? "",
@@ -201,7 +235,7 @@ export default function TenantDetailPage() {
     );
   }
 
-  const { tenant, payments, accessLogs } = data;
+  const { tenant, payments, accessLogs, productCount = 0 } = data;
   const paidCount = payments.filter((p) => p.status === "paid").length;
   const lateCount = payments.filter((p) => p.status === "late").length;
 
@@ -334,6 +368,19 @@ export default function TenantDetailPage() {
                   </select>
                 </Field>
               </div>
+              <label className="sa-check sa-inset p-4">
+                <input
+                  type="checkbox"
+                  checked={!!form.planLimits}
+                  onChange={(e) => setForm({ ...form, planLimits: e.target.checked })}
+                />
+                <span>
+                  <span className="sa-strong block">Aplicar los límites del plan</span>
+                  <span className="sa-help block mt-0.5">
+                    {limitsHelp(form.plan ?? tenant.plan, !!form.planLimits, productCount)}
+                  </span>
+                </span>
+              </label>
               {form.status !== "active" && (
                 <div className="sa-inset grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
                   <Field label="Motivo">
@@ -381,6 +428,14 @@ export default function TenantDetailPage() {
               <div className="flex items-center justify-between gap-3 px-5 py-3">
                 <dt className="sa-muted">Plan</dt>
                 <dd className="sa-strong">{PLAN_LABELS[tenant.plan as PlanKey] ?? tenant.plan}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 px-5 py-3">
+                <dt className="sa-muted">Límites del plan</dt>
+                <dd className={tenant.planLimits ? "sa-strong" : "sa-muted"}>{tenant.planLimits ? "Aplicados" : "Sin aplicar"}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 px-5 py-3">
+                <dt className="sa-muted">Productos</dt>
+                <dd className="sa-num">{productCount}</dd>
               </div>
               <div className="flex items-center justify-between gap-3 px-5 py-3">
                 <dt className="sa-muted">Slug</dt>

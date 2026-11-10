@@ -1,6 +1,9 @@
 /**
  * Qué incluye cada plan, tal como se publica en el landing: las tarjetas de precios y la tabla de
  * comparación salen de acá. Los precios no: esos vienen de la configuración de cobros.
+ *
+ * El sistema lo aplica con FEATURE_MIN_PLAN y productLimit (src/lib/permissions.ts): si cambia una
+ * fila acá, cambiala también allá.
  */
 
 import type { PlanKey } from "@/lib/billing";

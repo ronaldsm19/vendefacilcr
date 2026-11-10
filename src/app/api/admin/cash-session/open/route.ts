@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { CashSession } from "@/models/CashSession";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "cierre-de-caja");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "cierre-de-caja");
   if (denied) return denied;
 

@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { TableArea } from "@/models/TableArea";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "salon");
+  if (deniedPlan) return deniedPlan;
 
   await connectToDatabase();
   const areas = await TableArea.find({ tenantId: session.tenantId }).sort({ order: 1 }).lean();
@@ -15,6 +18,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "salon");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "salon:editar");
   if (denied) return denied;
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, requireRole } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { getMyHours } from "@/server/services/workShifts";
 
@@ -9,6 +10,8 @@ import { getMyHours } from "@/server/services/workShifts";
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "jornada");
+  if (deniedPlan) return deniedPlan;
   const denied = requireRole(session, "cajero", "mesero");
   if (denied) return denied;
 

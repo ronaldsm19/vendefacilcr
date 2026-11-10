@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Expense } from "@/models/Expense";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 
 export async function PATCH(
   request: NextRequest,
@@ -9,6 +10,8 @@ export async function PATCH(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "gastos");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "gastos");
   if (denied) return denied;
 
@@ -35,6 +38,8 @@ export async function DELETE(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "gastos");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "gastos");
   if (denied) return denied;
 
