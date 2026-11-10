@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Save, Shield, Clock, CreditCard, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Save, Shield, Clock, CreditCard, CheckCircle2, XCircle, AlertTriangle, Megaphone } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import TenantErrorsCard from "@/components/superadmin/errores/TenantErrorsCard";
@@ -343,6 +343,14 @@ export default function TenantDetailPage() {
             <Shield className="w-4 h-4" />
             Ver admin del tenant
           </a>
+          <Link
+            href={`/superadmin/avisos?negocio=${id}`}
+            className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm text-white/60 hover:text-white transition-colors"
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+          >
+            <Megaphone className="w-4 h-4" />
+            Enviar aviso a este negocio
+          </Link>
         </div>
       </div>
 
