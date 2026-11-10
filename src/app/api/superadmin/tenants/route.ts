@@ -5,6 +5,7 @@ import { Tenant } from "@/models/Tenant";
 import { User } from "@/models/User";
 import { getSuperadminSession } from "@/lib/auth";
 import { sendMail, welcomeEmailHtml } from "@/lib/email";
+import { getBillingSettings } from "@/server/services/billing";
 
 export async function GET(request: NextRequest) {
   const session = await getSuperadminSession(request);
@@ -31,12 +32,14 @@ export async function GET(request: NextRequest) {
     { email: { $regex: search, $options: "i" } },
   ];
 
-  const [tenants, total] = await Promise.all([
+  const [tenants, total, settings] = await Promise.all([
     Tenant.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
     Tenant.countDocuments(query),
+    getBillingSettings(),
   ]);
 
-  return NextResponse.json({ tenants, total, page, limit });
+  // prices: los precios de lista vigentes, para que la lista calcule la mensualidad de cada negocio.
+  return NextResponse.json({ tenants, total, page, limit, prices: settings.prices });
 }
 
 export async function POST(request: NextRequest) {

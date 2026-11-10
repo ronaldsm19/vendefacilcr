@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mail, Send, Check } from "lucide-react";
+import { Check, CircleAlert, Send } from "lucide-react";
 
 interface Settings {
   enabled: boolean;
@@ -24,9 +24,6 @@ interface Form {
   cooldownMinutes: string;
   notifyNewErrors: boolean;
 }
-
-const CARD = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" };
-const FIELD = { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", colorScheme: "dark" as const };
 
 function toForm(s: Settings): Form {
   return {
@@ -59,7 +56,11 @@ export default function AlertasCorreo() {
   }, []);
 
   if (!form || !settings) {
-    return <div className="rounded-2xl p-5 text-white/30 text-sm" style={CARD}>Cargando alertas...</div>;
+    return (
+      <section className="sa-card sa-card-pad">
+        <p className="sa-muted">Cargando alertas...</p>
+      </section>
+    );
   }
 
   const dirty = JSON.stringify(form) !== JSON.stringify(toForm(settings));
@@ -114,87 +115,90 @@ export default function AlertasCorreo() {
     }
   }
 
+  // Los números van dentro de la frase; la caja de ancho fijo evita que el campo ocupe toda la línea.
   const numberInput = (key: "spikeThreshold" | "spikeWindowMinutes" | "cooldownMinutes", label: string) => (
-    <input
-      id={`alertas-${key}`} aria-label={label} type="number" min={1} inputMode="numeric"
-      value={form[key]} onChange={(e) => set(key, e.target.value)}
-      className="w-20 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none tabular-nums" style={FIELD}
-    />
+    <span className="w-20 shrink-0">
+      <input
+        id={`alertas-${key}`} aria-label={label} type="number" min={1} inputMode="numeric"
+        value={form[key]} onChange={(e) => set(key, e.target.value)}
+        className="sa-input sa-num text-center"
+      />
+    </span>
   );
 
   return (
-    <section className="rounded-2xl p-5 md:p-6 space-y-5" style={CARD} aria-labelledby="alertas-title">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(147,51,234,0.12)", border: "1px solid rgba(147,51,234,0.25)" }}>
-            <Mail className="w-4 h-4 text-purple-300" />
-          </div>
-          <div>
-            <h2 id="alertas-title" className="text-white font-semibold">Alertas por correo</h2>
-            <p className="text-white/40 text-sm mt-0.5">Te avisamos cuando hay un pico de errores o aparece un error grave nuevo.</p>
-          </div>
+    <section className="sa-card" aria-labelledby="alertas-title">
+      <div className="sa-card-head">
+        <div className="min-w-0">
+          <h2 id="alertas-title" className="sa-h2">Alertas por correo</h2>
+          <p className="sa-help">Te avisamos cuando hay un pico de errores o aparece un error grave nuevo.</p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-white/70 cursor-pointer select-none">
-          <input id="alertas-enabled" type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} className="w-4 h-4 accent-purple-500" />
-          Alertas activas
+        <label className="sa-check">
+          <input id="alertas-enabled" type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} />
+          <span>Alertas activas</span>
         </label>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="space-y-2">
-          <label htmlFor="alertas-recipients" className="block text-sm text-white/60">Destinatarios (uno por línea, máximo 5)</label>
-          <textarea
-            id="alertas-recipients" rows={4} value={form.recipients} onChange={(e) => set("recipients", e.target.value)}
-            placeholder="correo@ejemplo.com"
-            className="w-full rounded-xl px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none resize-none font-mono" style={FIELD}
-          />
-        </div>
-        <div className="space-y-4 text-sm text-white/70">
-          <div className="space-y-1">
-            <p className="flex flex-wrap items-center gap-2">
-              Avisar si hay {numberInput("spikeThreshold", "Cantidad de errores")} errores o más en {numberInput("spikeWindowMinutes", "Ventana en minutos")} minutos.
-            </p>
-            <p className="text-xs text-white/35">Cuentan las fallas del servidor y las respuestas 5xx. La falta de conexión y el agente rechazado se ven en el panel, pero no disparan este correo.</p>
-          </div>
-          <p className="flex flex-wrap items-center gap-2">
-            Esperar al menos {numberInput("cooldownMinutes", "Espera entre correos")} minutos entre correos de pico.
-          </p>
-          <label className="flex items-start gap-2 cursor-pointer select-none">
-            <input id="alertas-new" type="checkbox" checked={form.notifyNewErrors} onChange={(e) => set("notifyNewErrors", e.target.checked)} className="w-4 h-4 mt-0.5 accent-purple-500" />
-            <span>
-              Avisar la primera vez que aparece un error grave nuevo
-              <span className="block text-xs text-white/35">Fallas del servidor, respuestas 5xx y agente de impresión rechazado. La falta de conexión no avisa.</span>
-            </span>
+      <div className="sa-card-pad flex flex-col gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <label className="sa-field">
+            <span className="sa-label">Destinatarios (uno por línea, máximo 5)</span>
+            <textarea
+              id="alertas-recipients" rows={4} value={form.recipients} onChange={(e) => set("recipients", e.target.value)}
+              placeholder="correo@ejemplo.com"
+              className="sa-input resize-none"
+            />
           </label>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <p className="flex flex-wrap items-center gap-2">
+                Avisar si hay {numberInput("spikeThreshold", "Cantidad de errores")} errores o más en {numberInput("spikeWindowMinutes", "Ventana en minutos")} minutos.
+              </p>
+              <p className="sa-help">Cuentan las fallas del servidor y las respuestas 5xx. La falta de conexión y el agente rechazado se ven en el panel, pero no disparan este correo.</p>
+            </div>
+            <p className="flex flex-wrap items-center gap-2">
+              Esperar al menos {numberInput("cooldownMinutes", "Espera entre correos")} minutos entre correos de pico.
+            </p>
+            <label className="sa-check">
+              <input id="alertas-new" type="checkbox" checked={form.notifyNewErrors} onChange={(e) => set("notifyNewErrors", e.target.checked)} />
+              <span>
+                Avisar la primera vez que aparece un error grave nuevo
+                <span className="block sa-help">Fallas del servidor, respuestas 5xx y agente de impresión rechazado. La falta de conexión no avisa.</span>
+              </span>
+            </label>
+          </div>
         </div>
-      </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button" onClick={() => void save()} disabled={saving || !dirty}
-          className="px-4 py-2 rounded-xl text-sm font-semibold text-white saas-accent-bg disabled:opacity-40 cursor-pointer disabled:cursor-default"
-        >
-          {saving ? "Guardando..." : "Guardar"}
-        </button>
-        <button
-          type="button" onClick={() => void test()} disabled={testing || dirty || !settings.recipients.length}
-          title={dirty ? "Guardá antes de probar" : undefined}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-white/70 hover:text-white disabled:opacity-40 cursor-pointer disabled:cursor-default"
-          style={FIELD}
-        >
-          <Send className="w-3.5 h-3.5" /> {testing ? "Enviando..." : "Enviar correo de prueba"}
-        </button>
-        {message && (
-          <span role="status" className={`flex items-center gap-1.5 text-sm ${message.tone === "ok" ? "text-emerald-300" : "text-red-300"}`}>
-            {message.tone === "ok" && <Check className="w-4 h-4" />} {message.text}
-          </span>
-        )}
-      </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" onClick={() => void save()} disabled={saving || !dirty} className="sa-btn sa-btn-primary">
+            {saving ? "Guardando..." : "Guardar"}
+          </button>
+          <button
+            type="button" onClick={() => void test()} disabled={testing || dirty || !settings.recipients.length}
+            title={dirty ? "Guardá antes de probar" : undefined}
+            className="sa-btn sa-btn-secondary"
+          >
+            <Send className="w-4 h-4" aria-hidden />
+            {testing ? "Enviando..." : "Enviar correo de prueba"}
+          </button>
+          {message && (
+            <span role="status" className={`inline-flex items-center gap-1.5 ${message.tone === "ok" ? "sa-success" : "sa-error"}`}>
+              {message.tone === "ok" && <Check className="w-4 h-4" aria-hidden />}
+              {message.text}
+            </span>
+          )}
+        </div>
 
-      <div className="text-xs text-white/35 space-y-1 border-t border-white/5 pt-4">
-        <p>{settings.lastSentAt ? `Último correo enviado: ${fmtDateTime(settings.lastSentAt)}` : "Todavía no se envió ningún correo."}</p>
-        {settings.lastSendError && <p className="text-red-300">Falló el último envío: {settings.lastSendError}</p>}
-        {settings.updatedBy && settings.updatedAt && <p>Cambiado por {settings.updatedBy} el {fmtDateTime(settings.updatedAt)}</p>}
+        <div className="flex flex-col gap-2 border-t border-[var(--sa-line)] pt-4">
+          <p className="sa-help">{settings.lastSentAt ? `Último correo enviado: ${fmtDateTime(settings.lastSentAt)}` : "Todavía no se envió ningún correo."}</p>
+          {settings.lastSendError && (
+            <div className="sa-alert sa-alert-danger">
+              <CircleAlert aria-hidden />
+              <span className="min-w-0 break-words">Falló el último envío: {settings.lastSendError}</span>
+            </div>
+          )}
+          {settings.updatedBy && settings.updatedAt && <p className="sa-help">Cambiado por {settings.updatedBy} el {fmtDateTime(settings.updatedAt)}</p>}
+        </div>
       </div>
     </section>
   );

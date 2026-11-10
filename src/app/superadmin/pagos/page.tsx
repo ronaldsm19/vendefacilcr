@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { CreditCard, Zap, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
+import {
+  AlertTriangle, Ban, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleHelp, Clock, FilePlus2, Gift,
+  type LucideIcon,
+} from "lucide-react";
 import { PAYMENT_METHODS, formatCRC } from "@/lib/billing";
 
 interface PaymentItem {
@@ -24,16 +27,18 @@ interface PaymentItem {
 }
 
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-const STATUS_COLORS: Record<string, string> = {
-  pending:   "bg-amber-500/20 text-amber-400",
-  paid:      "bg-emerald-500/20 text-emerald-400",
-  late:      "bg-red-500/20 text-red-400",
-  cancelled: "bg-gray-500/20 text-gray-400",
-  cortesia:  "bg-sky-500/20 text-sky-300",
+
+// Cada estado lleva ícono y texto: el color solo no alcanza para distinguirlos.
+const STATUS_CHIPS: Record<string, { label: string; className: string; icon: LucideIcon }> = {
+  pending:   { label: "Pendiente", className: "sa-chip sa-chip-warn",   icon: Clock },
+  paid:      { label: "Pagado",    className: "sa-chip sa-chip-ok",     icon: Check },
+  late:      { label: "Atrasado",  className: "sa-chip sa-chip-danger", icon: AlertTriangle },
+  cancelled: { label: "Anulado",   className: "sa-chip",                icon: Ban },
+  cortesia:  { label: "Cortesía",  className: "sa-chip sa-chip-info",   icon: Gift },
 };
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Pendiente", paid: "Pagado", late: "Atrasado", cancelled: "Cancelado", cortesia: "Cortesía",
-};
+
+const methodLabel = (method: string) =>
+  PAYMENT_METHODS.find((m) => m.value === method)?.label ?? method;
 
 export default function PagosPage() {
   const [items, setItems]           = useState<PaymentItem[]>([]);
@@ -43,10 +48,11 @@ export default function PagosPage() {
   const [statusFilter, setStatus]   = useState("");
   const [page, setPage]             = useState(1);
   const [acting, setActing]         = useState<string | null>(null);
-  const [genMsg, setGenMsg]         = useState("");
+  const [genMsg, setGenMsg]         = useState<{ ok: boolean; text: string } | null>(null);
   const [limit, setLimit]           = useState(30);
   const [paying, setPaying]         = useState<PaymentItem | null>(null);
   const [notice, setNotice]         = useState("");
+  const [rowError, setRowError]     = useState("");
 
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
@@ -67,7 +73,7 @@ export default function PagosPage() {
   async function generateAll() {
     if (!confirm(`¿Generar facturas para ${MONTHS[month - 1]} ${year}? Solo crea las que no existan.`)) return;
     setGenerating(true);
-    setGenMsg("");
+    setGenMsg(null);
     const res = await fetch("/api/superadmin/pagos", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -76,11 +82,11 @@ export default function PagosPage() {
     const d = await res.json();
     setGenerating(false);
     if (res.ok) {
-      setGenMsg(`✓ ${d.created} facturas generadas`);
+      setGenMsg({ ok: true, text: `${d.created} facturas generadas` });
       load();
-      setTimeout(() => setGenMsg(""), 4000);
+      setTimeout(() => setGenMsg(null), 4000);
     } else {
-      setGenMsg(d.error ?? "Error al generar");
+      setGenMsg({ ok: false, text: d.error ?? "Error al generar" });
     }
   }
 
@@ -110,182 +116,194 @@ export default function PagosPage() {
   const lateCount   = items.filter((p) => p.status === "late").length;
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="sa-page">
+      <header className="sa-page-head">
         <div>
-          <h1 className="font-brand text-2xl md:text-3xl font-bold text-white">Pagos</h1>
-          <p className="text-white/40 text-sm mt-1">{total} registros</p>
+          <h1 className="sa-title">Pagos</h1>
+          <p className="sa-subtitle sa-num">{total} {total === 1 ? "factura" : "facturas"}</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-wrap items-center gap-3">
           {genMsg && (
-            <p className={`text-sm ${genMsg.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}>
-              {genMsg}
+            <p role="status" className={`flex items-center gap-1.5 ${genMsg.ok ? "sa-success" : "sa-error"}`}>
+              {genMsg.ok && <Check className="w-4 h-4" aria-hidden />}
+              {genMsg.text}
             </p>
           )}
-          <button
-            onClick={generateAll}
-            disabled={generating}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl saas-accent-bg text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
-          >
-            <Zap className="w-4 h-4" />
+          <button type="button" onClick={generateAll} disabled={generating} className="sa-btn sa-btn-primary">
+            <FilePlus2 className="w-4 h-4" aria-hidden />
             {generating ? "Generando..." : "Generar facturas del mes"}
           </button>
         </div>
+      </header>
+
+      {/* El ancho va en el label: .sa-input siempre ocupa todo el ancho de su contenedor. */}
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="sa-field w-[calc(50%-6px)] sm:w-32">
+          <span className="sa-label">Mes</span>
+          <select
+            value={month}
+            onChange={(e) => { setMonth(Number(e.target.value)); setPage(1); }}
+            className="sa-input"
+          >
+            {MONTHS.map((m, i) => (
+              <option key={i} value={i + 1}>{m}</option>
+            ))}
+          </select>
+        </label>
+        <label className="sa-field w-[calc(50%-6px)] sm:w-32">
+          <span className="sa-label">Año</span>
+          <select
+            value={year}
+            onChange={(e) => { setYear(Number(e.target.value)); setPage(1); }}
+            className="sa-input"
+          >
+            {[2024, 2025, 2026, 2027].map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </label>
+        <label className="sa-field w-full sm:w-52">
+          <span className="sa-label">Estado</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+            className="sa-input"
+          >
+            <option value="">Todos los estados</option>
+            <option value="pending">Pendientes</option>
+            <option value="paid">Pagados</option>
+            <option value="late">Atrasados</option>
+            <option value="cortesia">Cortesías</option>
+          </select>
+        </label>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        {/* Month picker */}
-        <select
-          value={month}
-          onChange={(e) => { setMonth(Number(e.target.value)); setPage(1); }}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          {MONTHS.map((m, i) => (
-            <option key={i} value={i + 1}>{m}</option>
-          ))}
-        </select>
-        <select
-          value={year}
-          onChange={(e) => { setYear(Number(e.target.value)); setPage(1); }}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          {[2024, 2025, 2026, 2027].map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => { setStatus(e.target.value); setPage(1); }}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          <option value="">Todos los estados</option>
-          <option value="pending">Pendientes</option>
-          <option value="paid">Pagados</option>
-          <option value="late">Atrasados</option>
-          <option value="cortesia">Cortesías</option>
-        </select>
-      </div>
+      {rowError && <p className="sa-alert sa-alert-danger" role="alert">{rowError}</p>}
 
       {notice && (
-        <p className="text-sm text-emerald-300" role="status">{notice}</p>
+        <div className="sa-alert sa-alert-ok" role="status">
+          <CheckCircle2 aria-hidden />
+          <span>{notice}</span>
+        </div>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <SummaryCard
-          label="Total facturado"
-          value={`₡${totalAmount.toLocaleString("es-CR")}`}
-          icon={CreditCard}
-          color="blue"
-        />
-        <SummaryCard
-          label="Total cobrado"
-          value={`₡${paidAmount.toLocaleString("es-CR")}`}
-          icon={CheckCircle2}
-          color="green"
-        />
-        <SummaryCard
-          label="Morosos"
-          value={lateCount}
-          icon={AlertTriangle}
-          color="red"
-        />
-      </div>
+      {/* Resumen en una sola franja. El color va en un span interno porque .sa-stat-value fija su propio color. */}
+      <section className="sa-card" aria-label="Resumen de las facturas en pantalla">
+        <dl className="grid grid-cols-1 sm:grid-cols-3">
+          <div className="px-5 py-4">
+            <dt className="sa-stat-label">Total facturado</dt>
+            <dd className="sa-stat-value">{formatCRC(totalAmount)}</dd>
+          </div>
+          <div className="px-5 py-4 border-t sm:border-t-0 sm:border-l border-[var(--sa-line)]">
+            <dt className="sa-stat-label">Total cobrado</dt>
+            <dd className="sa-stat-value"><span className="sa-ok-text">{formatCRC(paidAmount)}</span></dd>
+          </div>
+          <div className="px-5 py-4 border-t sm:border-t-0 sm:border-l border-[var(--sa-line)]">
+            <dt className="sa-stat-label">Morosos</dt>
+            <dd className="sa-stat-value">
+              {lateCount > 0 ? <span className="sa-danger-text">{lateCount}</span> : lateCount}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
-      {/* Table */}
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{ border: "1px solid rgba(255,255,255,0.07)" }}
-      >
-        <div
-          className="grid grid-cols-[1fr_90px_100px_90px_100px_220px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
-          style={{ background: "rgba(255,255,255,0.04)" }}
-        >
-          <span>Tenant</span>
-          <span>Período</span>
-          <span>Monto</span>
-          <span>Vence</span>
-          <span>Estado</span>
-          <span>Acciones</span>
-        </div>
-
+      <section className="sa-card overflow-hidden" aria-label="Facturas">
         {loading ? (
-          <div className="px-5 py-10 text-center text-white/30 text-sm">Cargando...</div>
+          <div className="sa-empty">Cargando...</div>
         ) : items.length === 0 ? (
-          <div className="px-5 py-10 text-center text-white/30 text-sm">Sin pagos para este período</div>
+          <div className="sa-empty">No hay facturas para este período.</div>
         ) : (
-          items.map((p, i) => (
-            <div
-              key={p._id}
-              className="grid grid-cols-[1fr_90px_100px_90px_100px_220px] px-5 py-3.5 items-center text-sm"
-              style={{ borderTop: i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
-            >
-              <div>
-                <p className="font-medium text-white/80">{p.tenantName}</p>
-                <p className="text-white/35 text-xs mt-0.5">{p.tenantSlug}</p>
-              </div>
-              <span className="text-white/50 text-xs font-mono">
-                {MONTHS[p.periodMonth - 1]} {p.periodYear}
-              </span>
-              <span className="text-xs">
-                <span className="block text-white/80 font-semibold tabular-nums">{formatCRC(p.amount)}</span>
-                {(p.discountAmount ?? 0) > 0 && (
-                  <span className="block text-white/35 tabular-nums" title={p.discountLabel}>
-                    lista {formatCRC(p.listAmount ?? p.amount)}
-                  </span>
-                )}
-              </span>
-              <span className="text-white/40 text-xs">
-                {new Date(p.dueDate).toLocaleDateString("es-CR")}
-              </span>
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full w-fit ${STATUS_COLORS[p.status] ?? "bg-gray-500/20 text-gray-400"}`}>
-                {STATUS_LABELS[p.status] ?? p.status}
-              </span>
-              <div className="flex items-center gap-2">
-                {(p.status === "pending" || p.status === "late") && (
-                  <button
-                    onClick={() => { setNotice(""); setPaying(p); }}
-                    disabled={acting === p._id}
-                    className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    {acting === p._id ? "..." : "Marcar pagado"}
-                  </button>
-                )}
-                {p.status === "pending" && (
-                  <button
-                    onClick={() => markStatus(p._id, "late")}
-                    disabled={acting === p._id}
-                    className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    Atrasar
-                  </button>
-                )}
-                {(p.status === "pending" || p.status === "late") && (
-                  <button
-                    onClick={() => { if (confirm(`¿Anular la factura de ${p.tenantName}? Deja de contar como pendiente y no dispara avisos.`)) void markStatus(p._id, "cancelled"); }}
-                    disabled={acting === p._id}
-                    className="text-xs text-white/40 hover:text-white/70 transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    Anular
-                  </button>
-                )}
-                {p.status === "paid" && p.paidAt && (
-                  <span className="text-white/30 text-xs flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(p.paidAt).toLocaleDateString("es-CR")}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
+          <div className="sa-table-wrap">
+            <table className="sa-table">
+              <thead>
+                <tr>
+                  <th>Negocio</th>
+                  <th>Período</th>
+                  <th className="sa-right">Monto</th>
+                  <th>Vence</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((p) => {
+                  const canPay = p.status === "pending" || p.status === "late";
+                  const showPaid = p.status === "paid" && !!p.paidAt;
+                  return (
+                    <tr key={p._id}>
+                      <td>
+                        <div className="min-w-[160px]">
+                          <div className="sa-strong">{p.tenantName}</div>
+                          <div className="sa-muted sa-mono">{p.tenantSlug}</div>
+                        </div>
+                      </td>
+                      <td className="sa-num whitespace-nowrap">
+                        {MONTHS[p.periodMonth - 1]} {p.periodYear}
+                      </td>
+                      <td className="sa-right sa-num whitespace-nowrap">
+                        <div className="sa-strong">{formatCRC(p.amount)}</div>
+                        {(p.discountAmount ?? 0) > 0 && (
+                          <div className="sa-muted text-xs" title={p.discountLabel}>
+                            lista {formatCRC(p.listAmount ?? p.amount)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="sa-num whitespace-nowrap">
+                        {new Date(p.dueDate).toLocaleDateString("es-CR")}
+                      </td>
+                      <td>
+                        <StatusChip status={p.status} />
+                      </td>
+                      <td>
+                        {/* Sin flex-wrap: si no entran, la tabla se desplaza dentro de su caja en vez de apilar botones. */}
+                        <div className="flex items-center gap-1.5">
+                          {canPay && (
+                            <button
+                              type="button"
+                              onClick={() => { setNotice(""); setPaying(p); }}
+                              disabled={acting === p._id}
+                              className="sa-btn sa-btn-sm sa-btn-secondary"
+                            >
+                              Registrar pago
+                            </button>
+                          )}
+                          {p.status === "pending" && (
+                            <button
+                              type="button"
+                              onClick={async () => { setRowError(""); const e = await markStatus(p._id, "late"); if (e) setRowError(e); }}
+                              disabled={acting === p._id}
+                              className="sa-btn sa-btn-sm sa-btn-ghost"
+                            >
+                              Atrasar
+                            </button>
+                          )}
+                          {canPay && (
+                            <button
+                              type="button"
+                              onClick={() => { if (!confirm(`¿Anular la factura de ${p.tenantName}? Deja de contar como pendiente y no dispara avisos.`)) return; setRowError(""); void markStatus(p._id, "cancelled").then((e) => { if (e) setRowError(e); }); }}
+                              disabled={acting === p._id}
+                              className="sa-btn sa-btn-sm sa-btn-ghost"
+                            >
+                              Anular
+                            </button>
+                          )}
+                          {showPaid && (
+                            <span className="sa-muted sa-num text-[13px] whitespace-nowrap">
+                              Pagó el {new Date(p.paidAt as string).toLocaleDateString("es-CR")}
+                              {p.method ? ` · ${methodLabel(p.method)}` : ""}
+                            </span>
+                          )}
+                          {!canPay && !showPaid && <span className="sa-muted" aria-hidden>—</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </section>
 
       {paying && (
         <MarkPaidDialog
@@ -300,30 +318,38 @@ export default function PagosPage() {
         />
       )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
+        <nav className="flex flex-wrap items-center justify-center gap-3" aria-label="Páginas">
           <button
+            type="button"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.05)" }}
+            className="sa-btn sa-btn-sm sa-btn-secondary"
           >
-            ← Anterior
+            <ChevronLeft className="w-4 h-4" aria-hidden />
+            Anterior
           </button>
-          <span className="text-white/30 text-sm">{page} / {totalPages}</span>
+          <span className="sa-muted sa-num">Página {page} de {totalPages}</span>
           <button
+            type="button"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.05)" }}
+            className="sa-btn sa-btn-sm sa-btn-secondary"
           >
-            Siguiente →
+            Siguiente
+            <ChevronRight className="w-4 h-4" aria-hidden />
           </button>
-        </div>
+        </nav>
       )}
     </div>
   );
+}
+
+function StatusChip({ status }: { status: string }) {
+  const chip = STATUS_CHIPS[status];
+  if (!chip) return <span className="sa-chip"><CircleHelp aria-hidden />{status}</span>;
+  const Icon = chip.icon;
+  return <span className={chip.className}><Icon aria-hidden />{chip.label}</span>;
 }
 
 /** Registrar el pago de una factura: método y referencia (el comprobante del SINPE, por ejemplo). */
@@ -346,63 +372,36 @@ function MarkPaidDialog({
   }, [onCancel, saving]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="pay-title" onClick={() => { if (!saving) onCancel(); }}>
-      <div className="w-full max-w-sm rounded-2xl p-6 space-y-4" style={{ background: "#13131b", border: "1px solid rgba(255,255,255,0.08)" }} onClick={(e) => e.stopPropagation()}>
+    <div className="sa-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pay-title" onClick={() => { if (!saving) onCancel(); }}>
+      <div className="sa-modal" onClick={(e) => e.stopPropagation()}>
         <div>
-          <h2 id="pay-title" className="text-lg font-semibold text-white">Registrar pago</h2>
-          <p className="text-sm text-white/50 mt-1">
-            {payment.tenantName} · {MONTHS[payment.periodMonth - 1]} {payment.periodYear} · <span className="tabular-nums">{formatCRC(payment.amount)}</span>
+          <h2 id="pay-title" className="sa-modal-title">Registrar pago</h2>
+          <p className="sa-muted mt-1">
+            {payment.tenantName} · {MONTHS[payment.periodMonth - 1]} {payment.periodYear} · <span className="sa-strong sa-num">{formatCRC(payment.amount)}</span>
           </p>
         </div>
-        <label className="block space-y-1.5">
-          <span className="text-xs text-white/50">Método</span>
-          <select value={method} onChange={(e) => setMethod(e.target.value)} className="saas-input cursor-pointer">
+        <label className="sa-field">
+          <span className="sa-label">Método</span>
+          <select value={method} onChange={(e) => setMethod(e.target.value)} className="sa-input">
             {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs text-white/50">Referencia o comprobante (opcional)</span>
-          <input value={reference} maxLength={80} onChange={(e) => setReference(e.target.value)} className="saas-input" />
+        <label className="sa-field">
+          <span className="sa-label">Referencia o comprobante (opcional)</span>
+          <input value={reference} maxLength={80} onChange={(e) => setReference(e.target.value)} className="sa-input" />
         </label>
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onCancel} disabled={saving} className="px-4 py-2 rounded-xl text-sm text-white/60 hover:text-white cursor-pointer disabled:opacity-40">Cancelar</button>
+        {error && <p className="sa-error" role="alert">{error}</p>}
+        <div className="sa-modal-actions">
+          <button type="button" onClick={onCancel} disabled={saving} className="sa-btn sa-btn-ghost">Cancelar</button>
           <button
             type="button" disabled={saving}
             onClick={async () => { setError(""); const e = await onConfirm({ method, reference }); if (e) setError(e); }}
-            className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 cursor-pointer disabled:opacity-50"
+            className="sa-btn sa-btn-primary"
           >
             {saving ? "Guardando..." : "Registrar pago"}
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function SummaryCard({
-  label, value, icon: Icon, color,
-}: {
-  label: string; value: string | number; icon: React.ElementType; color: "blue" | "green" | "red";
-}) {
-  const palette = {
-    blue:  { bg: "rgba(59,130,246,0.1)",  text: "text-blue-400",    border: "rgba(59,130,246,0.2)"  },
-    green: { bg: "rgba(16,185,129,0.1)",  text: "text-emerald-400", border: "rgba(16,185,129,0.2)"  },
-    red:   { bg: "rgba(239,68,68,0.1)",   text: "text-red-400",     border: "rgba(239,68,68,0.2)"   },
-  }[color];
-  return (
-    <div
-      className="rounded-2xl p-5"
-      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
-    >
-      <div
-        className="w-9 h-9 rounded-xl flex items-center justify-center mb-3"
-        style={{ background: palette.bg, border: `1px solid ${palette.border}` }}
-      >
-        <Icon className={`w-4 h-4 ${palette.text}`} />
-      </div>
-      <p className={`text-xl font-bold ${palette.text}`}>{value}</p>
-      <p className="text-white/50 text-sm mt-1">{label}</p>
     </div>
   );
 }

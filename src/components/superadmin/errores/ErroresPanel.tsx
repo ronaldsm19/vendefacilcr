@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Bug, RefreshCw, Search, Building2, X } from "lucide-react";
+import { AlertTriangle, CircleAlert, RefreshCw, X } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 // ── Tipos de la respuesta de /api/superadmin/errores ───────────────────────────
@@ -72,8 +72,12 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "ultimos", label: "Últimos" },
 ];
 
-const CARD = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" };
-const FIELD = { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" };
+// El gráfico recibe los colores como valores (no como clases): son los del tema claro.
+const CHART = { errores: "#C2321F", avisos: "#D98E04", grid: "#E3E5E8", axis: "#5B6270", ink: "#14171C", surface: "#FFFFFF", cursor: "#F1F3F6" };
+
+const STAT_CELL = "flex flex-col gap-1 min-w-0 p-4 sm:p-5 bg-[var(--sa-surface)]";
+// Botón dentro de una fila clicable: permite llegar a la fila con el teclado. Su clic sube a la fila.
+const ROW_BUTTON = "text-left cursor-pointer hover:underline";
 
 function fmtDateTime(iso: string): string {
   return new Date(iso).toLocaleString("es-CR", { day: "2-digit", month: "2-digit", hour: "numeric", minute: "2-digit" });
@@ -97,16 +101,16 @@ function seriesTick(label: string, period: Period): string {
 }
 
 function LevelChip({ level }: { level: Level }) {
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ${level === "error" ? "bg-red-500/15 text-red-300" : "bg-amber-500/15 text-amber-300"}`}>
-      {level === "error" ? "Error" : "Aviso"}
-    </span>
+  return level === "error" ? (
+    <span className="sa-chip sa-chip-danger"><CircleAlert aria-hidden />Error</span>
+  ) : (
+    <span className="sa-chip sa-chip-warn"><AlertTriangle aria-hidden />Aviso</span>
   );
 }
 
 function Num({ value, tone }: { value: number; tone: "error" | "aviso" }) {
-  if (!value) return <span className="text-white/25 tabular-nums">0</span>;
-  return <span className={`font-semibold tabular-nums ${tone === "error" ? "text-red-300" : "text-amber-300"}`}>{value.toLocaleString("es-CR")}</span>;
+  if (!value) return <span className="sa-num sa-muted">0</span>;
+  return <span className={`sa-num font-semibold ${tone === "error" ? "sa-danger-text" : "sa-warn-text"}`}>{value.toLocaleString("es-CR")}</span>;
 }
 
 // ── Panel ──────────────────────────────────────────────────────────────────────
@@ -164,294 +168,316 @@ export default function ErroresPanel() {
     [data, period],
   );
 
+  const errores = data?.resumen.errores ?? 0;
+  const avisos = data?.resumen.avisos ?? 0;
+  const ultimoError = data?.resumen.ultimoError ?? null;
+
+  // El contenedor de la página (sa-page) lo pone page.tsx, que debajo muestra las alertas por correo.
   return (
-    <div className="p-4 md:p-8 space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <>
+      <header className="sa-page-head">
         <div>
-          <h1 className="font-brand text-2xl md:text-3xl font-bold text-white">Errores</h1>
-          <p className="text-white/40 text-sm mt-1">Errores y avisos de las APIs, por negocio. Se guardan 90 días.</p>
+          <h1 className="sa-title">Errores</h1>
+          <p className="sa-subtitle">Errores y avisos de las APIs, por negocio. Se guardan 90 días.</p>
         </div>
-        <button
-          type="button" onClick={() => void load()}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
-          style={FIELD}
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Actualizar
+        <button type="button" onClick={() => void load()} aria-busy={loading} className="sa-btn sa-btn-secondary">
+          <RefreshCw className={`w-4 h-4 ${loading ? "motion-safe:animate-spin" : ""}`} aria-hidden />
+          Actualizar
         </button>
-      </div>
+      </header>
 
       {/* Filtros */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex rounded-xl p-0.5" style={FIELD} role="group" aria-label="Período">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="sa-seg" role="group" aria-label="Período">
           {PERIODS.map((p) => (
-            <button
-              key={p.value} type="button" onClick={() => setPeriod(p.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer ${period === p.value ? "saas-accent-bg text-white" : "text-white/50 hover:text-white"}`}
-            >
+            <button key={p.value} type="button" aria-pressed={period === p.value} onClick={() => setPeriod(p.value)}>
               {p.label}
             </button>
           ))}
         </div>
-        <select
-          aria-label="Negocio" value={tenant} onChange={(e) => setTenant(e.target.value)}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer max-w-[220px]" style={{ ...FIELD, colorScheme: "dark" }}
-        >
-          <option value="">Todos los negocios</option>
-          <option value="ninguno">Sin negocio identificado</option>
-          {(data?.listaNegocios ?? []).map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
-        </select>
-        <select
-          aria-label="Nivel" value={level} onChange={(e) => setLevel(e.target.value)}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer" style={{ ...FIELD, colorScheme: "dark" }}
-        >
-          <option value="">Errores y avisos</option>
-          <option value="error">Solo errores</option>
-          <option value="aviso">Solo avisos</option>
-        </select>
-        <select
-          aria-label="Origen" value={source} onChange={(e) => setSource(e.target.value)}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer" style={{ ...FIELD, colorScheme: "dark" }}
-        >
-          <option value="">Todos los orígenes</option>
-          <option value="navegador">Navegador</option>
-          <option value="servidor">Servidor</option>
-          <option value="agente">Agente de impresión</option>
-        </select>
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1 min-w-[180px]" style={FIELD}>
-          <Search className="w-4 h-4 text-white/30 shrink-0" />
+        <div className="w-full sm:w-56">
+          <select aria-label="Negocio" value={tenant} onChange={(e) => setTenant(e.target.value)} className="sa-input">
+            <option value="">Todos los negocios</option>
+            <option value="ninguno">Sin negocio identificado</option>
+            {(data?.listaNegocios ?? []).map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
+          </select>
+        </div>
+        <div className="flex-1 min-w-[150px] sm:flex-none sm:w-44">
+          <select aria-label="Nivel" value={level} onChange={(e) => setLevel(e.target.value)} className="sa-input">
+            <option value="">Errores y avisos</option>
+            <option value="error">Solo errores</option>
+            <option value="aviso">Solo avisos</option>
+          </select>
+        </div>
+        <div className="flex-1 min-w-[150px] sm:flex-none sm:w-48">
+          <select aria-label="Origen" value={source} onChange={(e) => setSource(e.target.value)} className="sa-input">
+            <option value="">Todos los orígenes</option>
+            <option value="navegador">Navegador</option>
+            <option value="servidor">Servidor</option>
+            <option value="agente">Agente de impresión</option>
+          </select>
+        </div>
+        <div className="w-full sm:w-auto sm:flex-1 sm:min-w-[220px]">
           <input
             aria-label="Buscar" value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar mensaje, API o pantalla..."
-            className="bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none flex-1 min-w-0"
+            className="sa-input"
           />
         </div>
         {filtered && (
           <button
             type="button"
             onClick={() => { setTenant(""); setLevel(""); setSource(""); setSearch(""); setQ(""); }}
-            className="text-xs text-white/40 hover:text-white transition-colors cursor-pointer px-2"
+            className="sa-btn sa-btn-sm sa-btn-ghost"
           >
             Limpiar
           </button>
         )}
       </div>
 
-      {error && <p className="text-sm text-red-300 rounded-xl px-4 py-3" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>{error}</p>}
+      {error && (
+        <div className="sa-alert sa-alert-danger" role="alert">
+          <CircleAlert aria-hidden />
+          <span>{error}</span>
+        </div>
+      )}
 
-      {/* Resumen */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="rounded-2xl p-5" style={CARD}>
-          <p className="text-2xl font-bold text-red-300 tabular-nums">{(data?.resumen.errores ?? 0).toLocaleString("es-CR")}</p>
-          <p className="text-white/60 text-sm mt-1 font-medium">Errores</p>
-          <p className="text-white/30 text-xs mt-0.5">Fallas del servidor, 5xx y sin conexión</p>
-        </div>
-        <div className="rounded-2xl p-5" style={CARD}>
-          <p className="text-2xl font-bold text-amber-300 tabular-nums">{(data?.resumen.avisos ?? 0).toLocaleString("es-CR")}</p>
-          <p className="text-white/60 text-sm mt-1 font-medium">Avisos</p>
-          <p className="text-white/30 text-xs mt-0.5">Mensajes 4xx que vio el usuario</p>
-        </div>
-        <div className="rounded-2xl p-5" style={CARD}>
-          <p className="text-2xl font-bold text-white tabular-nums">{data?.resumen.negocios ?? 0}</p>
-          <p className="text-white/60 text-sm mt-1 font-medium">Negocios afectados</p>
-        </div>
-        <div className="rounded-2xl p-5 min-w-0" style={CARD}>
-          <p className="text-2xl font-bold text-white">{data?.resumen.ultimoError ? timeAgo(data.resumen.ultimoError.lastAt) : "—"}</p>
-          <p className="text-white/60 text-sm mt-1 font-medium">Último error</p>
-          {data?.resumen.ultimoError && (
-            <p className="text-white/30 text-xs mt-0.5 truncate" title={data.resumen.ultimoError.message}>{data.resumen.ultimoError.message || data.resumen.ultimoError.route}</p>
-          )}
-        </div>
-      </div>
+      {/* Resumen en una sola franja: las líneas entre cifras son el fondo que asoma por la separación de 1 px. */}
+      <section className="sa-card overflow-hidden" aria-label="Resumen del período">
+        <dl className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--sa-line)]">
+          <div className={STAT_CELL}>
+            <dt className="sa-stat-label">Errores</dt>
+            <dd className="sa-stat-value"><span className={errores > 0 ? "sa-danger-text" : undefined}>{errores.toLocaleString("es-CR")}</span></dd>
+            <dd className="sa-help">Fallas del servidor, 5xx y sin conexión</dd>
+          </div>
+          <div className={STAT_CELL}>
+            <dt className="sa-stat-label">Avisos</dt>
+            <dd className="sa-stat-value"><span className={avisos > 0 ? "sa-warn-text" : undefined}>{avisos.toLocaleString("es-CR")}</span></dd>
+            <dd className="sa-help">Mensajes 4xx que vio el usuario</dd>
+          </div>
+          <div className={STAT_CELL}>
+            <dt className="sa-stat-label">Negocios afectados</dt>
+            <dd className="sa-stat-value">{data?.resumen.negocios ?? 0}</dd>
+          </div>
+          <div className={STAT_CELL}>
+            <dt className="sa-stat-label">Último error</dt>
+            <dd className="sa-stat-value break-words">{ultimoError ? timeAgo(ultimoError.lastAt) : "—"}</dd>
+            {ultimoError && (
+              <dd className="sa-help truncate" title={ultimoError.message}>{ultimoError.message || ultimoError.route}</dd>
+            )}
+          </div>
+        </dl>
+      </section>
 
       {/* Serie */}
-      <div className="rounded-2xl p-5" style={CARD}>
-        <p className="text-white/70 text-sm font-semibold mb-4">{period === "24h" ? "Por hora" : "Por día"}</p>
-        <div className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chart} barCategoryGap="20%">
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-              <XAxis dataKey="tick" tick={{ fontSize: 11, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={32} />
-              <Tooltip
-                cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                contentStyle={{ background: "#12121A", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff", fontSize: 12 }}
-                labelFormatter={(_, payload) => {
-                  const label = payload?.[0]?.payload?.label as string | undefined;
-                  if (!label) return "";
-                  return period === "24h" ? `${label.slice(8, 10)}/${label.slice(5, 7)} ${seriesTick(label, "24h")}` : `${label.slice(8, 10)}/${label.slice(5, 7)}/${label.slice(0, 4)}`;
-                }}
-              />
-              <Bar dataKey="errores" name="Errores" stackId="n" fill="#f87171" />
-              <Bar dataKey="avisos" name="Avisos" stackId="n" fill="#fbbf24" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      <section className="sa-card" aria-labelledby="errores-serie-title">
+        <div className="sa-card-head">
+          <h2 id="errores-serie-title" className="sa-h2">{period === "24h" ? "Por hora" : "Por día"}</h2>
+          <ul className="sa-help flex flex-wrap gap-x-4 gap-y-1" aria-label="Colores del gráfico">
+            <li className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="w-2.5 h-2.5 rounded-[2px]" style={{ background: CHART.errores }} />
+              Errores
+            </li>
+            <li className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="w-2.5 h-2.5 rounded-[2px]" style={{ background: CHART.avisos }} />
+              Avisos
+            </li>
+          </ul>
         </div>
-      </div>
+        <div className="sa-card-pad">
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chart} barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+                <XAxis dataKey="tick" tick={{ fontSize: 12, fill: CHART.axis }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART.axis }} axisLine={false} tickLine={false} width={36} />
+                <Tooltip
+                  cursor={{ fill: CHART.cursor }}
+                  contentStyle={{ background: CHART.surface, border: `1px solid ${CHART.grid}`, borderRadius: 8, color: CHART.ink, fontSize: 12, boxShadow: "0 4px 12px rgba(16, 24, 40, 0.08)" }}
+                  labelStyle={{ color: CHART.ink, fontWeight: 600 }}
+                  itemStyle={{ color: CHART.ink }}
+                  labelFormatter={(_, payload) => {
+                    const label = payload?.[0]?.payload?.label as string | undefined;
+                    if (!label) return "";
+                    return period === "24h" ? `${label.slice(8, 10)}/${label.slice(5, 7)} ${seriesTick(label, "24h")}` : `${label.slice(8, 10)}/${label.slice(5, 7)}/${label.slice(0, 4)}`;
+                  }}
+                />
+                <Bar dataKey="errores" name="Errores" stackId="n" fill={CHART.errores} />
+                <Bar dataKey="avisos" name="Avisos" stackId="n" fill={CHART.avisos} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
 
       {/* Vistas */}
-      <div className="space-y-3">
-        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Vistas">
+      <section className="sa-card overflow-hidden" aria-label="Errores y avisos del período">
+        <div className="sa-tabs px-5 pt-1" role="tablist" aria-label="Vistas">
           {TABS.map((t) => (
             <button
-              key={t.value} type="button" role="tab" aria-selected={tab === t.value} onClick={() => setTab(t.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer ${tab === t.value ? "bg-white/10 text-white" : "text-white/45 hover:text-white"}`}
+              key={t.value} type="button" role="tab" id={`errores-tab-${t.value}`}
+              aria-selected={tab === t.value} aria-controls="errores-tabpanel" onClick={() => setTab(t.value)}
             >
               {t.label}
             </button>
           ))}
         </div>
 
-        <div className="rounded-2xl overflow-x-auto" style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
+        <div id="errores-tabpanel" role="tabpanel" aria-labelledby={`errores-tab-${tab}`}>
           {loading && !data ? (
-            <div className="px-5 py-10 text-center text-white/30 text-sm">Cargando...</div>
+            <div className="sa-empty">Cargando...</div>
           ) : !data || (data.resumen.errores + data.resumen.avisos === 0) ? (
-            <div className="px-5 py-12 flex flex-col items-center gap-3">
-              <Bug className="w-8 h-8 text-white/20" />
-              <p className="text-white/30 text-sm">{filtered ? "Nada con esos filtros en este período" : "Sin errores ni avisos en este período"}</p>
-            </div>
+            <div className="sa-empty">{filtered ? "Nada con esos filtros en este período" : "Sin errores ni avisos en este período"}</div>
           ) : tab === "api" ? (
-            <table className="w-full text-sm min-w-[760px]">
-              <thead>
-                <tr className="text-[11px] font-semibold uppercase tracking-wide text-white/30" style={{ background: "rgba(255,255,255,0.04)" }}>
-                  <th className="text-left px-5 py-3">API</th>
-                  <th className="text-right px-3 py-3">Errores</th>
-                  <th className="text-right px-3 py-3">Avisos</th>
-                  <th className="text-right px-3 py-3">Negocios</th>
-                  <th className="text-left px-3 py-3">Mensaje más común</th>
-                  <th className="text-left px-5 py-3">Última vez</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.porApi.map((a) => (
-                  <tr
-                    key={`${a._id.source}${a._id.method}${a._id.route}`}
-                    className="border-t border-white/5 hover:bg-white/[0.03] cursor-pointer"
-                    onClick={() => { setSearch(a._id.route); setTab("ultimos"); }}
-                    title="Ver los últimos eventos de esta API"
-                  >
-                    <td className="px-5 py-3">
-                      <span className="font-mono text-xs text-white/80">{a._id.method} {a._id.route || "—"}</span>
-                      <span className="block text-[11px] text-white/35">{SOURCE_LABEL[a._id.source]}</span>
-                    </td>
-                    <td className="text-right px-3 py-3"><Num value={a.errores} tone="error" /></td>
-                    <td className="text-right px-3 py-3"><Num value={a.avisos} tone="aviso" /></td>
-                    <td className="text-right px-3 py-3 text-white/60 tabular-nums">{a.negocios}</td>
-                    <td className="px-3 py-3 text-white/55 max-w-[280px] truncate" title={a.mensaje}>{a.mensaje || "—"}</td>
-                    <td className="px-5 py-3 text-white/40 text-xs whitespace-nowrap">{fmtDateTime(a.ultimo)}</td>
+            <div className="sa-table-wrap">
+              <table className="sa-table min-w-[760px]">
+                <thead>
+                  <tr>
+                    <th>API</th>
+                    <th className="sa-right">Errores</th>
+                    <th className="sa-right">Avisos</th>
+                    <th className="sa-right">Negocios</th>
+                    <th>Mensaje más común</th>
+                    <th>Última vez</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.porApi.map((a) => (
+                    <tr
+                      key={`${a._id.source}${a._id.method}${a._id.route}`}
+                      className="sa-row-clickable"
+                      onClick={() => { setSearch(a._id.route); setTab("ultimos"); }}
+                      title="Ver los últimos eventos de esta API"
+                    >
+                      <td>
+                        <button type="button" className={`${ROW_BUTTON} sa-mono`}>{a._id.method} {a._id.route || "—"}</button>
+                        <span className="block sa-help">{SOURCE_LABEL[a._id.source]}</span>
+                      </td>
+                      <td className="sa-right"><Num value={a.errores} tone="error" /></td>
+                      <td className="sa-right"><Num value={a.avisos} tone="aviso" /></td>
+                      <td className="sa-right sa-num">{a.negocios}</td>
+                      <td className="max-w-[280px] truncate" title={a.mensaje}>{a.mensaje || "—"}</td>
+                      <td className="sa-num whitespace-nowrap"><span className="sa-muted">{fmtDateTime(a.ultimo)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : tab === "negocio" ? (
-            <table className="w-full text-sm min-w-[680px]">
-              <thead>
-                <tr className="text-[11px] font-semibold uppercase tracking-wide text-white/30" style={{ background: "rgba(255,255,255,0.04)" }}>
-                  <th className="text-left px-5 py-3">Negocio</th>
-                  <th className="text-right px-3 py-3">Errores</th>
-                  <th className="text-right px-3 py-3">Avisos</th>
-                  <th className="text-left px-3 py-3">API que más falla</th>
-                  <th className="text-left px-5 py-3">Última vez</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.porNegocio.map((t) => (
-                  <tr
-                    key={t._id ?? "ninguno"}
-                    className="border-t border-white/5 hover:bg-white/[0.03] cursor-pointer"
-                    onClick={() => setTenant(t._id ?? "ninguno")}
-                    title="Filtrar por este negocio"
-                  >
-                    <td className="px-5 py-3">
-                      <span className="flex items-center gap-2 text-white/80">
-                        <Building2 className="w-3.5 h-3.5 text-white/30 shrink-0" />
-                        {tenantName(t._id, t.tenantSlug)}
-                      </span>
-                    </td>
-                    <td className="text-right px-3 py-3"><Num value={t.errores} tone="error" /></td>
-                    <td className="text-right px-3 py-3"><Num value={t.avisos} tone="aviso" /></td>
-                    <td className="px-3 py-3 font-mono text-xs text-white/55">{t.apiTop ? `${t.apiTop.method} ${t.apiTop.route}` : "—"}</td>
-                    <td className="px-5 py-3 text-white/40 text-xs whitespace-nowrap">{fmtDateTime(t.ultimo)}</td>
+            <div className="sa-table-wrap">
+              <table className="sa-table min-w-[680px]">
+                <thead>
+                  <tr>
+                    <th>Negocio</th>
+                    <th className="sa-right">Errores</th>
+                    <th className="sa-right">Avisos</th>
+                    <th>API que más falla</th>
+                    <th>Última vez</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.porNegocio.map((t) => (
+                    <tr
+                      key={t._id ?? "ninguno"}
+                      className="sa-row-clickable"
+                      onClick={() => setTenant(t._id ?? "ninguno")}
+                      title="Filtrar por este negocio"
+                    >
+                      <td>
+                        <button type="button" className={`${ROW_BUTTON} font-medium`}>{tenantName(t._id, t.tenantSlug)}</button>
+                      </td>
+                      <td className="sa-right"><Num value={t.errores} tone="error" /></td>
+                      <td className="sa-right"><Num value={t.avisos} tone="aviso" /></td>
+                      <td className="sa-mono">{t.apiTop ? `${t.apiTop.method} ${t.apiTop.route}` : "—"}</td>
+                      <td className="sa-num whitespace-nowrap"><span className="sa-muted">{fmtDateTime(t.ultimo)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : tab === "mensajes" ? (
-            <table className="w-full text-sm min-w-[720px]">
-              <thead>
-                <tr className="text-[11px] font-semibold uppercase tracking-wide text-white/30" style={{ background: "rgba(255,255,255,0.04)" }}>
-                  <th className="text-left px-5 py-3">Mensaje</th>
-                  <th className="text-left px-3 py-3">Nivel</th>
-                  <th className="text-right px-3 py-3">Veces</th>
-                  <th className="text-right px-3 py-3">Negocios</th>
-                  <th className="text-left px-5 py-3">Última vez</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.mensajes.map((m) => (
-                  <tr key={`${m._id.level}${m._id.route}${m._id.message}`} className="border-t border-white/5">
-                    <td className="px-5 py-3 max-w-[360px]">
-                      <span className="text-white/80">{m._id.message || "(sin mensaje)"}</span>
-                      <span className="block font-mono text-[11px] text-white/35 truncate">{m._id.route}</span>
-                    </td>
-                    <td className="px-3 py-3"><LevelChip level={m._id.level} /></td>
-                    <td className="text-right px-3 py-3 text-white/70 tabular-nums font-semibold">{m.veces.toLocaleString("es-CR")}</td>
-                    <td className="text-right px-3 py-3 text-white/60 tabular-nums">{m.negocios}</td>
-                    <td className="px-5 py-3 text-white/40 text-xs whitespace-nowrap">{fmtDateTime(m.ultimo)}</td>
+            <div className="sa-table-wrap">
+              <table className="sa-table min-w-[720px]">
+                <thead>
+                  <tr>
+                    <th>Mensaje</th>
+                    <th>Nivel</th>
+                    <th className="sa-right">Veces</th>
+                    <th className="sa-right">Negocios</th>
+                    <th>Última vez</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.mensajes.map((m) => (
+                    <tr key={`${m._id.level}${m._id.route}${m._id.message}`}>
+                      <td className="max-w-[360px]">
+                        <span className="block break-words">{m._id.message || "(sin mensaje)"}</span>
+                        <span className="block truncate sa-mono sa-muted">{m._id.route}</span>
+                      </td>
+                      <td><LevelChip level={m._id.level} /></td>
+                      <td className="sa-right sa-num font-semibold">{m.veces.toLocaleString("es-CR")}</td>
+                      <td className="sa-right sa-num">{m.negocios}</td>
+                      <td className="sa-num whitespace-nowrap"><span className="sa-muted">{fmtDateTime(m.ultimo)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
-            <table className="w-full text-sm min-w-[860px]">
-              <thead>
-                <tr className="text-[11px] font-semibold uppercase tracking-wide text-white/30" style={{ background: "rgba(255,255,255,0.04)" }}>
-                  <th className="text-left px-5 py-3">Cuándo</th>
-                  <th className="text-left px-3 py-3">Negocio</th>
-                  <th className="text-left px-3 py-3">Nivel</th>
-                  <th className="text-left px-3 py-3">API</th>
-                  <th className="text-left px-3 py-3">Mensaje</th>
-                  <th className="text-right px-5 py-3">Veces</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.ultimos.map((e) => (
-                  <tr
-                    key={e._id} className="border-t border-white/5 hover:bg-white/[0.03] cursor-pointer"
-                    onClick={() => setDetail(e)} title="Ver el detalle"
-                  >
-                    <td className="px-5 py-3 text-white/45 text-xs whitespace-nowrap">{fmtDateTime(e.lastAt)}</td>
-                    <td className="px-3 py-3 text-white/70 whitespace-nowrap">{tenantName(e.tenantId, e.tenantSlug)}</td>
-                    <td className="px-3 py-3"><LevelChip level={e.level} /></td>
-                    <td className="px-3 py-3 font-mono text-xs text-white/60 whitespace-nowrap">{e.method} {e.route}{e.status ? ` · ${e.status}` : ""}</td>
-                    <td className="px-3 py-3 text-white/70 max-w-[320px] truncate" title={e.message}>{e.message || KIND_LABEL[e.kind]}</td>
-                    <td className="text-right px-5 py-3 text-white/60 tabular-nums">{e.count}</td>
+            <div className="sa-table-wrap">
+              <table className="sa-table min-w-[860px]">
+                <thead>
+                  <tr>
+                    <th>Cuándo</th>
+                    <th>Negocio</th>
+                    <th>Nivel</th>
+                    <th>API</th>
+                    <th>Mensaje</th>
+                    <th className="sa-right">Veces</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.ultimos.map((e) => (
+                    <tr key={e._id} className="sa-row-clickable" onClick={() => setDetail(e)} title="Ver el detalle">
+                      <td className="sa-num whitespace-nowrap"><span className="sa-muted">{fmtDateTime(e.lastAt)}</span></td>
+                      <td className="whitespace-nowrap">{tenantName(e.tenantId, e.tenantSlug)}</td>
+                      <td><LevelChip level={e.level} /></td>
+                      <td className="sa-mono whitespace-nowrap">{e.method} {e.route}{e.status ? ` · ${e.status}` : ""}</td>
+                      <td className="max-w-[320px] truncate" title={e.message}>
+                        <button type="button" aria-haspopup="dialog" className={`${ROW_BUTTON} block w-full truncate`}>{e.message || KIND_LABEL[e.kind]}</button>
+                      </td>
+                      <td className="sa-right sa-num">{e.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
-      </div>
+      </section>
 
       {detail && <EventDetail event={detail} tenantName={tenantName(detail.tenantId, detail.tenantSlug)} onClose={() => setDetail(null)} />}
-    </div>
+    </>
   );
 }
 
 // ── Detalle de un evento ───────────────────────────────────────────────────────
 
 function EventDetail({ event, tenantName, onClose }: { event: EventRow; tenantName: string; onClose: () => void }) {
+  // Solo cierra el clic que empieza y termina en el fondo: seleccionar el stack y soltar afuera no cuenta.
+  const pressedBackdrop = useRef(false);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const rows: { label: string; value: string }[] = [
+  const rows: { label: string; value: string; mono?: boolean }[] = [
     { label: "Negocio", value: tenantName },
     { label: "Quién", value: event.userName ? `${event.userName}${event.userRole ? ` (${ROLE_LABEL[event.userRole] ?? event.userRole})` : ""}` : "—" },
     { label: "Pantalla", value: event.page || "—" },
-    { label: "API", value: `${event.method} ${event.route}`.trim() || "—" },
+    { label: "API", value: `${event.method} ${event.route}`.trim() || "—", mono: true },
     { label: "Estado", value: event.status ? String(event.status) : "—" },
     { label: "Tipo", value: `${KIND_LABEL[event.kind]} · ${SOURCE_LABEL[event.source]}` },
     { label: "Código", value: event.code || "—" },
@@ -462,33 +488,33 @@ function EventDetail({ event, tenantName, onClose }: { event: EventRow; tenantNa
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="error-detail-title">
-      <button type="button" aria-label="Cerrar" className="absolute inset-0 bg-black/70 cursor-default" onClick={onClose} />
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 space-y-5" style={{ background: "#0E0E15", border: "1px solid rgba(255,255,255,0.1)" }}>
+    <div
+      className="sa-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="error-detail-title"
+      onMouseDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
+      onClick={(e) => { if (pressedBackdrop.current && e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="sa-modal sa-modal-wide">
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 space-y-2">
+          <div className="min-w-0 flex flex-col items-start gap-2">
             <LevelChip level={event.level} />
-            <h2 id="error-detail-title" className="text-white text-lg font-semibold break-words">{event.message || KIND_LABEL[event.kind]}</h2>
+            <h2 id="error-detail-title" className="sa-modal-title break-words">{event.message || KIND_LABEL[event.kind]}</h2>
           </div>
-          <button
-            type="button" onClick={onClose} autoFocus aria-label="Cerrar detalle"
-            className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
-          >
-            <X className="w-4 h-4" />
+          <button type="button" onClick={onClose} autoFocus aria-label="Cerrar detalle" className="sa-icon-btn shrink-0">
+            <X className="w-4 h-4" aria-hidden />
           </button>
         </div>
-        <dl className="grid grid-cols-1 sm:grid-cols-[170px_1fr] gap-x-4 gap-y-2 text-sm">
+        <dl className="sa-divide">
           {rows.map((r) => (
-            <div key={r.label} className="contents">
-              <dt className="text-white/40">{r.label}</dt>
-              <dd className="text-white/80 break-words font-mono text-xs sm:text-sm sm:font-sans">{r.value}</dd>
+            <div key={r.label} className="grid grid-cols-1 sm:grid-cols-[170px_minmax(0,1fr)] gap-x-4 gap-y-0.5 py-2">
+              <dt className="sa-muted">{r.label}</dt>
+              <dd className={`min-w-0 break-words ${r.mono ? "sa-mono" : ""}`}>{r.value}</dd>
             </div>
           ))}
         </dl>
         {event.stack && (
-          <div className="space-y-2">
-            <p className="flex items-center gap-2 text-white/50 text-sm"><AlertTriangle className="w-4 h-4" /> Detalle técnico</p>
-            <pre className="text-[11px] leading-relaxed text-white/60 rounded-xl p-4 overflow-x-auto whitespace-pre" style={{ background: "rgba(255,255,255,0.04)" }}>{event.stack}</pre>
+          <div className="flex flex-col gap-2 min-w-0">
+            <p className="sa-eyebrow flex items-center gap-2"><AlertTriangle className="w-4 h-4" aria-hidden />Detalle técnico</p>
+            <pre className="sa-inset sa-mono p-4 overflow-x-auto whitespace-pre leading-relaxed">{event.stack}</pre>
           </div>
         )}
       </div>

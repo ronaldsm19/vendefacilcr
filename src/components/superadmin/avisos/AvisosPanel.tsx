@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Send, Pause, Play, Trash2 } from "lucide-react";
+import { AlertTriangle, Banknote, Check, Clock, Info, Pause, Play, Send, Trash2, type LucideIcon } from "lucide-react";
 import { NOTICE_KINDS, NOTICE_LIMITS, noticeKindLabel, type NoticeKind, type NoticeRoles } from "@/lib/notices";
 import { formatCrDate } from "@/lib/billing";
 
@@ -27,14 +27,30 @@ interface NoticeRow {
   reads: Read[];
 }
 
-const CARD = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" };
-const KIND_CHIP: Record<NoticeKind, string> = {
-  info: "bg-sky-500/20 text-sky-300",
-  cobro: "bg-amber-500/20 text-amber-300",
-  urgente: "bg-red-500/20 text-red-300",
+type NoticeState = "Activo" | "Pausado" | "Vencido";
+
+const KIND_CHIP: Record<NoticeKind, { tone: string; Icon: LucideIcon }> = {
+  info: { tone: "sa-chip-info", Icon: Info },
+  cobro: { tone: "sa-chip-warn", Icon: Banknote },
+  urgente: { tone: "sa-chip-danger", Icon: AlertTriangle },
+};
+const STATE_CHIP: Record<NoticeState, { tone: string; Icon: LucideIcon }> = {
+  Activo: { tone: "sa-chip-ok", Icon: Check },
+  Pausado: { tone: "", Icon: Pause },
+  Vencido: { tone: "", Icon: Clock },
 };
 const ROLE_LABELS: Record<string, string> = { admin: "Dueño", cajero: "Cajero", mesero: "Mesero" };
 const when = (iso: string) => new Date(iso).toLocaleString("es-CR", { timeZone: "America/Costa_Rica", day: "numeric", month: "numeric", hour: "numeric", minute: "2-digit" });
+
+function KindChip({ kind }: { kind: NoticeKind }) {
+  const { tone, Icon } = KIND_CHIP[kind];
+  return <span className={`sa-chip ${tone}`}><Icon aria-hidden />{noticeKindLabel(kind)}</span>;
+}
+
+function StateChip({ state }: { state: NoticeState }) {
+  const { tone, Icon } = STATE_CHIP[state];
+  return <span className={`sa-chip ${tone}`}><Icon aria-hidden />{state}</span>;
+}
 
 /** Avisos del superadmin a los negocios: crear uno y ver quién lo vio. */
 export default function AvisosPanel() {
@@ -102,144 +118,156 @@ export default function AvisosPanel() {
   }
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
-      <div>
-        <h1 className="font-brand text-2xl md:text-3xl font-bold text-white">Avisos</h1>
-        <p className="text-white/40 text-sm mt-1">
-          Mensajes que los negocios ven dentro de su panel. El aviso de mensualidad por vencer sale solo, con el cobro automático.
-        </p>
-      </div>
+    <div className="sa-page">
+      <header className="sa-page-head">
+        <div>
+          <h1 className="sa-title">Avisos</h1>
+          <p className="sa-subtitle">
+            Mensajes que los negocios ven dentro de su panel. El aviso de mensualidad por vencer sale solo, con el cobro automático.
+          </p>
+        </div>
+      </header>
 
       {/* Nuevo aviso */}
-      <section className="rounded-2xl p-6 space-y-4" style={CARD} aria-labelledby="nuevo-aviso">
-        <h2 id="nuevo-aviso" className="text-white/70 font-semibold text-sm uppercase tracking-wide">Nuevo aviso</h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-3">
-          <label className="block space-y-1.5">
-            <span className="text-xs text-white/50">Tipo</span>
-            <select value={kind} onChange={(e) => setKind(e.target.value as NoticeKind)} className="saas-input cursor-pointer">
-              {NOTICE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-            </select>
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs text-white/50">Título</span>
-            <input value={title} maxLength={NOTICE_LIMITS.title} onChange={(e) => setTitle(e.target.value)} className="saas-input" placeholder="Mantenimiento el domingo" />
-          </label>
+      <section className="sa-card" aria-labelledby="nuevo-aviso">
+        <div className="sa-card-head">
+          <h2 id="nuevo-aviso" className="sa-h2">Nuevo aviso</h2>
         </div>
-        {kindInfo && <p className="text-xs text-white/35">{kindInfo.hint}</p>}
 
-        <label className="block space-y-1.5">
-          <span className="flex justify-between text-xs text-white/50">
-            <span>Mensaje</span>
-            <span className="tabular-nums">{body.length}/{NOTICE_LIMITS.body}</span>
-          </span>
-          <textarea rows={4} value={body} maxLength={NOTICE_LIMITS.body} onChange={(e) => setBody(e.target.value)} className="saas-input resize-none" />
-        </label>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <fieldset className="space-y-2">
-            <legend className="text-xs text-white/50 mb-1">Para quién</legend>
-            <label className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
-              <input type="radio" name="audience" checked={audience === "all"} onChange={() => setAudience("all")} className="accent-purple-500" />
-              Todos los negocios
-            </label>
-            <label className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
-              <input type="radio" name="audience" checked={audience === "tenants"} onChange={() => setAudience("tenants")} className="accent-purple-500" />
-              Elegir negocios
-            </label>
-            {audience === "tenants" && (
-              <div className="max-h-44 overflow-y-auto rounded-xl p-3 space-y-1.5" style={{ background: "rgba(255,255,255,0.04)" }}>
-                {tenants.map((t) => (
-                  <label key={t.id} className="flex items-center gap-2 text-sm text-white/75 cursor-pointer">
-                    <input type="checkbox" checked={selected.includes(t.id)} onChange={() => toggle(t.id)} className="w-4 h-4 accent-purple-500" />
-                    {t.name}
-                    {t.status !== "active" && <span className="text-xs text-red-300/80">(suspendido: no puede entrar a verlo)</span>}
-                  </label>
-                ))}
-                {!tenants.length && <p className="text-sm text-white/30">Cargando negocios...</p>}
-              </div>
-            )}
-          </fieldset>
-
-          <div className="space-y-3">
-            <label className="block space-y-1.5">
-              <span className="text-xs text-white/50">Quién lo ve dentro del negocio</span>
-              <select
-                value={kind === "cobro" ? "owner" : roles} disabled={kind === "cobro"}
-                onChange={(e) => setRoles(e.target.value as NoticeRoles)} className="saas-input cursor-pointer disabled:opacity-60"
-              >
-                <option value="owner">Solo el dueño</option>
-                <option value="all">Dueño y personal (cajeros, meseros)</option>
-              </select>
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs text-white/50">Deja de mostrarse después del (opcional)</span>
-              <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="saas-input" />
-            </label>
-            <label className="flex items-start gap-2 text-sm text-white/80 cursor-pointer">
-              <input type="checkbox" checked={everyLogin} onChange={(e) => setEveryLogin(e.target.checked)} className="w-4 h-4 mt-0.5 accent-purple-500" />
-              <span>
-                Mostrar en cada inicio de sesión
-                <span className="block text-xs text-white/35">Si no, cada persona lo ve una sola vez.</span>
-              </span>
-            </label>
+        <div className="sa-card-pad flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[200px_minmax(0,1fr)] gap-3">
+              <label className="sa-field">
+                <span className="sa-label">Tipo</span>
+                <select value={kind} onChange={(e) => setKind(e.target.value as NoticeKind)} className="sa-input">
+                  {NOTICE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+                </select>
+              </label>
+              <label className="sa-field">
+                <span className="sa-label">Título</span>
+                <input value={title} maxLength={NOTICE_LIMITS.title} onChange={(e) => setTitle(e.target.value)} className="sa-input" placeholder="Mantenimiento el domingo" />
+              </label>
+            </div>
+            {kindInfo && <p className="sa-help">{kindInfo.hint}</p>}
           </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button" onClick={() => void send()}
-            disabled={sending || title.trim().length < 3 || !body.trim() || (audience === "tenants" && !selected.length)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl saas-accent-bg text-white text-sm font-semibold hover:opacity-90 disabled:opacity-40 cursor-pointer disabled:cursor-default"
-          >
-            <Send className="w-4 h-4" aria-hidden /> {sending ? "Enviando..." : "Enviar aviso"}
-          </button>
-          {msg && <p className={`text-sm ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>{msg.text}</p>}
+          <label className="sa-field">
+            <span className="sa-label flex justify-between gap-3">
+              <span>Mensaje</span>
+              <span className="sa-help sa-num font-normal">{body.length}/{NOTICE_LIMITS.body}</span>
+            </span>
+            <textarea rows={4} value={body} maxLength={NOTICE_LIMITS.body} onChange={(e) => setBody(e.target.value)} className="sa-input resize-none" />
+          </label>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <fieldset className="min-w-0">
+              <legend className="sa-label">Para quién</legend>
+              <div className="mt-2 flex flex-col gap-2">
+                <label className="sa-check">
+                  <input type="radio" name="audience" checked={audience === "all"} onChange={() => setAudience("all")} />
+                  <span>Todos los negocios</span>
+                </label>
+                <label className="sa-check">
+                  <input type="radio" name="audience" checked={audience === "tenants"} onChange={() => setAudience("tenants")} />
+                  <span>Elegir negocios</span>
+                </label>
+                {audience === "tenants" && (
+                  <div className="sa-inset max-h-44 overflow-y-auto p-3 flex flex-col gap-2">
+                    {tenants.map((t) => (
+                      <label key={t.id} className="sa-check">
+                        <input type="checkbox" checked={selected.includes(t.id)} onChange={() => toggle(t.id)} />
+                        <span>
+                          {t.name}
+                          {t.status !== "active" && <span className="sa-danger-text text-xs"> (suspendido: no puede entrar a verlo)</span>}
+                        </span>
+                      </label>
+                    ))}
+                    {!tenants.length && <p className="sa-muted">Cargando negocios...</p>}
+                  </div>
+                )}
+              </div>
+            </fieldset>
+
+            <div className="flex flex-col gap-3">
+              <label className="sa-field">
+                <span className="sa-label">Quién lo ve dentro del negocio</span>
+                <select
+                  value={kind === "cobro" ? "owner" : roles} disabled={kind === "cobro"}
+                  onChange={(e) => setRoles(e.target.value as NoticeRoles)} className="sa-input"
+                >
+                  <option value="owner">Solo el dueño</option>
+                  <option value="all">Dueño y personal (cajeros, meseros)</option>
+                </select>
+              </label>
+              <label className="sa-field">
+                <span className="sa-label">Deja de mostrarse después del (opcional)</span>
+                <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="sa-input" />
+              </label>
+              <label className="sa-check">
+                <input type="checkbox" checked={everyLogin} onChange={(e) => setEveryLogin(e.target.checked)} />
+                <span>
+                  Mostrar en cada inicio de sesión
+                  <span className="block sa-help">Si no, cada persona lo ve una sola vez.</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button" onClick={() => void send()}
+              disabled={sending || title.trim().length < 3 || !body.trim() || (audience === "tenants" && !selected.length)}
+              className="sa-btn sa-btn-primary"
+            >
+              <Send className="w-4 h-4" aria-hidden />
+              {sending ? "Enviando..." : "Enviar aviso"}
+            </button>
+            {msg && <p role="status" className={msg.ok ? "sa-success" : "sa-error"}>{msg.text}</p>}
+          </div>
         </div>
       </section>
 
       {/* Enviados */}
-      <section className="space-y-3" aria-labelledby="avisos-enviados">
-        <h2 id="avisos-enviados" className="text-white/70 font-semibold text-sm uppercase tracking-wide">Enviados</h2>
+      <section className="flex flex-col gap-3" aria-labelledby="avisos-enviados">
+        <h2 id="avisos-enviados" className="sa-h2">Enviados</h2>
         {notices === null ? (
-          <p className="text-sm text-white/30">Cargando...</p>
+          <p className="sa-muted">Cargando...</p>
         ) : notices.length === 0 ? (
-          <p className="text-sm text-white/30">Todavía no hay avisos.</p>
+          <div className="sa-card sa-empty">Todavía no hay avisos.</div>
         ) : (
           notices.map((n) => {
-            const state = !n.active ? "Pausado" : n.expired ? "Vencido" : "Activo";
+            const state: NoticeState = !n.active ? "Pausado" : n.expired ? "Vencido" : "Activo";
             return (
-              <article key={n.id} className="rounded-2xl p-5 space-y-3" style={CARD}>
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${KIND_CHIP[n.kind]}`}>{noticeKindLabel(n.kind)}</span>
-                      <span className={`text-xs ${state === "Activo" ? "text-emerald-300" : "text-white/40"}`}>{state}</span>
+              <article key={n.id} className="sa-card sa-card-pad flex flex-col gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <KindChip kind={n.kind} />
+                      <StateChip state={state} />
                     </div>
-                    <h3 className="mt-2 text-base font-semibold text-white">{n.title}</h3>
+                    <h3 className="sa-strong text-base break-words">{n.title}</h3>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button" onClick={() => void act(n.id, n.active ? "pause" : "resume")} disabled={acting === n.id}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-white/60 hover:text-white disabled:opacity-40 cursor-pointer"
-                      style={{ border: "1px solid rgba(255,255,255,0.1)" }}
+                      className="sa-btn sa-btn-sm sa-btn-secondary"
                     >
-                      {n.active ? <Pause className="w-3.5 h-3.5" aria-hidden /> : <Play className="w-3.5 h-3.5" aria-hidden />}
+                      {n.active ? <Pause className="w-4 h-4" aria-hidden /> : <Play className="w-4 h-4" aria-hidden />}
                       {n.active ? "Pausar" : "Reanudar"}
                     </button>
                     <button
                       type="button" onClick={() => void act(n.id, "delete")} disabled={acting === n.id}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-red-300 hover:text-red-200 disabled:opacity-40 cursor-pointer"
-                      style={{ border: "1px solid rgba(239,68,68,0.25)" }}
+                      className="sa-btn sa-btn-sm sa-btn-ghost-danger"
                     >
-                      <Trash2 className="w-3.5 h-3.5" aria-hidden /> Borrar
+                      <Trash2 className="w-4 h-4" aria-hidden />
+                      Borrar
                     </button>
                   </div>
                 </div>
 
-                <p className="text-sm text-white/65 whitespace-pre-line">{n.body}</p>
+                <p className="whitespace-pre-line break-words text-[var(--sa-ink-3)]">{n.body}</p>
 
-                <p className="text-xs text-white/40">
+                <p className="sa-help">
                   Para {n.audience === "all" ? "todos los negocios" : n.tenantNames.join(", ")}
                   {" · "}{n.roles === "all" ? "dueño y personal" : "solo el dueño"}
                   {n.showEveryLogin && " · en cada inicio de sesión"}
@@ -247,19 +275,19 @@ export default function AvisosPanel() {
                   {" · "}enviado el {when(n.createdAt)}
                 </p>
 
-                <details className="text-sm">
-                  <summary className="cursor-pointer text-white/70">
-                    Visto por <strong className="text-white">{n.seenTenants}</strong> de {n.recipients} negocio(s)
+                <details>
+                  <summary className="cursor-pointer">
+                    Visto por <strong className="sa-strong sa-num">{n.seenTenants}</strong> de <span className="sa-num">{n.recipients}</span> negocio(s)
                   </summary>
                   {n.reads.length === 0 ? (
-                    <p className="mt-2 text-white/35">Nadie lo ha visto todavía.</p>
+                    <p className="sa-muted mt-2">Nadie lo ha visto todavía.</p>
                   ) : (
-                    <ul className="mt-2 space-y-1">
+                    <ul className="sa-inset sa-divide mt-2 px-3">
                       {n.reads.map((r, i) => (
-                        <li key={i} className="flex flex-wrap gap-x-3 text-white/60">
-                          <span className="text-white/85">{r.tenantName}</span>
+                        <li key={i} className="flex flex-wrap gap-x-3 py-2">
+                          <span className="sa-strong">{r.tenantName}</span>
                           <span>{r.userName} ({ROLE_LABELS[r.role] ?? r.role})</span>
-                          <span className="text-white/40">{when(r.firstSeenAt)}{r.count > 1 && ` · ${r.count} veces, la última ${when(r.lastSeenAt)}`}</span>
+                          <span className="sa-muted">{when(r.firstSeenAt)}{r.count > 1 && ` · ${r.count} veces, la última ${when(r.lastSeenAt)}`}</span>
                         </li>
                       ))}
                     </ul>
