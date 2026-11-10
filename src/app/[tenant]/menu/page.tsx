@@ -8,16 +8,18 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { Tenant } from "@/models/Tenant";
 import { AccessLog } from "@/models/AccessLog";
+import StoreUnavailable from "@/components/StoreUnavailable";
 
 async function getTenantWithMenu(slug: string) {
   try {
     await connectToDatabase();
-    const tenant = await Tenant.findOne({ slug, status: "active" }).lean();
+    const tenant = await Tenant.findOne({ slug }).lean();
     if (!tenant) return null;
     return JSON.parse(JSON.stringify(tenant)) as {
       _id: string;
       slug: string;
       name: string;
+      status: string;
       logoUrl: string;
       theme: {
         primaryColor: string;
@@ -247,6 +249,7 @@ export default async function MenuPage({
 
   const tenant = await getTenantWithMenu(slug);
   if (!tenant) notFound();
+  if (tenant.status !== "active") return <StoreUnavailable name={tenant.name} />;
 
   const hdrs = await headers();
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";

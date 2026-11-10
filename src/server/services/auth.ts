@@ -8,6 +8,12 @@ import { ServiceError } from "@/server/errors";
 import { isPremiumPlan, homePathFor, ERROR_PREMIUM, type Role } from "@/lib/permissions";
 import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
 import type { AdminPayload } from "@/lib/auth";
+import { suspensionNotice, suspensionText } from "@/lib/suspension";
+
+/** Por qué no puede entrar: el dueño ve el motivo de la suspensión, el personal un texto neutro. */
+function inactiveError(tenant: ITenantLean, role: Role | "admin"): string {
+  return suspensionText(suspensionNotice(tenant, role === "admin" ? "owner" : "neutral"));
+}
 
 /**
  * Autenticación compartida por la web (cookie) y la app móvil (token).
@@ -31,7 +37,6 @@ const MAX_ATTEMPTS_USER = 5;
 const MAX_ATTEMPTS_IP_STAFF = 30;
 
 export const ERROR_CREDENTIALS = "Credenciales incorrectas";
-export const ERROR_INACTIVE = "Tu cuenta está inactiva. Contactá a VendeFácil.";
 export const ERROR_TOO_MANY = "Demasiados intentos fallidos. Intenta de nuevo en 15 minutos.";
 export const ERROR_TOO_MANY_USER =
   "Demasiados intentos fallidos para este usuario. Intentá de nuevo en 15 minutos.";
@@ -73,6 +78,8 @@ interface ITenantLean {
   slug: string;
   name?: string;
   status: string;
+  suspendedReason?: string;
+  suspendedMessage?: string;
   plan?: string;
   passwordChanged?: boolean;
   ticketConfig?: { ownerName?: string };
@@ -175,7 +182,7 @@ async function authenticateAdmin(login: string, input: AuthInput): Promise<AuthR
 
   const tenant = (await Tenant.findById(user.tenantId).lean()) as ITenantLean | null;
   if (!tenant) throw new ServiceError(403, "Tenant no encontrado");
-  if (tenant.status !== "active") throw new ServiceError(403, ERROR_INACTIVE);
+  if (tenant.status !== "active") throw new ServiceError(403, inactiveError(tenant, "admin"));
 
   // El slug de la URL tiene que ser el del usuario: así un admin no entra por la puerta de otro.
   if (input.tenantSlug && input.tenantSlug !== tenant.slug) {
@@ -219,7 +226,7 @@ async function authenticateStaff(login: string, input: AuthInput): Promise<AuthR
   }
 
   const tenant = (await Tenant.findOne({ slug: input.tenantSlug })
-    .select("_id slug name status plan theme")
+    .select("_id slug name status suspendedReason suspendedMessage plan theme")
     .lean()) as ITenantLean | null;
 
   if (!tenant) {
@@ -239,7 +246,7 @@ async function authenticateStaff(login: string, input: AuthInput): Promise<AuthR
   if (!userOk) throw new ServiceError(429, ERROR_TOO_MANY_USER);
   if (!ipOk) throw new ServiceError(429, ERROR_TOO_MANY);
 
-  if (tenant.status !== "active") throw new ServiceError(403, ERROR_INACTIVE);
+  if (tenant.status !== "active") throw new ServiceError(403, inactiveError(tenant, "mesero"));
   if (!isPremiumPlan(tenant.plan)) throw new ServiceError(403, ERROR_PREMIUM);
 
   const staff = (await StaffUser.findOne({
@@ -279,11 +286,12 @@ export async function revalidateSession(payload: AdminPayload): Promise<AuthResu
   await connectToDatabase();
 
   const tenant = (await Tenant.findById(payload.tenantId)
-    .select("_id slug name status plan theme passwordChanged")
+    .select("_id slug name status suspendedReason suspendedMessage plan theme passwordChanged")
     .lean()) as ITenantLean | null;
 
   if (!tenant || tenant.status !== "active") {
-    throw new ServiceError(401, ERROR_INACTIVE, "SESSION_REVOKED");
+    const message = tenant ? inactiveError(tenant, payload.role) : suspensionText(suspensionNotice({}, "neutral"));
+    throw new ServiceError(401, message, "SESSION_REVOKED");
   }
 
   if (payload.role === "admin") {

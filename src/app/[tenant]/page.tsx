@@ -8,6 +8,7 @@ import TrustSection from "@/components/TrustSection";
 import AboutSection from "@/components/AboutSection";
 import Footer, { type SocialLinks } from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import StoreUnavailable from "@/components/StoreUnavailable";
 import { headers } from "next/headers";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
@@ -24,12 +25,13 @@ import { productsSectionForDisplay } from "@/lib/storeTexts";
 async function getTenant(slug: string) {
   try {
     await connectToDatabase();
-    const tenant = await Tenant.findOne({ slug, status: "active" }).lean();
+    const tenant = await Tenant.findOne({ slug }).lean();
     if (!tenant) return null;
     return JSON.parse(JSON.stringify(tenant)) as {
       _id: string;
       slug: string;
       name: string;
+      status: string;
       logoUrl: string;
       whatsappNumber: string;
       instagram: string;
@@ -97,6 +99,7 @@ export default async function TenantStorefront({
   const { tenant: slug } = await params;
   const tenant = await getTenant(slug);
   if (!tenant) notFound();
+  if (tenant.status !== "active") return <StoreUnavailable name={tenant.name} />;
 
   const hdrs = await headers();
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
