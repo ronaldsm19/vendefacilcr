@@ -19,7 +19,8 @@ function getTransporter(): nodemailer.Transporter | null {
     transporter = nodemailer.createTransport({
       host: SMTP_HOST,
       port: Number(SMTP_PORT ?? 587),
-      secure: false, // 587 usa STARTTLS
+      // 465 es TLS directo; 587 (y los demás) negocian STARTTLS.
+      secure: Number(SMTP_PORT ?? 587) === 465,
       auth: { user: SMTP_USER, pass: SMTP_PASS },
     });
   }
@@ -50,7 +51,9 @@ export async function sendMail({
     return { ok: false, error: "SMTP no configurado (faltan variables SMTP_*)" };
   }
   try {
-    const from = process.env.SMTP_USER!;
+    // SMTP_FROM permite un remitente distinto del usuario SMTP: con un servicio de envío y dominio
+    // propio (el usuario suele ser fijo, tipo "resend") la dirección tiene que ser de ese dominio.
+    const from = process.env.SMTP_FROM || process.env.SMTP_USER!;
     await tx.sendMail({
       from: `VendeFácil CR <${from}>`,
       to,
