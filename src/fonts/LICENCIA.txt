@@ -1,0 +1,2 @@
+Geist (Vercel) y Familjen Grotesk (Familjen STHLM AB): fuentes variables, subconjunto latino,
+bajo la SIL Open Font License 1.1 (https://openfontlicense.org). Las usa solo el superadmin.

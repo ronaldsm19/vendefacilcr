@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Activity, CheckCircle2, XCircle, Search } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
 
 interface LogItem {
   _id: string;
@@ -15,6 +15,12 @@ interface LogItem {
   path?: string;
   createdAt: string;
 }
+
+const RESULT_FILTERS = [
+  { value: "",      label: "Todos" },
+  { value: "true",  label: "Exitosos" },
+  { value: "false", label: "Fallidos" },
+];
 
 export default function ActividadPage() {
   const [logs, setLogs]     = useState<LogItem[]>([]);
@@ -42,168 +48,168 @@ export default function ActividadPage() {
   useEffect(() => { load(); }, [load]);
 
   const totalPages = Math.ceil(total / 50);
+  const hasFilters = Boolean(tenant || success || from || to);
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="font-brand text-2xl md:text-3xl font-bold text-white">Actividad</h1>
-        <p className="text-white/40 text-sm mt-1">{total} registros de acceso</p>
-      </div>
+    <div className="sa-page">
+      <header className="sa-page-head">
+        <div>
+          <h1 className="sa-title">Actividad</h1>
+          <p className="sa-subtitle sa-num">
+            {total} {total === 1 ? "registro de acceso" : "registros de acceso"}
+          </p>
+        </div>
+      </header>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        {/* Tenant search */}
-        <div
-          className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1 min-w-[180px]"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          <Search className="w-4 h-4 text-white/30 shrink-0" />
+      {/* Los anchos van en el contenedor de cada campo: .sa-input siempre ocupa todo su ancho. */}
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="sa-field w-full sm:w-auto sm:flex-[1_1_220px]">
+          <span className="sa-label">Negocio</span>
           <input
             value={tenant}
             onChange={(e) => { setTenant(e.target.value); setPage(1); }}
-            placeholder="Filtrar por tenant..."
-            className="bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none flex-1"
+            placeholder="Filtrar por negocio..."
+            className="sa-input"
           />
+        </label>
+
+        <div className="sa-field">
+          <span className="sa-label" id="actividad-resultado">Resultado</span>
+          <div className="sa-seg" role="group" aria-labelledby="actividad-resultado">
+            {RESULT_FILTERS.map((r) => (
+              <button
+                key={r.value}
+                type="button"
+                aria-pressed={success === r.value}
+                onClick={() => { setSuccess(r.value); setPage(1); }}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Success filter */}
-        <select
-          value={success}
-          onChange={(e) => { setSuccess(e.target.value); setPage(1); }}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          <option value="">Todos</option>
-          <option value="true">Exitosos</option>
-          <option value="false">Fallidos</option>
-        </select>
+        <label className="sa-field flex-[1_1_140px] sm:flex-[0_0_160px]">
+          <span className="sa-label">Desde</span>
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+            className="sa-input"
+          />
+        </label>
+        <label className="sa-field flex-[1_1_140px] sm:flex-[0_0_160px]">
+          <span className="sa-label">Hasta</span>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => { setTo(e.target.value); setPage(1); }}
+            className="sa-input"
+          />
+        </label>
 
-        {/* Date range */}
-        <input
-          type="date"
-          value={from}
-          onChange={(e) => { setFrom(e.target.value); setPage(1); }}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", colorScheme: "dark" }}
-        />
-        <input
-          type="date"
-          value={to}
-          onChange={(e) => { setTo(e.target.value); setPage(1); }}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 focus:outline-none cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", colorScheme: "dark" }}
-        />
-
-        {(tenant || success || from || to) && (
+        {hasFilters && (
           <button
+            type="button"
             onClick={() => { setTenant(""); setSuccess(""); setFrom(""); setTo(""); setPage(1); }}
-            className="text-xs text-white/40 hover:text-white transition-colors cursor-pointer px-2"
+            className="sa-btn sa-btn-ghost"
           >
             Limpiar
           </button>
         )}
       </div>
 
-      {/* Table */}
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{ border: "1px solid rgba(255,255,255,0.07)" }}
-      >
-        <div
-          className="grid grid-cols-[110px_1fr_140px_120px_100px_160px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
-          style={{ background: "rgba(255,255,255,0.04)" }}
-        >
-          <span>Evento</span>
-          <span>Usuario / Ruta</span>
-          <span>Tenant</span>
-          <span>Ruta</span>
-          <span>IP</span>
-          <span>Fecha</span>
-        </div>
-
+      <section className="sa-card overflow-hidden" aria-label="Registros de acceso">
         {loading ? (
-          <div className="px-5 py-10 text-center text-white/30 text-sm">Cargando...</div>
+          <div className="sa-empty">Cargando...</div>
         ) : logs.length === 0 ? (
-          <div
-            className="px-5 py-12 flex flex-col items-center gap-3"
-          >
-            <Activity className="w-8 h-8 text-white/20" />
-            <p className="text-white/30 text-sm">Sin registros</p>
+          <div className="sa-empty">
+            {hasFilters ? "No hay registros con esos filtros." : "No hay registros de acceso."}
           </div>
         ) : (
-          logs.map((log, i) => {
-            const isVisit = log.event === "visit";
-            return (
-              <div
-                key={log._id}
-                className="grid grid-cols-[110px_1fr_140px_120px_100px_160px] px-5 py-3 items-center text-sm"
-                style={{ borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : "none" }}
-              >
-                {/* Evento */}
-                <div className="flex items-center gap-2">
-                  {isVisit ? (
-                    <Activity className="w-4 h-4 text-blue-400 shrink-0" />
-                  ) : log.success ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-red-400 shrink-0" />
-                  )}
-                  <span className={`text-xs font-semibold ${isVisit ? "text-blue-400" : log.success ? "text-emerald-400" : "text-red-400"}`}>
-                    {isVisit ? "Visita" : log.success ? "Login OK" : "Login Falló"}
-                  </span>
-                </div>
-                {/* Usuario o ruta */}
-                <span className="text-white/70 text-xs font-mono truncate pr-3">
-                  {log.userEmail || "—"}
-                </span>
-                {/* Tenant */}
-                <span
-                  className="text-xs font-mono px-2 py-0.5 rounded-md w-fit"
-                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)" }}
-                >
-                  /{log.tenantSlug}
-                </span>
-                {/* Path */}
-                <span className="text-white/40 text-xs font-mono truncate">
-                  {log.path ?? "—"}
-                </span>
-                {/* IP */}
-                <span className="text-white/35 text-xs font-mono">{log.ip}</span>
-                {/* Fecha */}
-                <span className="text-white/35 text-xs">
-                  {new Date(log.createdAt).toLocaleString("es-CR", {
-                    day: "2-digit", month: "2-digit", year: "2-digit",
-                    hour: "2-digit", minute: "2-digit",
-                  })}
-                </span>
-              </div>
-            );
-          })
+          <div className="sa-table-wrap">
+            <table className="sa-table">
+              <thead>
+                <tr>
+                  <th>Evento</th>
+                  <th>Usuario</th>
+                  <th>Negocio</th>
+                  <th>Ruta</th>
+                  <th>IP y agente</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => {
+                  const isVisit = log.event === "visit";
+                  return (
+                    <tr key={log._id}>
+                      <td>
+                        {isVisit ? (
+                          <span className="sa-chip"><Eye aria-hidden />Visita</span>
+                        ) : log.success ? (
+                          <span className="sa-chip sa-chip-ok"><Check aria-hidden />Ingreso correcto</span>
+                        ) : (
+                          <span className="sa-chip sa-chip-danger"><X aria-hidden />Ingreso fallido</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="block max-w-[260px] truncate" title={log.userEmail || undefined}>
+                          {log.userEmail || "—"}
+                        </span>
+                      </td>
+                      <td className="sa-mono whitespace-nowrap">/{log.tenantSlug}</td>
+                      {/* El gris va en un span: dentro de .sa-table la celda fija su propio color. */}
+                      <td>
+                        <span className="sa-mono sa-muted block max-w-[220px] truncate" title={log.path}>
+                          {log.path ?? "—"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="sa-mono sa-muted whitespace-nowrap">{log.ip}</span>
+                        {log.userAgent && (
+                          <span className="sa-muted block max-w-[240px] truncate text-xs" title={log.userAgent}>
+                            {log.userAgent}
+                          </span>
+                        )}
+                      </td>
+                      <td className="sa-num whitespace-nowrap">
+                        {new Date(log.createdAt).toLocaleString("es-CR", {
+                          day: "2-digit", month: "2-digit", year: "2-digit",
+                          hour: "2-digit", minute: "2-digit",
+                        })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </section>
 
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
+        <nav className="flex flex-wrap items-center justify-center gap-3" aria-label="Páginas">
           <button
+            type="button"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.05)" }}
+            className="sa-btn sa-btn-sm sa-btn-secondary"
           >
-            ← Anterior
+            <ChevronLeft className="w-4 h-4" aria-hidden />
+            Anterior
           </button>
-          <span className="text-white/30 text-sm">{page} / {totalPages}</span>
+          <span className="sa-muted sa-num">Página {page} de {totalPages}</span>
           <button
+            type="button"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.05)" }}
+            className="sa-btn sa-btn-sm sa-btn-secondary"
           >
-            Siguiente →
+            Siguiente
+            <ChevronRight className="w-4 h-4" aria-hidden />
           </button>
-        </div>
+        </nav>
       )}
     </div>
   );

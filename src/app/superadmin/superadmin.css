@@ -1,0 +1,225 @@
+/*
+ * Sistema visual del superadmin ("Consola clara"). Todo vive bajo .sa, así no toca el panel de los
+ * negocios ni la tienda, que tienen sus propios temas.
+ *
+ * Cada color tiene un trabajo: azul = acción principal y sección activa; verde = plata y "al día";
+ * ámbar = por vencer (avisa, no bloquea); rojo = atrasado, suspendido o irreversible. Ningún estado
+ * depende solo del color: los chips llevan ícono y texto.
+ *
+ * Todo va en la capa "components": así las utilidades de Tailwind (capa "utilities") ganan cuando
+ * hace falta ajustar un ancho o un margen en una pantalla.
+ */
+
+@layer components {
+  .sa {
+    --sa-bg: #F5F6F8;
+    --sa-surface: #FFFFFF;
+    --sa-subtle: #F8F9FB;
+    --sa-hover: #F1F3F6;
+    --sa-muted-bg: #EEF0F3;
+    --sa-ink: #14171C;
+    --sa-ink-2: #5B6270;
+    --sa-ink-3: #3D4450;
+    --sa-line: #E3E5E8;
+    --sa-line-strong: #CDD2D9;
+
+    --sa-primary: #2148C0;
+    --sa-primary-hover: #1A3A9E;
+    --sa-primary-soft: #E8EEFC;
+
+    --sa-ok: #0E7A4F;
+    --sa-ok-ink: #0B6440;
+    --sa-ok-soft: #E7F5EE;
+    --sa-ok-line: #BFE3CF;
+
+    --sa-warn-ink: #8A5300;
+    --sa-warn-soft: #FFF4E0;
+    --sa-warn-line: #F2D7A6;
+
+    --sa-danger: #C2321F;
+    --sa-danger-hover: #A82A19;
+    --sa-danger-ink: #B42318;
+    --sa-danger-soft: #FDECEA;
+    --sa-danger-line: #F6C9C3;
+
+    --sa-radius: 8px;
+    --sa-radius-panel: 10px;
+    --sa-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    --sa-shadow-raised: 0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 24px rgba(16, 24, 40, 0.06);
+    --sa-shadow-modal: 0 4px 12px rgba(16, 24, 40, 0.08), 0 24px 64px rgba(16, 24, 40, 0.18);
+
+    --sa-font: var(--font-sa-sans), var(--font-sa-display-ext), system-ui, -apple-system, "Segoe UI", sans-serif;
+    --sa-font-display: var(--font-sa-display), var(--font-sa-display-ext), var(--font-sa-sans), system-ui, sans-serif;
+
+    background: var(--sa-bg);
+    color: var(--sa-ink);
+    font-family: var(--sa-font);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sa a { color: inherit; }
+  .sa :focus-visible { outline: 2px solid var(--sa-primary); outline-offset: 2px; }
+  .sa input[type="checkbox"], .sa input[type="radio"] { accent-color: var(--sa-primary); width: 16px; height: 16px; }
+
+  /* ── Página ─────────────────────────────────────────────────────────────── */
+
+  .sa-page { width: 100%; max-width: 1280px; margin: 0 auto; padding: 28px clamp(16px, 2.5vw, 32px) 56px; display: flex; flex-direction: column; gap: 24px; }
+  .sa-page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; }
+  .sa-title { margin: 0; font-family: var(--sa-font-display); font-weight: 600; font-size: clamp(24px, 3vw, 30px); letter-spacing: -0.02em; line-height: 1.1; color: var(--sa-ink); }
+  .sa-subtitle { margin: 6px 0 0; font-size: 14px; color: var(--sa-ink-2); }
+  .sa-h2 { margin: 0; font-family: var(--sa-font-display); font-weight: 600; font-size: 19px; letter-spacing: -0.01em; color: var(--sa-ink); }
+  .sa-eyebrow { margin: 0; font-size: 13px; font-weight: 600; color: var(--sa-ink-2); }
+
+  .sa-link { color: var(--sa-primary) !important; font-weight: 500; text-decoration: none; cursor: pointer; }
+  .sa-link:hover { color: var(--sa-primary-hover) !important; text-decoration: underline; }
+  .sa-mono { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace; font-size: 12.5px; }
+
+  /* ── Paneles ────────────────────────────────────────────────────────────── */
+
+  .sa-card { background: var(--sa-surface); border: 1px solid var(--sa-line); border-radius: var(--sa-radius-panel); box-shadow: var(--sa-shadow); }
+  .sa-card-raised { box-shadow: var(--sa-shadow-raised); }
+  .sa-card-pad { padding: 20px; }
+  .sa-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 14px 20px; border-bottom: 1px solid var(--sa-line); }
+  .sa-divide > * + * { border-top: 1px solid var(--sa-line); }
+  .sa-inset { background: var(--sa-subtle); border: 1px solid var(--sa-line); border-radius: var(--sa-radius); }
+
+  .sa-stat-label { font-size: 13px; font-weight: 600; color: var(--sa-ink-2); }
+  .sa-stat-value { font-family: var(--sa-font-display); font-weight: 600; font-size: 28px; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--sa-ink); }
+
+  /* ── Botones ────────────────────────────────────────────────────────────── */
+
+  .sa-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 38px; padding: 0 14px; border-radius: var(--sa-radius); border: 1px solid transparent;
+    font: inherit; font-size: 14px; font-weight: 600; line-height: 1; white-space: nowrap; text-decoration: none; cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  .sa-btn:disabled, .sa-btn[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+  .sa-btn-sm { min-height: 30px; padding: 0 10px; border-radius: 7px; font-size: 13px; gap: 6px; }
+  .sa-btn-primary { background: var(--sa-primary); color: #FFFFFF !important; }
+  .sa-btn-primary:hover:not(:disabled) { background: var(--sa-primary-hover); }
+  .sa-btn-secondary { background: var(--sa-surface); border-color: #D5D9DF; color: var(--sa-ink) !important; }
+  .sa-btn-secondary:hover:not(:disabled) { background: var(--sa-hover); border-color: #C9CED6; }
+  .sa-btn-danger { background: var(--sa-danger); color: #FFFFFF !important; }
+  .sa-btn-danger:hover:not(:disabled) { background: var(--sa-danger-hover); }
+  .sa-btn-ghost { background: transparent; color: var(--sa-ink-3) !important; }
+  .sa-btn-ghost:hover:not(:disabled) { background: var(--sa-hover); }
+  .sa-btn-ghost-danger { background: transparent; color: var(--sa-danger-ink) !important; }
+  .sa-btn-ghost-danger:hover:not(:disabled) { background: var(--sa-danger-soft); }
+  .sa-icon-btn { display: inline-grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--sa-ink-2); cursor: pointer; }
+  .sa-icon-btn:hover { background: var(--sa-hover); color: var(--sa-ink); }
+
+  /* ── Formularios ────────────────────────────────────────────────────────── */
+
+  .sa-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .sa-label { font-size: 13px; font-weight: 600; color: var(--sa-ink); }
+  .sa-help { font-size: 12px; color: var(--sa-ink-2); }
+  .sa-error { font-size: 13px; color: var(--sa-danger-ink); }
+  .sa-success { font-size: 13px; color: var(--sa-ok-ink); }
+  .sa-input {
+    width: 100%; min-height: 38px; box-sizing: border-box; padding: 0 12px;
+    border: 1px solid var(--sa-line-strong); border-radius: var(--sa-radius); background: var(--sa-surface);
+    font: inherit; font-size: 14px; color: var(--sa-ink);
+  }
+  textarea.sa-input { padding: 9px 12px; line-height: 1.45; min-height: 76px; }
+  select.sa-input { padding-right: 32px; cursor: pointer; }
+  .sa-input::placeholder { color: #8B929E; }
+  .sa-input:focus { border-color: var(--sa-primary); box-shadow: 0 0 0 3px rgba(33, 72, 192, 0.18); outline: none; }
+  .sa-input:disabled { background: var(--sa-muted-bg); color: var(--sa-ink-2); cursor: default; }
+  .sa-input-wrap { position: relative; }
+  .sa-input-wrap > .sa-input { padding-right: 44px; }
+  .sa-input-wrap > .sa-icon-btn { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); }
+  .sa-check { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--sa-ink); cursor: pointer; }
+  .sa-check > input { margin-top: 2px; flex: none; }
+
+  /* ── Chips de estado ────────────────────────────────────────────────────── */
+
+  .sa-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid #D9DDE3; background: var(--sa-muted-bg); color: var(--sa-ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .sa-chip > svg { width: 13px; height: 13px; flex: none; }
+  .sa-chip-ok { background: var(--sa-ok-soft); color: var(--sa-ok-ink); border-color: var(--sa-ok-line); }
+  .sa-chip-warn { background: var(--sa-warn-soft); color: var(--sa-warn-ink); border-color: var(--sa-warn-line); }
+  .sa-chip-danger { background: var(--sa-danger-soft); color: var(--sa-danger-ink); border-color: var(--sa-danger-line); }
+  .sa-chip-info { background: var(--sa-primary-soft); color: var(--sa-primary); border-color: #C9D6F7; }
+
+  /* ── Tablas ─────────────────────────────────────────────────────────────── */
+
+  .sa-table-wrap { width: 100%; overflow-x: auto; }
+  .sa-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .sa-table th { padding: 10px 16px; text-align: left; font-size: 12px; font-weight: 600; color: var(--sa-ink-2); white-space: nowrap; background: var(--sa-subtle); border-bottom: 1px solid var(--sa-line); }
+  .sa-table td { padding: 12px 16px; vertical-align: middle; border-bottom: 1px solid var(--sa-line); color: var(--sa-ink); }
+  .sa-table tbody tr:last-child td { border-bottom: 0; }
+  .sa-table tbody tr:hover td { background: var(--sa-subtle); }
+  .sa-table .sa-right, .sa-right { text-align: right; }
+  .sa-row-clickable { cursor: pointer; }
+  .sa-empty { padding: 40px 20px; text-align: center; color: var(--sa-ink-2); font-size: 14px; }
+
+  /* ── Control segmentado y pestañas ──────────────────────────────────────── */
+
+  .sa-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: var(--sa-radius); background: var(--sa-muted-bg); }
+  .sa-seg > button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: var(--sa-ink-2); cursor: pointer; }
+  .sa-seg > button:hover { color: var(--sa-ink); }
+  .sa-seg > button[aria-pressed="true"], .sa-seg > button[aria-selected="true"] { background: var(--sa-surface); color: var(--sa-ink); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1); }
+
+  .sa-tabs { display: flex; flex-wrap: wrap; gap: 4px 20px; border-bottom: 1px solid var(--sa-line); }
+  .sa-tabs > button { padding: 10px 2px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: transparent; font: inherit; font-size: 14px; font-weight: 600; color: var(--sa-ink-2); cursor: pointer; }
+  .sa-tabs > button:hover { color: var(--sa-ink); }
+  .sa-tabs > button[aria-selected="true"] { color: var(--sa-ink); border-bottom-color: var(--sa-primary); }
+
+  /* ── Avisos en línea ────────────────────────────────────────────────────── */
+
+  .sa-alert { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: var(--sa-radius); border: 1px solid var(--sa-line); background: var(--sa-subtle); font-size: 13px; color: var(--sa-ink-3); }
+  .sa-alert > svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+  .sa-alert-warn { background: var(--sa-warn-soft); border-color: var(--sa-warn-line); color: var(--sa-warn-ink); }
+  .sa-alert-danger { background: var(--sa-danger-soft); border-color: var(--sa-danger-line); color: var(--sa-danger-ink); }
+  .sa-alert-ok { background: var(--sa-ok-soft); border-color: var(--sa-ok-line); color: var(--sa-ok-ink); }
+  .sa-alert-info { background: var(--sa-primary-soft); border-color: #C9D6F7; color: #17338C; }
+
+  /* ── Ventanas ───────────────────────────────────────────────────────────── */
+
+  .sa-modal-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(20, 23, 28, 0.45); }
+  .sa-modal { width: 100%; max-width: 480px; max-height: calc(100vh - 32px); overflow-y: auto; padding: 24px; border-radius: 12px; background: var(--sa-surface); box-shadow: var(--sa-shadow-modal); display: flex; flex-direction: column; gap: 16px; }
+  .sa-modal-wide { max-width: 720px; }
+  .sa-modal-title { margin: 0; font-family: var(--sa-font-display); font-weight: 600; font-size: 20px; letter-spacing: -0.01em; color: var(--sa-ink); }
+  .sa-modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+  /* ── Estructura: barra de entorno, menú y contenido ─────────────────────── */
+
+  .sa-envbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; min-height: 32px; padding: 6px clamp(16px, 2vw, 24px); background: #14171C; color: #E8EAED; font-size: 12px; }
+  .sa-envbar-name { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+  .sa-envbar-dot { width: 8px; height: 8px; border-radius: 50%; background: #F0605A; }
+  .sa-envbar-note { color: #A9AFB8; }
+
+  .sa-sidebar { width: 232px; height: 100%; display: flex; flex-direction: column; background: var(--sa-surface); border-right: 1px solid var(--sa-line); }
+  .sa-brand { display: flex; align-items: center; gap: 10px; }
+  .sa-brand-mark { width: 28px; height: 28px; flex: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; padding: 7px; box-sizing: border-box; border-radius: 7px; background: #14171C; }
+  .sa-brand-mark > span { border-radius: 1px; background: #FFFFFF; }
+  .sa-brand-mark > span:nth-child(2) { background: var(--sa-primary); }
+  .sa-brand-mark > span:nth-child(3) { background: var(--sa-ok); }
+  .sa-brand-name { font-family: var(--sa-font-display); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; color: var(--sa-ink); line-height: 1.1; }
+  .sa-brand-sub { font-size: 12px; color: var(--sa-ink-2); }
+
+  .sa-nav-link { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 10px; border-radius: 6px; font-size: 14px; font-weight: 500; color: var(--sa-ink-3) !important; text-decoration: none; cursor: pointer; border: 0; background: transparent; width: 100%; text-align: left; font-family: inherit; }
+  .sa-nav-link:hover { background: var(--sa-hover); }
+  .sa-nav-link > svg { width: 16px; height: 16px; flex: none; color: var(--sa-ink-2); }
+  .sa-nav-link[aria-current="page"] { background: var(--sa-primary-soft); color: var(--sa-primary) !important; font-weight: 600; }
+  .sa-nav-link[aria-current="page"] > svg { color: var(--sa-primary); }
+  .sa-nav-count { margin-left: auto; min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--sa-danger-soft); color: var(--sa-danger-ink); font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+
+  .sa-kbd { display: inline-flex; align-items: center; min-height: 20px; padding: 0 6px; border: 1px solid var(--sa-line-strong); border-radius: 5px; background: var(--sa-surface); font-size: 11px; font-weight: 600; color: var(--sa-ink-2); }
+
+  /* ── Utilidades de texto ────────────────────────────────────────────────── */
+  /* Van al final y con más peso (.sa .x) para que ganen sobre .sa-table td, .sa-stat-value y similares. */
+
+  .sa .sa-muted { color: var(--sa-ink-2); }
+  .sa .sa-strong { color: var(--sa-ink); font-weight: 600; }
+  .sa .sa-num { font-variant-numeric: tabular-nums; }
+  .sa .sa-ok-text { color: var(--sa-ok-ink); }
+  .sa .sa-warn-text { color: var(--sa-warn-ink); }
+  .sa .sa-danger-text { color: var(--sa-danger-ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sa-btn { transition: none; }
+  }
+}

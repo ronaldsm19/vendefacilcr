@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ClipboardList, CheckCircle2, XCircle, Clock, Eye, EyeOff, Copy } from "lucide-react";
+import {
+  AlertTriangle, Ban, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, Eye, EyeOff, Tag,
+  type LucideIcon,
+} from "lucide-react";
 
 interface SolicitudItem {
   _id: string;
@@ -17,20 +20,24 @@ interface SolicitudItem {
   createdAt: string;
 }
 
-const PLAN_LABELS: Record<string, string>  = { emprende: "Emprende", pro: "Pro", premium: "Premium" };
-const PLAN_COLORS: Record<string, string>  = {
-  emprende: "bg-gray-500/20 text-gray-300",
-  pro:      "bg-blue-500/20 text-blue-400",
-  premium:  "bg-purple-500/20 text-purple-400",
+const PLAN_LABELS: Record<string, string> = { emprende: "Emprende", pro: "Pro", premium: "Premium" };
+
+// Rojo queda para lo que hay que atender: una solicitud rechazada ya está cerrada, por eso va neutra.
+const STATUS_CHIPS: Record<string, { label: string; className: string; icon: LucideIcon }> = {
+  pending:  { label: "Pendiente", className: "sa-chip sa-chip-warn", icon: Clock },
+  approved: { label: "Aprobada",  className: "sa-chip sa-chip-ok",   icon: Check },
+  rejected: { label: "Rechazada", className: "sa-chip",              icon: Ban },
 };
-const STATUS_COLORS: Record<string, string> = {
-  pending:  "bg-amber-500/20 text-amber-400",
-  approved: "bg-emerald-500/20 text-emerald-400",
-  rejected: "bg-red-500/20 text-red-400",
-};
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Pendiente", approved: "Aprobado", rejected: "Rechazado",
-};
+
+const FILTERS = [
+  { value: "",         label: "Todas",      empty: "No hay solicitudes." },
+  { value: "pending",  label: "Pendientes", empty: "No hay solicitudes pendientes." },
+  { value: "approved", label: "Aprobadas",  empty: "No hay solicitudes aprobadas." },
+  { value: "rejected", label: "Rechazadas", empty: "No hay solicitudes rechazadas." },
+];
+
+const formatDateTime = (value: string) =>
+  new Date(value).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" });
 
 function TempPasswordCard({ password, onClose }: { password: string; onClose: () => void }) {
   const [show, setShow] = useState(false);
@@ -43,62 +50,45 @@ function TempPasswordCard({ password, onClose }: { password: string; onClose: ()
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ background: "rgba(0,0,0,0.7)" }}
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-md rounded-2xl p-7 space-y-5"
-        style={{ background: "#0D0D14", border: "1px solid rgba(255,255,255,0.1)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl saas-accent-bg flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="font-semibold text-white">¡Tenant aprobado!</p>
-            <p className="text-white/40 text-sm">Comparte esta contraseña con el nuevo usuario</p>
-          </div>
+    <div className="sa-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="temp-password-title">
+      {/* Sin cierre al hacer clic afuera: la contraseña se muestra una sola vez. */}
+      <div className="sa-modal">
+        <div>
+          <h2 id="temp-password-title" className="sa-modal-title">Negocio aprobado</h2>
+          <p className="sa-muted mt-1">Compartí esta contraseña con el nuevo usuario.</p>
         </div>
 
-        <div
-          className="rounded-xl p-4 space-y-2"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          <p className="text-white/40 text-xs uppercase tracking-wide font-semibold">Contraseña temporal</p>
-          <div className="flex items-center gap-3">
-            <p className="text-white font-mono text-lg flex-1">
+        <div className="sa-inset px-4 py-3">
+          <p className="sa-eyebrow">Contraseña temporal</p>
+          <div className="flex items-center gap-1 mt-1">
+            {/* .sa-mono trae 12.5 px; acá se agranda para que no se confundan caracteres al dictarla. */}
+            <p className="sa-mono sa-strong flex-1 min-w-0 break-all" style={{ fontSize: 16 }}>
               {show ? password : "•".repeat(password.length)}
             </p>
             <button
+              type="button"
               onClick={() => setShow(!show)}
-              className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              className="sa-icon-btn"
+              aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"}
+              aria-pressed={show}
             >
-              {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {show ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}
             </button>
-            <button
-              onClick={copy}
-              className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-            >
-              <Copy className="w-4 h-4" />
+            <button type="button" onClick={copy} className="sa-icon-btn" aria-label="Copiar contraseña">
+              {copied ? <Check className="w-4 h-4" aria-hidden /> : <Copy className="w-4 h-4" aria-hidden />}
             </button>
           </div>
-          {copied && <p className="text-emerald-400 text-xs">¡Copiado al portapapeles!</p>}
+          {copied && <p className="sa-success mt-1" role="status">Copiada al portapapeles.</p>}
         </div>
 
-        <p className="text-amber-400 text-xs leading-relaxed">
-          ⚠ Esta contraseña solo se muestra una vez. Asegúrate de enviarla al cliente antes de cerrar.
-        </p>
+        <div className="sa-alert sa-alert-warn">
+          <AlertTriangle aria-hidden />
+          <span>Esta contraseña solo se muestra una vez. Asegurate de enviársela al cliente antes de cerrar.</span>
+        </div>
 
-        <button
-          onClick={onClose}
-          className="w-full py-2.5 rounded-xl text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          Cerrar
-        </button>
+        <div className="sa-modal-actions">
+          <button type="button" onClick={onClose} className="sa-btn sa-btn-primary">Ya la guardé, cerrar</button>
+        </div>
       </div>
     </div>
   );
@@ -117,18 +107,20 @@ export default function SolicitudesPage() {
   const load = useCallback(() => {
     setLoading(true);
     const q = new URLSearchParams({ page: String(page) });
-    if (filter) q.set("status", filter);
+    // Sin estado la API devuelve solo las pendientes: "Todas" se pide explícito.
+    q.set("status", filter || "all");
     fetch(`/api/superadmin/solicitudes?${q}`)
       .then((r) => r.json())
-      .then((d) => { setItems(d.items ?? []); setTotal(d.total ?? 0); })
+      .then((d) => { setItems(d.requests ?? []); setTotal(d.total ?? 0); })
       .finally(() => setLoading(false));
   }, [filter, page]);
 
   useEffect(() => { load(); }, [load]);
 
   async function act(id: string, action: "approve" | "reject", notes?: string) {
-    if (action === "reject" && !notes) {
-      const n = prompt("Motivo del rechazo (opcional):") ?? "";
+    if (action === "reject" && notes === undefined) {
+      const n = prompt("Motivo del rechazo (opcional). Cancelar deja la solicitud como está.");
+      if (n === null) return;
       return act(id, action, n);
     }
     setActing(id);
@@ -151,166 +143,156 @@ export default function SolicitudesPage() {
   }
 
   const totalPages = Math.ceil(total / 20);
+  const emptyText = FILTERS.find((f) => f.value === filter)?.empty ?? "No hay solicitudes.";
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
+    <div className="sa-page">
       {tempPassword && (
         <TempPasswordCard password={tempPassword} onClose={() => setTempPassword(null)} />
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <header className="sa-page-head">
         <div>
-          <h1 className="font-brand text-2xl md:text-3xl font-bold text-white">Solicitudes</h1>
-          <p className="text-white/40 text-sm mt-1">{total} resultados</p>
+          <h1 className="sa-title">Solicitudes</h1>
+          <p className="sa-subtitle sa-num">{total} {total === 1 ? "solicitud" : "solicitudes"}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {["", "pending", "approved", "rejected"].map((s) => (
+        <div className="sa-seg" role="group" aria-label="Filtrar por estado">
+          {FILTERS.map((f) => (
             <button
-              key={s}
-              onClick={() => { setFilter(s); setPage(1); }}
-              className={`px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer ${
-                filter === s
-                  ? "text-white saas-accent-bg"
-                  : "text-white/50 hover:text-white"
-              }`}
-              style={filter !== s ? { background: "rgba(255,255,255,0.05)" } : {}}
+              key={f.value}
+              type="button"
+              aria-pressed={filter === f.value}
+              onClick={() => { setFilter(f.value); setPage(1); }}
             >
-              {s === "" ? "Todas" : STATUS_LABELS[s]}
+              {f.label}
             </button>
           ))}
         </div>
-      </div>
+      </header>
 
-      {/* List */}
-      <div className="space-y-3">
-        {loading ? (
-          <div className="py-10 text-center text-white/30 text-sm">Cargando...</div>
-        ) : items.length === 0 ? (
-          <div
-            className="rounded-2xl py-12 flex flex-col items-center gap-3"
-            style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}
-          >
-            <ClipboardList className="w-8 h-8 text-white/20" />
-            <p className="text-white/30 text-sm">Sin solicitudes</p>
-          </div>
-        ) : items.map((item) => (
-          <div
-            key={item._id}
-            className="rounded-2xl overflow-hidden"
-            style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
-          >
-            <div className="flex items-start gap-4 p-5">
-              {/* Status icon */}
-              <div className="shrink-0 mt-0.5">
-                {item.status === "approved" && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-                {item.status === "rejected" && <XCircle className="w-5 h-5 text-red-400" />}
-                {item.status === "pending"  && <Clock className="w-5 h-5 text-amber-400" />}
-              </div>
-
-              {/* Main info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
-                    <p className="font-semibold text-white/90">{item.businessName}</p>
-                    <p className="text-white/40 text-xs mt-0.5">
-                      {item.ownerName} · {item.email} · /{item.slug}
-                    </p>
+      {loading ? (
+        <div className="sa-empty">Cargando...</div>
+      ) : items.length === 0 ? (
+        <div className="sa-card">
+          <div className="sa-empty">{emptyText}</div>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {items.map((item) => {
+            const isOpen = expanded === item._id;
+            const detailId = `solicitud-detalle-${item._id}`;
+            return (
+              <li key={item._id} className="sa-card overflow-hidden">
+                <div className="sa-card-pad flex flex-col gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                    <div className="min-w-0">
+                      <h2 className="sa-strong text-[15px]">{item.businessName}</h2>
+                      <p className="sa-muted text-[13px] break-words">
+                        {item.ownerName} · {item.email} · <span className="sa-mono">/{item.slug}</span>
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="sa-chip sa-chip-info">
+                        <Tag aria-hidden />
+                        Plan {PLAN_LABELS[item.plan] ?? item.plan}
+                      </span>
+                      <StatusChip status={item.status} />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${PLAN_COLORS[item.plan] ?? "bg-gray-500/20 text-gray-400"}`}>
-                      {PLAN_LABELS[item.plan] ?? item.plan}
-                    </span>
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[item.status] ?? "bg-gray-500/20 text-gray-400"}`}>
-                      {STATUS_LABELS[item.status] ?? item.status}
-                    </span>
+
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <span className="sa-muted sa-num text-[13px]">Recibida el {formatDateTime(item.createdAt)}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setExpanded(isOpen ? null : item._id)}
+                        className="sa-btn sa-btn-sm sa-btn-ghost"
+                        aria-expanded={isOpen}
+                        aria-controls={detailId}
+                      >
+                        {isOpen ? "Ocultar detalle" : "Ver detalle"}
+                        {isOpen ? <ChevronUp className="w-4 h-4" aria-hidden /> : <ChevronDown className="w-4 h-4" aria-hidden />}
+                      </button>
+                      {item.status === "pending" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => act(item._id, "reject")}
+                            disabled={acting === item._id}
+                            className="sa-btn sa-btn-sm sa-btn-ghost-danger"
+                          >
+                            Rechazar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => act(item._id, "approve")}
+                            disabled={acting === item._id}
+                            className="sa-btn sa-btn-sm sa-btn-primary"
+                          >
+                            Aprobar
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-center gap-3 flex-wrap">
-                  <span className="text-white/30 text-xs">
-                    {new Date(item.createdAt).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" })}
-                  </span>
-                  <button
-                    onClick={() => setExpanded(expanded === item._id ? null : item._id)}
-                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                {isOpen && (
+                  <dl
+                    id={detailId}
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 px-5 py-4 border-t border-[var(--sa-line)] bg-[var(--sa-subtle)]"
                   >
-                    {expanded === item._id ? "Ocultar detalle" : "Ver detalle"}
-                  </button>
-                  {item.status === "pending" && (
-                    <>
-                      <button
-                        onClick={() => act(item._id, "approve")}
-                        disabled={acting === item._id}
-                        className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        {acting === item._id ? "..." : "Aprobar"}
-                      </button>
-                      <button
-                        onClick={() => act(item._id, "reject")}
-                        disabled={acting === item._id}
-                        className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        {acting === item._id ? "..." : "Rechazar"}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Expanded detail */}
-            {expanded === item._id && (
-              <div
-                className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-3"
-                style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
-              >
-                <Detail label="WhatsApp" value={item.whatsappNumber || "—"} />
-                <Detail label="Plan solicitado" value={PLAN_LABELS[item.plan] ?? item.plan} />
-                {item.notes && <Detail label="Notas" value={item.notes} className="sm:col-span-2" />}
-                {item.reviewedAt && (
-                  <Detail
-                    label="Revisado"
-                    value={new Date(item.reviewedAt).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" })}
-                  />
+                    <Detail label="WhatsApp" value={item.whatsappNumber || "—"} />
+                    <Detail label="Plan solicitado" value={PLAN_LABELS[item.plan] ?? item.plan} />
+                    {item.notes && <Detail label="Notas" value={item.notes} className="sm:col-span-2" />}
+                    {item.reviewedAt && <Detail label="Revisada" value={formatDateTime(item.reviewedAt)} />}
+                  </dl>
                 )}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
+        <nav className="flex flex-wrap items-center justify-center gap-3" aria-label="Páginas">
           <button
+            type="button"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.05)" }}
+            className="sa-btn sa-btn-sm sa-btn-secondary"
           >
-            ← Anterior
+            <ChevronLeft className="w-4 h-4" aria-hidden />
+            Anterior
           </button>
-          <span className="text-white/30 text-sm">{page} / {totalPages}</span>
+          <span className="sa-muted sa-num">Página {page} de {totalPages}</span>
           <button
+            type="button"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.05)" }}
+            className="sa-btn sa-btn-sm sa-btn-secondary"
           >
-            Siguiente →
+            Siguiente
+            <ChevronRight className="w-4 h-4" aria-hidden />
           </button>
-        </div>
+        </nav>
       )}
     </div>
   );
 }
 
+function StatusChip({ status }: { status: string }) {
+  const chip = STATUS_CHIPS[status];
+  if (!chip) return <span className="sa-chip"><CircleHelp aria-hidden />{status}</span>;
+  const Icon = chip.icon;
+  return <span className={chip.className}><Icon aria-hidden />{chip.label}</span>;
+}
+
 function Detail({ label, value, className = "" }: { label: string; value: string; className?: string }) {
   return (
-    <div className={`space-y-1 pt-3 ${className}`}>
-      <p className="text-white/30 text-xs uppercase tracking-wide font-semibold">{label}</p>
-      <p className="text-white/70 text-sm">{value}</p>
+    <div className={`min-w-0 ${className}`}>
+      <dt className="sa-eyebrow">{label}</dt>
+      <dd className="break-words">{value}</dd>
     </div>
   );
 }
