@@ -3,12 +3,15 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { CashSession } from "@/models/CashSession";
 import { MAX_OPENING_CORRECTION_NOTE } from "@/models/CashOpeningCorrection";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { verifyAuthorizationPassword } from "@/server/services/authorizationPassword";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "cierre-de-caja");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "cierre-de-caja");
   if (denied) return denied;
 
@@ -37,6 +40,8 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "cierre-de-caja");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "cierre-de-caja");
   if (denied) return denied;
 

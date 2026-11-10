@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requireProductRoom } from "@/lib/plan";
 import { can } from "@/lib/permissions";
 import { effectiveStation, isStation } from "@/lib/station";
 import { normalizeExtras } from "@/lib/pricing";
@@ -37,6 +38,8 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const denied = requireFeature(session, "productos:editar");
   if (denied) return denied;
+  const full = await requireProductRoom(session.tenantId, 1);
+  if (full) return full;
 
   await connectToDatabase();
   const body = await request.json();

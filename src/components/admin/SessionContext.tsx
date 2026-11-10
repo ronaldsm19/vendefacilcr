@@ -10,6 +10,8 @@ export interface AdminSession {
   email: string;
   plan: string;
   isPremium: boolean;
+  /** Si al negocio se le aplican los límites de su plan (ver planNeededFor). */
+  planLimits: boolean;
   tenantSlug: string;
   tenantName: string;
 }

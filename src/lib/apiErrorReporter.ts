@@ -10,6 +10,8 @@ import { observeAdminFetch, AUTH_API } from "@/lib/sessionWatch";
  */
 
 const ENDPOINT = "/api/admin/error-reports";
+/** Rechazos que son reglas del plan, no fallas: se le explican a la persona en pantalla. */
+const EXPECTED_CODES = new Set(["PLAN_REQUIRED", "PRODUCT_LIMIT"]);
 const STORAGE_KEY = "vf-error-reports";
 const MAX_QUEUE = 50;
 const BATCH = 25;
@@ -139,7 +141,10 @@ export function startApiErrorReporting() {
       // 401 es la sesión vencida: tiene su propio aviso en pantalla.
       if (response.status < 400 || response.status === 401) return;
       const status = response.status;
-      void messageOf(response).then(({ message, code }) => enqueue({ kind: "respuesta", method, path, status, message, code, page }));
+      void messageOf(response).then(({ message, code }) => {
+        if (EXPECTED_CODES.has(code)) return;
+        enqueue({ kind: "respuesta", method, path, status, message, code, page });
+      });
       return;
     }
     if (error instanceof DOMException && error.name === "AbortError") return;

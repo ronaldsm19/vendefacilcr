@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Recipe } from "@/models/Recipe";
 import { RawMaterial } from "@/models/RawMaterial";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 
 export async function GET(
   request: NextRequest,
@@ -10,6 +11,8 @@ export async function GET(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "recetas");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "recetas");
   if (denied) return denied;
 
@@ -26,6 +29,8 @@ export async function PUT(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "recetas");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "recetas");
   if (denied) return denied;
 
@@ -79,6 +84,8 @@ export async function DELETE(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "recetas");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "recetas");
   if (denied) return denied;
 

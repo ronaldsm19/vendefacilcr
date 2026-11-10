@@ -5,10 +5,13 @@ import { Order } from "@/models/Order";
 import { Sale } from "@/models/Sale";
 import { Expense } from "@/models/Expense";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "finanzas");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "finanzas");
   if (denied) return denied;
 

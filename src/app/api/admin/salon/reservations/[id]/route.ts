@@ -3,11 +3,14 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { SalonReservation } from "@/models/SalonReservation";
 import { SalonTable } from "@/models/SalonTable";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { buildStatusUpdate } from "@/lib/tableStatus";
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "salon");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "salon:editar");
   if (denied) return denied;
 
@@ -39,6 +42,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "salon");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "salon:editar");
   if (denied) return denied;
 

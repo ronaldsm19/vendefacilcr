@@ -68,7 +68,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const tenant = await Tenant.create({ slug, name, email: emailNorm, whatsappNumber, plan, status, theme, logoUrl, description });
+  const tenant = await Tenant.create({
+    slug, name, email: emailNorm, whatsappNumber, plan, status, theme, logoUrl, description,
+    planLimits: true,
+  });
 
   // Crear el usuario admin con contraseña temporal. Si falla, hacemos rollback del tenant.
   const tempPassword = Math.random().toString(36).slice(2, 10) + "A1!";

@@ -18,6 +18,7 @@ interface Tenant {
   name: string;
   email: string;
   plan: string;
+  planLimits?: boolean;
   status: string;
   passwordChanged?: boolean;
   billing?: Partial<TenantBilling> | null;
@@ -265,7 +266,10 @@ export default function TenantsPage() {
                         <div className="sa-help [overflow-wrap:anywhere]">{t.slug} · {t.email}</div>
                       </div>
                     </td>
-                    <td>{PLAN_LABELS[t.plan as PlanKey] ?? t.plan}</td>
+                    <td>
+                      {PLAN_LABELS[t.plan as PlanKey] ?? t.plan}
+                      {!t.planLimits && <div className="sa-help whitespace-nowrap">Sin límites del plan</div>}
+                    </td>
                     <td className="sa-right">
                       <MonthlyFee tenant={t} prices={prices} today={today} />
                     </td>

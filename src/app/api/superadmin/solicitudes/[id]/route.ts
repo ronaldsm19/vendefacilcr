@@ -53,6 +53,7 @@ export async function PATCH(
         email:          tenantReq.email,
         whatsappNumber: tenantReq.whatsappNumber,
         plan:           tenantReq.plan,
+        planLimits:     true,
         status:         "active",
         theme: { primaryColor: "#6366F1", secondaryColor: "#8B5CF6", accentColor: "#F59E0B" },
       });

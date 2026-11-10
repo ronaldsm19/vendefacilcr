@@ -6,7 +6,7 @@ import { Tenant } from "@/models/Tenant";
 import { Comanda, type IComandaItem } from "@/models/Comanda";
 import { SalonTable } from "@/models/SalonTable";
 import { getSession, requireFeature } from "@/lib/auth";
-import { requirePremium } from "@/lib/plan";
+import { requirePlan, requirePremium } from "@/lib/plan";
 import { syncTableWithComandas } from "@/lib/tableSync";
 import { computeSaleTotals, isOrderType, readAppliedCharges, readPosCharges, subtotalOf } from "@/lib/pricing";
 import { checkCatalogPrices, checkComandaLines, parseSaleItems, type SaleItemRecord } from "@/server/services/saleItems";
@@ -55,6 +55,8 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const denied = requireFeature(session, "pos");
   if (denied) return denied;
+  const deniedPos = await requirePlan(session, "pos");
+  if (deniedPos) return deniedPos;
 
   await connectToDatabase();
   const body = await request.json();
