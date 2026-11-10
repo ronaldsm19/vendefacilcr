@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Search, Plus, Mail } from "lucide-react";
+import SuspendTenantDialog from "@/components/superadmin/SuspendTenantDialog";
+import type { SuspensionReason } from "@/lib/suspension";
 
 interface Tenant {
   _id: string;
@@ -39,6 +41,8 @@ export default function TenantsPage() {
   const [toggling, setToggling] = useState<string | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [notice, setNotice]   = useState<{ type: "ok" | "error"; text: string } | null>(null);
+  const [suspending, setSuspending] = useState<Tenant | null>(null);
+  const [suspendError, setSuspendError] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -54,17 +58,43 @@ export default function TenantsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function toggleStatus(tenant: Tenant) {
-    const next = tenant.status === "active" ? "suspended" : "active";
-    if (!confirm(`¿${next === "active" ? "Activar" : "Suspender"} a ${tenant.name}?`)) return;
+  async function patchStatus(tenant: Tenant, body: Record<string, unknown>): Promise<string | null> {
     setToggling(tenant._id);
-    await fetch(`/api/superadmin/tenants/${tenant._id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
-    setToggling(null);
-    load();
+    try {
+      const res = await fetch(`/api/superadmin/tenants/${tenant._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        return d.error ?? "No se pudo cambiar el estado";
+      }
+      load();
+      return null;
+    } catch {
+      return "Error de red al cambiar el estado";
+    } finally {
+      setToggling(null);
+    }
+  }
+
+  async function toggleStatus(tenant: Tenant) {
+    if (tenant.status === "active") {
+      setSuspendError("");
+      setSuspending(tenant);
+      return;
+    }
+    if (!confirm(`¿Activar a ${tenant.name}? Vuelven el panel, la app y la tienda en línea.`)) return;
+    const error = await patchStatus(tenant, { status: "active" });
+    if (error) setNotice({ type: "error", text: error });
+  }
+
+  async function confirmSuspend(data: { suspendedReason: SuspensionReason; suspendedMessage: string }) {
+    if (!suspending) return;
+    const error = await patchStatus(suspending, { status: "suspended", ...data });
+    if (error) setSuspendError(error);
+    else setSuspending(null);
   }
 
   async function resendInvite(tenant: Tenant) {
@@ -266,6 +296,16 @@ export default function TenantsPage() {
             Siguiente →
           </button>
         </div>
+      )}
+
+      {suspending && (
+        <SuspendTenantDialog
+          tenantName={suspending.name}
+          saving={toggling === suspending._id}
+          error={suspendError}
+          onCancel={() => setSuspending(null)}
+          onConfirm={confirmSuspend}
+        />
       )}
     </div>
   );

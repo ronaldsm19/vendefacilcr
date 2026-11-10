@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSessionPayload } from "@/lib/auth";
 import { revalidateSession } from "@/server/services/auth";
 import { ServiceError } from "@/server/errors";
 
 // Quién soy, para la app. Revalida contra la base igual que /api/admin/auth/me, así una
 // desactivación saca a la persona en la siguiente navegación y no solo al vencer el token.
 export async function GET(request: NextRequest) {
-  const session = await getSession(request);
+  // Sin el chequeo de negocio activo de getSession: revalidateSession devuelve SESSION_REVOKED
+  // con el aviso de suspensión, que la app muestra tal cual.
+  const session = await getSessionPayload(request);
   if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
   try {

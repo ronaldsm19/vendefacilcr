@@ -8,6 +8,8 @@ import ReminderToast from "@/components/admin/ReminderToast";
 import { AdminSessionProvider, type AdminSession } from "@/components/admin/SessionContext";
 import { PendingComandasProvider, usePendingComandas } from "@/components/admin/PendingComandasContext";
 import SessionExpiredDialog from "@/components/admin/SessionExpiredDialog";
+import SuspendedScreen from "@/components/admin/SuspendedScreen";
+import type { SuspensionNotice } from "@/lib/suspension";
 import { usePolling } from "@/hooks/usePolling";
 import { watchUnauthorized } from "@/lib/sessionWatch";
 import { startApiErrorReporting } from "@/lib/apiErrorReporter";
@@ -20,6 +22,13 @@ import { can, featureForPath, homePathFor, PREMIUM_FEATURES } from "@/lib/permis
  * un tiro apenas vuelve a verse, así que al despertar la máquina lo primero que pasa es esto.
  */
 const SESSION_PING_MS = 10 * 60 * 1000;
+
+/** Si un 401 de "quién soy" es porque el negocio está suspendido, el aviso que mandó el servidor. */
+async function suspensionFrom(res: Response): Promise<SuspensionNotice | null> {
+  if (res.status !== 401) return null;
+  const data = await res.json().catch(() => null) as { code?: string; suspension?: SuspensionNotice } | null;
+  return data?.code === "TENANT_SUSPENDED" && data.suspension ? data.suspension : null;
+}
 
 interface TenantBranding {
   tenantName: string;
@@ -69,11 +78,18 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const [branding, setBranding] = useState<TenantBranding>(DEFAULT_BRANDING);
   const [session, setSession] = useState<AdminSession | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [suspended, setSuspended] = useState<SuspensionNotice | null>(null);
 
   const isLoginPage = pathname.endsWith("/admin/login");
 
-  // Cualquier 401 del panel significa que ya no hay sesión, venga de la pantalla que venga.
-  useEffect(() => watchUnauthorized(() => setSessionExpired(true)), []);
+  // Cualquier 401 del panel significa que ya no hay sesión, venga de la pantalla que venga. Puede ser
+  // que venció o que suspendieron el negocio: "quién soy" dice cuál, para mostrar el aviso correcto.
+  useEffect(() => watchUnauthorized(() => {
+    void fetch("/api/admin/auth/me")
+      .then(suspensionFrom)
+      .then((notice) => (notice ? setSuspended(notice) : setSessionExpired(true)))
+      .catch(() => setSessionExpired(true));
+  }), []);
 
   // Lo que el panel no pudo hacer (respuestas con error, pedidos sin respuesta) va al registro de
   // errores del superadmin.
@@ -81,9 +97,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   const pingSession = useCallback(async () => {
     const res = await fetch("/api/admin/auth/me");
-    if (res.status === 401) setSessionExpired(true);
+    if (res.status !== 401) return;
+    const notice = await suspensionFrom(res);
+    if (notice) setSuspended(notice);
+    else setSessionExpired(true);
   }, []);
-  usePolling(pingSession, SESSION_PING_MS, authChecked && !isLoginPage);
+  usePolling(pingSession, SESSION_PING_MS, authChecked && !isLoginPage && !suspended);
 
   // Close sidebar on navigation
   useEffect(() => {
@@ -98,6 +117,11 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     }
     fetch("/api/admin/auth/me").then(async (res) => {
       if (res.status === 401) {
+        const notice = await suspensionFrom(res);
+        if (notice) {
+          setSuspended(notice);
+          return;
+        }
         const tenant = pathname.split("/")[1];
         router.replace(`/${tenant}/admin/login`);
       } else {
@@ -158,6 +182,28 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   if (pathname.endsWith("/admin/login")) {
     return <div className="min-h-screen bg-brand-muted/20">{children}</div>;
+  }
+
+  // El servidor ya cerró la sesión; "Salir" lleva al ingreso, que también muestra la suspensión.
+  if (suspended) {
+    const slug = pathname.split("/")[1];
+    return (
+      <SuspendedScreen
+        tenantName={session?.tenantName || branding.tenantName || slug}
+        title={suspended.title}
+        message={suspended.message}
+        note={suspended.note}
+        action={
+          <button
+            type="button"
+            onClick={() => router.replace(`/${slug}/admin/login`)}
+            className="w-full rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 cursor-pointer"
+          >
+            Salir
+          </button>
+        }
+      />
+    );
   }
 
   if (!authChecked || !session) {

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Tenant } from "@/models/Tenant";
 import { StaffUser } from "@/models/StaffUser";
-import { getSession, signJwt, setSessionCookie, clearSessionCookie } from "@/lib/auth";
+import { getSessionPayload, signJwt, setSessionCookie, clearSessionCookie } from "@/lib/auth";
 import { isPremiumPlan } from "@/lib/permissions";
+import { suspensionNotice } from "@/lib/suspension";
 import { DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@/lib/ticket";
 
 function loggedOut(): NextResponse {
@@ -11,15 +12,20 @@ function loggedOut(): NextResponse {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getSession(request);
+  // Sin el chequeo de negocio activo de getSession: este endpoint tiene que poder decir que el
+  // negocio está suspendido, no solo que no hay sesión.
+  const session = await getSessionPayload(request);
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
 
   await connectToDatabase();
   const tenant = await Tenant.findById(session.tenantId)
-    .select("name logoUrl theme plan whatsappNumber passwordChanged ticketConfig")
+    .select("name logoUrl theme plan whatsappNumber passwordChanged ticketConfig status suspendedReason suspendedMessage")
     .lean() as {
+      status?: string;
+      suspendedReason?: string;
+      suspendedMessage?: string;
       name?: string;
       logoUrl?: string;
       theme?: Record<string, unknown>;
@@ -29,7 +35,18 @@ export async function GET(request: NextRequest) {
       ticketConfig?: Partial<TicketConfigData>;
     } | null;
 
-  const isPremium = isPremiumPlan(tenant?.plan);
+  // Negocio suspendido (o borrado): se cierra la sesión y el panel muestra el aviso, con el motivo
+  // solo para el dueño. Antes este endpoint renovaba la cookie sin mirar el estado, así que un panel
+  // abierto seguía funcionando aunque el negocio estuviera suspendido.
+  if (!tenant || tenant.status !== "active") {
+    const suspension = suspensionNotice(tenant ?? {}, session.role === "admin" ? "owner" : "neutral");
+    return clearSessionCookie(NextResponse.json(
+      { error: suspension.title, code: "TENANT_SUSPENDED", suspension },
+      { status: 401 },
+    ));
+  }
+
+  const isPremium = isPremiumPlan(tenant.plan);
 
   if (session.role !== "admin") {
     if (!isPremium) return loggedOut();
