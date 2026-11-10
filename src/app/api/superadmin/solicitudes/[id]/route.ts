@@ -4,7 +4,8 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { TenantRequest } from "@/models/TenantRequest";
 import { Tenant } from "@/models/Tenant";
 import { User } from "@/models/User";
-import { Payment, PLAN_AMOUNTS } from "@/models/Payment";
+import { ensureInvoice, getBillingSettings } from "@/server/services/billing";
+import { crDay } from "@/lib/billing";
 import { getSuperadminSession } from "@/lib/auth";
 
 function generateTempPassword(): string {
@@ -70,21 +71,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Error al crear el usuario admin" }, { status: 500 });
     }
 
-    // Create first month payment
-    const now = new Date();
-    const dueDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Factura del primer mes, con el precio de la configuración de cobros. Como se crea a mitad de
+    // mes, vence dentro de los días de aviso y no el día 1 que ya pasó.
     try {
-      await Payment.create({
-        tenantId:    tenant._id,
-        tenantName:  tenant.name,
-        tenantSlug:  tenant.slug,
-        plan:        tenant.plan,
-        periodYear:  now.getFullYear(),
-        periodMonth: now.getMonth() + 1,
-        amount:      PLAN_AMOUNTS[tenant.plan] ?? 12900,
-        dueDate,
-        status:      "pending",
-      });
+      const { y, m } = crDay(new Date());
+      await ensureInvoice(
+        { _id: tenant._id, slug: tenant.slug, name: tenant.name, email: tenant.email, plan: tenant.plan, status: "active" },
+        y, m, await getBillingSettings(),
+      );
     } catch { /* non-critical */ }
 
     await TenantRequest.findByIdAndUpdate(id, {

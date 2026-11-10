@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { CreditCard, Zap, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
+import { PAYMENT_METHODS, formatCRC } from "@/lib/billing";
 
 interface PaymentItem {
   _id: string;
@@ -15,6 +16,11 @@ interface PaymentItem {
   dueDate: string;
   paidAt?: string;
   notes?: string;
+  listAmount?: number;
+  discountAmount?: number;
+  discountLabel?: string;
+  method?: string;
+  reference?: string;
 }
 
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -23,9 +29,10 @@ const STATUS_COLORS: Record<string, string> = {
   paid:      "bg-emerald-500/20 text-emerald-400",
   late:      "bg-red-500/20 text-red-400",
   cancelled: "bg-gray-500/20 text-gray-400",
+  cortesia:  "bg-sky-500/20 text-sky-300",
 };
 const STATUS_LABELS: Record<string, string> = {
-  pending: "Pendiente", paid: "Pagado", late: "Atrasado", cancelled: "Cancelado",
+  pending: "Pendiente", paid: "Pagado", late: "Atrasado", cancelled: "Cancelado", cortesia: "Cortesía",
 };
 
 export default function PagosPage() {
@@ -37,6 +44,9 @@ export default function PagosPage() {
   const [page, setPage]             = useState(1);
   const [acting, setActing]         = useState<string | null>(null);
   const [genMsg, setGenMsg]         = useState("");
+  const [limit, setLimit]           = useState(30);
+  const [paying, setPaying]         = useState<PaymentItem | null>(null);
+  const [notice, setNotice]         = useState("");
 
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
@@ -48,7 +58,7 @@ export default function PagosPage() {
     if (statusFilter) q.set("status", statusFilter);
     fetch(`/api/superadmin/pagos?${q}`)
       .then((r) => r.json())
-      .then((d) => { setItems(d.items ?? []); setTotal(d.total ?? 0); })
+      .then((d) => { setItems(d.payments ?? []); setTotal(d.total ?? 0); setLimit(d.limit ?? 30); })
       .finally(() => setLoading(false));
   }, [page, year, month, statusFilter]);
 
@@ -74,18 +84,27 @@ export default function PagosPage() {
     }
   }
 
-  async function markStatus(id: string, status: string) {
+  async function markStatus(id: string, status: string, extra: Record<string, unknown> = {}): Promise<string | null> {
     setActing(id);
-    await fetch(`/api/superadmin/pagos/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    setActing(null);
-    load();
+    try {
+      const res = await fetch(`/api/superadmin/pagos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, ...extra }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) return d.error ?? "No se pudo cambiar la factura";
+      if (d.reactivated) setNotice("Pago registrado: el negocio estaba suspendido por falta de pago y se reactivó.");
+      load();
+      return null;
+    } catch {
+      return "Error de red";
+    } finally {
+      setActing(null);
+    }
   }
 
-  const totalPages = Math.ceil(total / 20);
+  const totalPages = Math.ceil(total / limit);
   const totalAmount = items.reduce((s, p) => s + p.amount, 0);
   const paidAmount  = items.filter((p) => p.status === "paid").reduce((s, p) => s + p.amount, 0);
   const lateCount   = items.filter((p) => p.status === "late").length;
@@ -148,8 +167,13 @@ export default function PagosPage() {
           <option value="pending">Pendientes</option>
           <option value="paid">Pagados</option>
           <option value="late">Atrasados</option>
+          <option value="cortesia">Cortesías</option>
         </select>
       </div>
+
+      {notice && (
+        <p className="text-sm text-emerald-300" role="status">{notice}</p>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -179,7 +203,7 @@ export default function PagosPage() {
         style={{ border: "1px solid rgba(255,255,255,0.07)" }}
       >
         <div
-          className="grid grid-cols-[1fr_100px_100px_100px_120px_130px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
+          className="grid grid-cols-[1fr_90px_100px_90px_100px_220px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
           style={{ background: "rgba(255,255,255,0.04)" }}
         >
           <span>Tenant</span>
@@ -198,7 +222,7 @@ export default function PagosPage() {
           items.map((p, i) => (
             <div
               key={p._id}
-              className="grid grid-cols-[1fr_100px_100px_100px_120px_130px] px-5 py-3.5 items-center text-sm"
+              className="grid grid-cols-[1fr_90px_100px_90px_100px_220px] px-5 py-3.5 items-center text-sm"
               style={{ borderTop: i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
             >
               <div>
@@ -208,8 +232,13 @@ export default function PagosPage() {
               <span className="text-white/50 text-xs font-mono">
                 {MONTHS[p.periodMonth - 1]} {p.periodYear}
               </span>
-              <span className="text-white/80 text-xs font-semibold">
-                ₡{p.amount.toLocaleString("es-CR")}
+              <span className="text-xs">
+                <span className="block text-white/80 font-semibold tabular-nums">{formatCRC(p.amount)}</span>
+                {(p.discountAmount ?? 0) > 0 && (
+                  <span className="block text-white/35 tabular-nums" title={p.discountLabel}>
+                    lista {formatCRC(p.listAmount ?? p.amount)}
+                  </span>
+                )}
               </span>
               <span className="text-white/40 text-xs">
                 {new Date(p.dueDate).toLocaleDateString("es-CR")}
@@ -218,9 +247,9 @@ export default function PagosPage() {
                 {STATUS_LABELS[p.status] ?? p.status}
               </span>
               <div className="flex items-center gap-2">
-                {p.status !== "paid" && (
+                {(p.status === "pending" || p.status === "late") && (
                   <button
-                    onClick={() => markStatus(p._id, "paid")}
+                    onClick={() => { setNotice(""); setPaying(p); }}
                     disabled={acting === p._id}
                     className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50 cursor-pointer"
                   >
@@ -237,6 +266,15 @@ export default function PagosPage() {
                     Atrasar
                   </button>
                 )}
+                {(p.status === "pending" || p.status === "late") && (
+                  <button
+                    onClick={() => { if (confirm(`¿Anular la factura de ${p.tenantName}? Deja de contar como pendiente y no dispara avisos.`)) void markStatus(p._id, "cancelled"); }}
+                    disabled={acting === p._id}
+                    className="text-xs text-white/40 hover:text-white/70 transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    Anular
+                  </button>
+                )}
                 {p.status === "paid" && p.paidAt && (
                   <span className="text-white/30 text-xs flex items-center gap-1">
                     <Clock className="w-3 h-3" />
@@ -248,6 +286,19 @@ export default function PagosPage() {
           ))
         )}
       </div>
+
+      {paying && (
+        <MarkPaidDialog
+          payment={paying}
+          saving={acting === paying._id}
+          onCancel={() => setPaying(null)}
+          onConfirm={async (data) => {
+            const error = await markStatus(paying._id, "paid", data);
+            if (!error) setPaying(null);
+            return error;
+          }}
+        />
+      )}
 
       {/* Pagination */}
       {totalPages > 1 && (
@@ -271,6 +322,60 @@ export default function PagosPage() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Registrar el pago de una factura: método y referencia (el comprobante del SINPE, por ejemplo). */
+function MarkPaidDialog({
+  payment, saving, onCancel, onConfirm,
+}: {
+  payment: PaymentItem;
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: (data: { method: string; reference: string }) => Promise<string | null>;
+}) {
+  const [method, setMethod] = useState("sinpe");
+  const [reference, setReference] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !saving) onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel, saving]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-labelledby="pay-title" onClick={() => { if (!saving) onCancel(); }}>
+      <div className="w-full max-w-sm rounded-2xl p-6 space-y-4" style={{ background: "#13131b", border: "1px solid rgba(255,255,255,0.08)" }} onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h2 id="pay-title" className="text-lg font-semibold text-white">Registrar pago</h2>
+          <p className="text-sm text-white/50 mt-1">
+            {payment.tenantName} · {MONTHS[payment.periodMonth - 1]} {payment.periodYear} · <span className="tabular-nums">{formatCRC(payment.amount)}</span>
+          </p>
+        </div>
+        <label className="block space-y-1.5">
+          <span className="text-xs text-white/50">Método</span>
+          <select value={method} onChange={(e) => setMethod(e.target.value)} className="saas-input cursor-pointer">
+            {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-xs text-white/50">Referencia o comprobante (opcional)</span>
+          <input value={reference} maxLength={80} onChange={(e) => setReference(e.target.value)} className="saas-input" />
+        </label>
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onCancel} disabled={saving} className="px-4 py-2 rounded-xl text-sm text-white/60 hover:text-white cursor-pointer disabled:opacity-40">Cancelar</button>
+          <button
+            type="button" disabled={saving}
+            onClick={async () => { setError(""); const e = await onConfirm({ method, reference }); if (e) setError(e); }}
+            className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 cursor-pointer disabled:opacity-50"
+          >
+            {saving ? "Guardando..." : "Registrar pago"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

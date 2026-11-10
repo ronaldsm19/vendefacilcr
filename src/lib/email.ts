@@ -39,6 +39,11 @@ export async function sendMail({
   subject: string;
   html: string;
 }): Promise<{ ok: boolean; error?: string }> {
+  // Para probar en desarrollo sin mandar correos de verdad (nunca se define en producción).
+  if (process.env.EMAIL_DRY_RUN === "1") {
+    console.log(`[email] (sin envío) para=${to} asunto="${subject}"`);
+    return { ok: true };
+  }
   const tx = getTransporter();
   if (!tx) {
     console.warn("[email] SMTP no configurado (faltan SMTP_HOST/SMTP_USER/SMTP_PASS); correo no enviado:", subject);
@@ -190,6 +195,78 @@ export function errorAlertEmailHtml({
     ${blocks}
     <p style="margin:28px 0 0;text-align:center;">
       <a href="${panelUrl}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:${BRAND_GRADIENT};color:#ffffff;font-weight:700;text-decoration:none;">Ver el panel de errores</a>
+    </p>`;
+  return layout(title, body);
+}
+
+export interface BillingEmailPayment {
+  sinpeNumber: string;
+  sinpeName: string;
+  iban: string;
+  ibanName: string;
+  whatsapp: string;
+  notes: string;
+}
+
+/**
+ * Correo de cobro al dueño de un negocio: recordatorio, vencimiento, suspensión o fin del periodo
+ * sin costo. Los textos que vienen de afuera (nombres, etiquetas, instrucciones) se escapan acá.
+ */
+export function billingEmailHtml({
+  title,
+  intro,
+  rows,
+  totalLabel,
+  totalValue,
+  note,
+  payment,
+  panelUrl,
+}: {
+  title: string;
+  /** HTML ya armado con datos escapados. */
+  intro: string;
+  /** Filas del detalle (texto plano: se escapan acá). */
+  rows: { label: string; value: string; muted?: boolean }[];
+  totalLabel: string;
+  totalValue: string;
+  /** HTML ya armado con datos escapados. */
+  note?: string;
+  payment: BillingEmailPayment | null;
+  panelUrl: string;
+}): string {
+  const detail = rows.map((r) => `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #F0E6EE;font-size:14px;color:${r.muted ? "#1A1A2E99" : "#1A1A2E"};">${escapeHtml(r.label)}</td>
+        <td style="padding:8px 0 8px 12px;border-bottom:1px solid #F0E6EE;font-size:14px;color:${r.muted ? "#1A1A2E99" : "#1A1A2E"};text-align:right;white-space:nowrap;">${escapeHtml(r.value)}</td>
+      </tr>`).join("");
+
+  const p = payment;
+  const lines: string[] = [];
+  if (p?.sinpeNumber) lines.push(`<strong>SINPE Móvil:</strong> ${escapeHtml(p.sinpeNumber)}${p.sinpeName ? ` (${escapeHtml(p.sinpeName)})` : ""}`);
+  if (p?.iban) lines.push(`<strong>IBAN:</strong> ${escapeHtml(p.iban)}${p.ibanName ? ` (${escapeHtml(p.ibanName)})` : ""}`);
+  if (p?.notes) lines.push(escapeHtml(p.notes).replace(/\n/g, "<br/>"));
+  const wa = (p?.whatsapp ?? "").replace(/\D/g, "");
+  if (wa) lines.push(`Mandá el comprobante por WhatsApp al <a href="https://wa.me/${wa}" style="color:${BRAND_PURPLE};font-weight:600;text-decoration:none;">${escapeHtml(p!.whatsapp)}</a>.`);
+  const howToPay = lines.length
+    ? `<div style="margin:24px 0 0;padding:16px 18px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:12px;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#1A1A2E99;">CÓMO PAGAR</p>
+        ${lines.map((l) => `<p style="margin:0 0 6px;font-size:14px;color:#1A1A2E;">${l}</p>`).join("")}
+      </div>`
+    : `<p style="margin:24px 0 0;font-size:14px;color:#1A1A2E;">Para coordinar el pago, contactá a VendeFácil CR.</p>`;
+
+  const body = `
+    <p style="margin:0 0 16px;">${intro}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      ${detail}
+      <tr>
+        <td style="padding:12px 0 0;font-size:15px;font-weight:700;color:#1A1A2E;">${escapeHtml(totalLabel)}</td>
+        <td style="padding:12px 0 0 12px;font-size:18px;font-weight:700;color:#1A1A2E;text-align:right;white-space:nowrap;">${escapeHtml(totalValue)}</td>
+      </tr>
+    </table>
+    ${note ? `<p style="margin:20px 0 0;font-size:14px;color:#1A1A2E;">${note}</p>` : ""}
+    ${payment ? howToPay : ""}
+    <p style="margin:28px 0 0;text-align:center;">
+      <a href="${panelUrl}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:${BRAND_GRADIENT};color:#ffffff;font-weight:700;text-decoration:none;">Ir a mi panel</a>
     </p>`;
   return layout(title, body);
 }
