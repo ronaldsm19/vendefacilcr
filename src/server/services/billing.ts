@@ -9,7 +9,7 @@ import { ServiceError } from "@/server/errors";
 import { sendMail, billingEmailHtml, getBaseUrl, escapeHtml } from "@/lib/email";
 import { forgetTenantStatus } from "@/server/services/tenantAccess";
 import {
-  PLAN_KEYS, PLAN_LABELS, PAYMENT_METHODS, billingOf, priceFor, isFreeOn, crDay, crMidnight, startOfCrDay,
+  PLAN_KEYS, PLAN_LABELS, DEFAULT_PLAN_PRICES, PAYMENT_METHODS, billingOf, priceFor, isFreeOn, crDay, crMidnight, startOfCrDay,
   addDays, daysBetween, formatCrDate, formatCRC, periodLabel, nextPeriod, periodKey, periodDueDate,
   type PlanKey, type TenantBilling, type PriceBreakdown, type DiscountType,
 } from "@/lib/billing";
@@ -63,6 +63,23 @@ export async function getBillingSettings(): Promise<Settings> {
     { $setOnInsert: { key: "global", ...BILLING_DEFAULTS } },
     { upsert: true, returnDocument: "after" },
   ).lean() as Promise<Settings>;
+}
+
+/**
+ * Precios de lista para páginas públicas (el landing). Solo lee: a diferencia de getBillingSettings,
+ * no crea la configuración si todavía no existe.
+ */
+export async function getListPrices(): Promise<Record<PlanKey, number>> {
+  await connectToDatabase();
+  const doc = (await BillingSettings.findOne({ key: "global" }).select("prices").lean()) as
+    | { prices?: Partial<Record<PlanKey, number>> }
+    | null;
+  const prices = { ...DEFAULT_PLAN_PRICES };
+  for (const plan of PLAN_KEYS) {
+    const value = doc?.prices?.[plan];
+    if (typeof value === "number" && value > 0) prices[plan] = value;
+  }
+  return prices;
 }
 
 function intIn(value: unknown, { min, max }: { min: number; max: number }, label: string): number {
