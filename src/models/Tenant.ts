@@ -62,6 +62,18 @@ export interface ITenant {
   /** Mensaje opcional para el dueño, que ve en la pantalla de suspensión. */
   suspendedMessage: string;
   suspendedAt: Date | null;
+  /** Precio especial del negocio: descuento o sin costo (lo define el superadmin). */
+  billing: {
+    discountType: "none" | "percent" | "amount";
+    discountValue: number;
+    discountUntil: Date | null;
+    discountLabel: string;
+    free: boolean;
+    freeUntil: Date | null;
+    freeReason: string;
+    /** Cuándo se le avisó que su periodo sin costo termina (una sola vez por fecha de fin). */
+    freeEndNoticeAt: Date | null;
+  };
   theme: ITenantTheme;
   menuConfig: IMenuConfig;
   posConfig: { ivaEnabled: boolean; ivaRate: number; serviceEnabled: boolean; serviceRate: number; tipEnabled: boolean };
@@ -92,6 +104,16 @@ const TenantSchema = new Schema(
     suspendedReason: { type: String, enum: ["", "falta_pago", "solicitud", "otro"], default: "" },
     suspendedMessage: { type: String, default: "", maxlength: 300 },
     suspendedAt:     { type: Date, default: null },
+    billing: {
+      discountType:    { type: String, enum: ["none", "percent", "amount"], default: "none" },
+      discountValue:   { type: Number, default: 0, min: 0 },
+      discountUntil:   { type: Date, default: null },
+      discountLabel:   { type: String, default: "", maxlength: 60 },
+      free:            { type: Boolean, default: false },
+      freeUntil:       { type: Date, default: null },
+      freeReason:      { type: String, default: "", maxlength: 60 },
+      freeEndNoticeAt: { type: Date, default: null },
+    },
     theme: {
       primaryColor:    { type: String, default: "#6366F1" },
       secondaryColor:  { type: String, default: "#8B5CF6" },

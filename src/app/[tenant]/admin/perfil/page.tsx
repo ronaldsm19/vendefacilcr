@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Store, Loader2, Check } from "lucide-react";
+import MiPlanCard from "@/components/admin/MiPlanCard";
 
 interface Profile {
   email: string;
@@ -112,6 +113,8 @@ export default function PerfilPage() {
           ))}
         </dl>
       </div>
+
+      <MiPlanCard />
 
       {/* Cambiar contraseña */}
       <div className="bg-white rounded-2xl card-shadow p-6">

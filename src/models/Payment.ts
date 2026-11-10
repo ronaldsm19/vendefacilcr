@@ -1,12 +1,15 @@
 import mongoose, { Schema } from "mongoose";
+import { DEFAULT_PLAN_PRICES } from "@/lib/billing";
 
-export type PaymentStatus = "pending" | "paid" | "late";
+/**
+ * Factura mensual de un negocio. Guarda el precio como quedó ese mes (lista, descuento, final): si
+ * después cambia el descuento o el precio de lista, las facturas viejas no se alteran.
+ * "cortesia" = mes sin costo: no se cobra ni se recuerda, pero queda registrado cuánto se regaló.
+ */
+export type PaymentStatus = "pending" | "paid" | "late" | "cancelled" | "cortesia";
 
-export const PLAN_AMOUNTS: Record<string, number> = {
-  emprende: 12900,
-  pro:      17900,
-  premium:  24900,
-};
+/** @deprecated Los precios viven en la configuración de cobros (BillingSettings.prices). */
+export const PLAN_AMOUNTS: Record<string, number> = { ...DEFAULT_PLAN_PRICES };
 
 export interface IPayment {
   _id: string;
@@ -16,11 +19,20 @@ export interface IPayment {
   plan: "emprende" | "pro" | "premium";
   periodYear: number;
   periodMonth: number;
+  /** Lo que paga (con descuento). */
   amount: number;
+  /** Precio de lista de ese mes. Las facturas anteriores a los descuentos no lo tienen: vale amount. */
+  listAmount?: number;
+  discountAmount?: number;
+  discountLabel?: string;
   status: PaymentStatus;
   dueDate: Date;
   paidAt?: Date;
+  method?: string;
+  reference?: string;
   notes?: string;
+  /** Correos ya enviados, para no repetirlos. */
+  reminders?: { beforeAt?: Date | null; dueAt?: Date | null; suspendedAt?: Date | null };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,10 +46,20 @@ const PaymentSchema = new Schema(
     periodYear:  { type: Number, required: true },
     periodMonth: { type: Number, required: true, min: 1, max: 12 },
     amount:      { type: Number, required: true, min: 0 },
-    status:      { type: String, enum: ["pending", "paid", "late"], default: "pending", index: true },
+    listAmount:  { type: Number, min: 0 },
+    discountAmount: { type: Number, default: 0, min: 0 },
+    discountLabel:  { type: String, default: "" },
+    status:      { type: String, enum: ["pending", "paid", "late", "cancelled", "cortesia"], default: "pending", index: true },
     dueDate:     { type: Date, required: true },
     paidAt:      { type: Date },
+    method:      { type: String, default: "" },
+    reference:   { type: String, default: "" },
     notes:       { type: String },
+    reminders: {
+      beforeAt:    { type: Date, default: null },
+      dueAt:       { type: Date, default: null },
+      suspendedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

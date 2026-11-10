@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
-import { Payment, PLAN_AMOUNTS } from "@/models/Payment";
+import { Payment } from "@/models/Payment";
 import { Tenant } from "@/models/Tenant";
 import { getSuperadminSession } from "@/lib/auth";
+import { ensureInvoice, generateMonth, getBillingSettings } from "@/server/services/billing";
+import { crDay } from "@/lib/billing";
 
 export async function GET(request: NextRequest) {
   const session = await getSuperadminSession(request);
@@ -29,67 +32,33 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ payments, total, page, limit });
 }
 
+/**
+ * Crea facturas a mano: las de un mes para todos los negocios activos ({ generateAll }) o la de un
+ * negocio. El precio sale de la configuración de cobros y del descuento o la cortesía de cada uno.
+ */
 export async function POST(request: NextRequest) {
   const session = await getSuperadminSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   await connectToDatabase();
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
+  const now = crDay(new Date());
+  const year = Number(body.year ?? body.periodYear) || now.y;
+  const month = Number(body.month ?? body.periodMonth) || now.m;
+  if (month < 1 || month > 12) return NextResponse.json({ error: "Mes inválido" }, { status: 400 });
 
-  // Generate all invoices for a month
   if (body.generateAll) {
-    const now  = new Date();
-    const year  = body.year  ?? now.getFullYear();
-    const month = body.month ?? now.getMonth() + 1;
-    const dueDate = new Date(year, month - 1, 1);
-
-    const tenants = await Tenant.find({ status: "active" }).lean();
-    const ops = tenants.map((t) => ({
-      updateOne: {
-        filter: { tenantId: t._id, periodYear: year, periodMonth: month },
-        update: {
-          $setOnInsert: {
-            tenantId:    t._id,
-            tenantName:  t.name,
-            tenantSlug:  t.slug,
-            plan:        t.plan,
-            periodYear:  year,
-            periodMonth: month,
-            amount:      PLAN_AMOUNTS[t.plan] ?? 12900,
-            dueDate,
-            status:      "pending",
-          },
-        },
-        upsert: true,
-      },
-    }));
-
-    const result = await Payment.bulkWrite(ops);
-    return NextResponse.json({ created: result.upsertedCount });
+    const { created } = await generateMonth(year, month);
+    return NextResponse.json({ created });
   }
 
-  // Create single payment
-  const { tenantId, periodYear, periodMonth, amount, dueDate } = body;
-  if (!tenantId || !periodYear || !periodMonth) {
+  if (!body.tenantId || !mongoose.isValidObjectId(body.tenantId)) {
     return NextResponse.json({ error: "tenantId, periodYear, periodMonth requeridos" }, { status: 400 });
   }
-
-  const tenant = await Tenant.findById(tenantId).lean() as { name: string; slug: string; plan: string } | null;
+  const tenant = await Tenant.findById(body.tenantId).select("_id slug name email plan status suspendedReason billing").lean();
   if (!tenant) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
 
-  const payment = await Payment.findOneAndUpdate(
-    { tenantId, periodYear, periodMonth },
-    {
-      $setOnInsert: {
-        tenantId, tenantName: tenant.name, tenantSlug: tenant.slug,
-        plan: tenant.plan, periodYear, periodMonth,
-        amount: amount ?? PLAN_AMOUNTS[tenant.plan] ?? 12900,
-        dueDate: dueDate ? new Date(dueDate) : new Date(periodYear, periodMonth - 1, 1),
-        status: "pending",
-      },
-    },
-    { upsert: true, new: true }
-  ).lean();
-
+  await ensureInvoice(tenant as never, year, month, await getBillingSettings());
+  const payment = await Payment.findOne({ tenantId: body.tenantId, periodYear: year, periodMonth: month }).lean();
   return NextResponse.json({ payment }, { status: 201 });
 }
