@@ -28,6 +28,46 @@ import { SalonReservation } from "@/models/SalonReservation";
 import { TableArea } from "@/models/TableArea";
 import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
 import { getSuperadminSession } from "@/lib/auth";
+import { isSuspensionReason, SUSPENSION_MESSAGE_MAX } from "@/lib/suspension";
+import { forgetTenantStatus } from "@/server/services/tenantAccess";
+
+const STATUSES = ["active", "inactive", "suspended"];
+
+/**
+ * Lo que cambia junto con el estado. Al suspender (o desactivar) se guarda el motivo y el mensaje
+ * para el dueño; al reactivar se limpian. Devuelve un error si los datos no sirven.
+ */
+function statusUpdate(
+  body: Record<string, unknown>,
+  current: { status: string },
+): { set: Record<string, unknown> } | { error: string } {
+  const status = body.status === undefined ? current.status : body.status;
+  if (typeof status !== "string" || !STATUSES.includes(status)) return { error: "Estado inválido" };
+
+  if (status === "active") {
+    return { set: { status, suspendedReason: "", suspendedMessage: "", suspendedAt: null } };
+  }
+
+  const set: Record<string, unknown> = { status };
+  if (current.status === "active") {
+    set.suspendedAt = new Date();
+    set.suspendedReason = "otro";
+    set.suspendedMessage = "";
+  }
+  if (body.suspendedReason !== undefined) {
+    if (!isSuspensionReason(body.suspendedReason)) return { error: "Motivo de suspensión inválido" };
+    set.suspendedReason = body.suspendedReason;
+  }
+  if (body.suspendedMessage !== undefined) {
+    if (typeof body.suspendedMessage !== "string") return { error: "Mensaje inválido" };
+    const message = body.suspendedMessage.trim();
+    if (message.length > SUSPENSION_MESSAGE_MAX) {
+      return { error: `El mensaje puede tener hasta ${SUSPENSION_MESSAGE_MAX} caracteres` };
+    }
+    set.suspendedMessage = message;
+  }
+  return { set };
+}
 
 export async function GET(
   request: NextRequest,
@@ -60,14 +100,25 @@ export async function PATCH(
   await connectToDatabase();
   const body = await request.json();
 
-  const allowedFields = ["name", "email", "whatsappNumber", "plan", "status", "theme", "logoUrl", "description"];
+  const allowedFields = ["name", "email", "whatsappNumber", "plan", "theme", "logoUrl", "description"];
   const update: Record<string, unknown> = {};
   for (const field of allowedFields) {
     if (body[field] !== undefined) update[field] = body[field];
   }
 
-  const tenant = await Tenant.findByIdAndUpdate(id, update, { new: true, runValidators: true }).lean();
+  if (body.status !== undefined || body.suspendedReason !== undefined || body.suspendedMessage !== undefined) {
+    const current = await Tenant.findById(id).select("status").lean() as { status: string } | null;
+    if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    const result = statusUpdate(body, current);
+    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
+    Object.assign(update, result.set);
+  }
+
+  const tenant = await Tenant.findByIdAndUpdate(id, update, { returnDocument: "after", runValidators: true }).lean();
   if (!tenant) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  // Las sesiones abiertas de este negocio se cortan (o vuelven) en el próximo pedido a esta
+  // instancia; en las demás, cuando venza su minuto de caché.
+  forgetTenantStatus(id);
   return NextResponse.json({ tenant });
 }
 

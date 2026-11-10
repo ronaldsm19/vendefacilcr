@@ -78,7 +78,7 @@ export async function verifyJwt(token: string): Promise<AdminPayload | null> {
  * probar otra credencial, y haría que la app pareciera funcionar en un navegador con sesión
  * abierta mientras falla en el teléfono.
  */
-export async function getSession(
+export async function getSessionPayload(
   request: NextRequest
 ): Promise<AdminPayload | null> {
   const bearer = bearerToken(request);
@@ -87,6 +87,22 @@ export async function getSession(
   const token = request.cookies.get(COOKIE_NAME)?.value;
   if (!token) return null;
   return verifyJwt(token);
+}
+
+/**
+ * La sesión del panel, solo si el negocio sigue activo. Así una suspensión corta también a quien
+ * ya tenía el panel abierto (o la app con un token vigente), en vez de esperar a que venza el token.
+ * Las pocas rutas que necesitan explicar POR QUÉ no hay sesión (los "quién soy") usan
+ * getSessionPayload y revisan el estado ellas mismas.
+ */
+export async function getSession(
+  request: NextRequest
+): Promise<AdminPayload | null> {
+  const payload = await getSessionPayload(request);
+  if (!payload) return null;
+  // Import diferido: este archivo también lo usa el proxy, que no necesita la base.
+  const { isTenantActive } = await import("@/server/services/tenantAccess");
+  return (await isTenantActive(payload.tenantId)) ? payload : null;
 }
 
 /** El token del encabezado Authorization, o null si no viene el encabezado. */

@@ -57,6 +57,11 @@ export interface ITenant {
   description: string;
   plan: "emprende" | "pro" | "premium";
   status: "active" | "inactive" | "suspended";
+  /** Por qué no está activo (lo elige el superadmin). "" mientras está activo. */
+  suspendedReason: "" | "falta_pago" | "solicitud" | "otro";
+  /** Mensaje opcional para el dueño, que ve en la pantalla de suspensión. */
+  suspendedMessage: string;
+  suspendedAt: Date | null;
   theme: ITenantTheme;
   menuConfig: IMenuConfig;
   posConfig: { ivaEnabled: boolean; ivaRate: number; serviceEnabled: boolean; serviceRate: number; tipEnabled: boolean };
@@ -84,6 +89,9 @@ const TenantSchema = new Schema(
     description:     { type: String, default: "" },
     plan:            { type: String, enum: ["emprende", "pro", "premium"], default: "emprende" },
     status:          { type: String, enum: ["active", "inactive", "suspended"], default: "active" },
+    suspendedReason: { type: String, enum: ["", "falta_pago", "solicitud", "otro"], default: "" },
+    suspendedMessage: { type: String, default: "", maxlength: 300 },
+    suspendedAt:     { type: Date, default: null },
     theme: {
       primaryColor:    { type: String, default: "#6366F1" },
       secondaryColor:  { type: String, default: "#8B5CF6" },

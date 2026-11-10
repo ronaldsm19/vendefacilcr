@@ -4,17 +4,20 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Tenant } from "@/models/Tenant";
 import { AccessLog } from "@/models/AccessLog";
 import LoginForm from "./LoginForm";
+import SuspendedScreen from "@/components/admin/SuspendedScreen";
+import { suspensionNotice } from "@/lib/suspension";
 
 async function getTenantBranding(slug: string) {
   try {
     await connectToDatabase();
-    const tenant = await Tenant.findOne({ slug, status: "active" })
-      .select("_id name logoUrl theme")
+    const tenant = await Tenant.findOne({ slug })
+      .select("_id name logoUrl theme status")
       .lean();
     if (!tenant) return null;
     return JSON.parse(JSON.stringify(tenant)) as {
       _id: string;
       name: string;
+      status: string;
       logoUrl?: string;
       theme?: { primaryColor?: string; secondaryColor?: string };
     };
@@ -31,6 +34,13 @@ export default async function AdminLoginPage({
   const { tenant: slug } = await params;
   const branding = await getTenantBranding(slug);
   if (!branding) notFound();
+
+  // Suspendido: en vez del formulario (que igual rechazaría el ingreso), el aviso. Texto neutro
+  // porque esta página la puede abrir cualquiera; el motivo lo ve el dueño dentro del panel o la app.
+  if (branding.status !== "active") {
+    const notice = suspensionNotice({}, "neutral");
+    return <SuspendedScreen tenantName={branding.name} title={notice.title} message={notice.message} />;
+  }
 
   const hdrs = await headers();
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";

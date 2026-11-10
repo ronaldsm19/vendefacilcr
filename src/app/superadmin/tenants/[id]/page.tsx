@@ -6,6 +6,7 @@ import { ArrowLeft, Save, Shield, Clock, CreditCard, CheckCircle2, XCircle, Aler
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import TenantErrorsCard from "@/components/superadmin/errores/TenantErrorsCard";
+import { SUSPENSION_REASONS, SUSPENSION_MESSAGE_MAX, suspensionReasonLabel } from "@/lib/suspension";
 
 interface Tenant {
   _id: string;
@@ -17,6 +18,9 @@ interface Tenant {
   description: string;
   plan: string;
   status: string;
+  suspendedReason?: string;
+  suspendedMessage?: string;
+  suspendedAt?: string | null;
   createdAt: string;
 }
 
@@ -81,6 +85,9 @@ export default function TenantDetailPage() {
           name: t.name, email: t.email, whatsappNumber: t.whatsappNumber,
           logoUrl: t.logoUrl, description: t.description,
           plan: t.plan, status: t.status,
+          // Si está activo, el motivo arranca en "falta de pago" por si lo suspenden desde acá.
+          suspendedReason: t.suspendedReason || "falta_pago",
+          suspendedMessage: t.suspendedMessage ?? "",
         });
       })
       .finally(() => setLoading(false));
@@ -160,6 +167,12 @@ export default function TenantDetailPage() {
         <div className="flex-1">
           <h1 className="font-brand text-2xl md:text-3xl font-bold text-white">{tenant.name}</h1>
           <p className="text-white/40 text-sm mt-1">{tenant.slug} · {tenant.email}</p>
+          {tenant.status !== "active" && (
+            <p className="text-red-300/80 text-sm mt-1">
+              {suspensionReasonLabel(tenant.suspendedReason)}
+              {tenant.suspendedAt && ` · desde el ${new Date(tenant.suspendedAt).toLocaleDateString("es-CR")}`}
+            </p>
+          )}
         </div>
         <span
           className={`text-xs font-semibold px-3 py-1.5 rounded-full ${
@@ -245,6 +258,31 @@ export default function TenantDetailPage() {
                 </select>
               </Field>
             </div>
+            {form.status !== "active" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl p-4" style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.18)" }}>
+                <Field label="Motivo">
+                  <select
+                    value={form.suspendedReason ?? "falta_pago"}
+                    onChange={(e) => setForm({ ...form, suspendedReason: e.target.value })}
+                    className="saas-input cursor-pointer"
+                  >
+                    {SUSPENSION_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="Mensaje para el dueño (opcional)">
+                  <textarea
+                    rows={2} maxLength={SUSPENSION_MESSAGE_MAX}
+                    value={form.suspendedMessage ?? ""}
+                    onChange={(e) => setForm({ ...form, suspendedMessage: e.target.value })}
+                    className="saas-input resize-none"
+                  />
+                </Field>
+                <p className="sm:col-span-2 text-xs text-white/40">
+                  Panel, app y tienda en línea quedan bloqueados en menos de un minuto, también las sesiones
+                  abiertas. El motivo y el mensaje solo los ve el dueño.
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <button
                 type="submit"
