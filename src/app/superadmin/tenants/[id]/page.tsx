@@ -6,6 +6,7 @@ import { ArrowLeft, Save, Shield, Clock, CreditCard, CheckCircle2, XCircle, Aler
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import TenantErrorsCard from "@/components/superadmin/errores/TenantErrorsCard";
+import TenantBillingCard from "@/components/superadmin/cobros/TenantBillingCard";
 import { SUSPENSION_REASONS, SUSPENSION_MESSAGE_MAX, suspensionReasonLabel } from "@/lib/suspension";
 
 interface Tenant {
@@ -51,12 +52,13 @@ interface TenantDetail {
 
 const PLAN_LABELS: Record<string, string> = { emprende: "Emprende", pro: "Pro", premium: "Premium" };
 const STATUS_LABELS: Record<string, string> = { active: "Activo", inactive: "Inactivo", suspended: "Suspendido" };
-const PAYMENT_STATUS_LABELS: Record<string, string> = { pending: "Pendiente", paid: "Pagado", late: "Atrasado", cancelled: "Cancelado" };
+const PAYMENT_STATUS_LABELS: Record<string, string> = { pending: "Pendiente", paid: "Pagado", late: "Atrasado", cancelled: "Cancelado", cortesia: "Cortesía" };
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
   pending:   "bg-amber-500/20 text-amber-400",
   paid:      "bg-emerald-500/20 text-emerald-400",
   late:      "bg-red-500/20 text-red-400",
   cancelled: "bg-gray-500/20 text-gray-400",
+  cortesia:  "bg-sky-500/20 text-sky-300",
 };
 const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -343,6 +345,8 @@ export default function TenantDetailPage() {
           </a>
         </div>
       </div>
+
+      <TenantBillingCard tenantId={id} tenantEmail={tenant.email} />
 
       {/* Payment history */}
       <div
