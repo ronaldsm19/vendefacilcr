@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Tenant } from "@/models/Tenant";
 import { getSession, requireFeature } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { readPosCharges } from "@/lib/pricing";
 
 // Lectura: el punto de venta (admin y cajero) la necesita para mostrar los cobros del negocio.
@@ -10,6 +11,8 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const denied = requireFeature(session, "pos");
   if (denied) return denied;
+  const deniedPlan = await requirePlan(session, "pos");
+  if (deniedPlan) return deniedPlan;
 
   await connectToDatabase();
   const tenant = await Tenant.findById(session.tenantId).select("posConfig").lean() as

@@ -4,11 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, CircleAlert, Copy, Eye, EyeOff } from "lucide-react";
 import { formatCRC, DEFAULT_PLAN_PRICES, PLAN_KEYS, PLAN_LABELS } from "@/lib/billing";
+import { PLAN_CARDS } from "@/lib/planes";
 
 const PLAN_OPTIONS = PLAN_KEYS.map((key) => ({
   value: key,
   label: PLAN_LABELS[key],
   price: `${formatCRC(DEFAULT_PLAN_PRICES[key])}/mes`,
+  para: PLAN_CARDS.find((c) => c.key === key)?.para ?? "",
 }));
 
 const COLOR_FIELDS = [
@@ -252,10 +254,14 @@ export default function NuevoTenantPage() {
                     >
                       <span className={selected ? "font-semibold text-[var(--sa-primary)]" : "sa-strong"}>{p.label}</span>
                       <span className="sa-help sa-num">{p.price}</span>
+                      <span className="sa-help hidden sm:block">{p.para}</span>
                     </button>
                   );
                 })}
               </div>
+              <span className="sa-help">
+                Nace con los límites de su plan (secciones y tope de productos). Se pueden quitar desde su ficha.
+              </span>
             </div>
           </div>
         </section>

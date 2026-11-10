@@ -7,6 +7,7 @@ import { Tenant } from "@/models/Tenant";
 import { Comanda } from "@/models/Comanda";
 import { PrintJob } from "@/models/PrintJob";
 import { getSession } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { isTableStatus } from "@/lib/tableStatus";
 import { readComandaConfig } from "@/lib/comandaConfig";
 
@@ -28,6 +29,8 @@ interface ComandaStatsRow {
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "salon");
+  if (deniedPlan) return deniedPlan;
 
   await connectToDatabase();
 

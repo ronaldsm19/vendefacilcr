@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { SalonTable } from "@/models/SalonTable";
 import { getSession } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { buildStatusUpdate } from "@/lib/tableStatus";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "salon");
+  if (deniedPlan) return deniedPlan;
 
   const { id } = await params;
   await connectToDatabase();

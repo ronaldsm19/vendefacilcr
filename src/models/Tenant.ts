@@ -56,6 +56,12 @@ export interface ITenant {
   logoUrl: string;
   description: string;
   plan: "emprende" | "pro" | "premium";
+  /**
+   * Si se le aplican los límites de su plan (secciones y tope de productos). Los negocios creados
+   * antes de los límites no tienen el campo y conservan todo lo que tenían, salvo lo que siempre fue
+   * de Premium; los nuevos nacen con true. Lo cambia el superadmin.
+   */
+  planLimits: boolean;
   status: "active" | "inactive" | "suspended";
   /** Por qué no está activo (lo elige el superadmin). "" mientras está activo. */
   suspendedReason: "" | "falta_pago" | "solicitud" | "otro";
@@ -100,6 +106,9 @@ const TenantSchema = new Schema(
     logoUrl:         { type: String, default: "" },
     description:     { type: String, default: "" },
     plan:            { type: String, enum: ["emprende", "pro", "premium"], default: "emprende" },
+    // false por defecto a propósito: así un negocio viejo leído y vuelto a guardar no queda
+    // limitado sin que nadie lo decida. Los negocios nuevos lo reciben en true al crearse.
+    planLimits:      { type: Boolean, default: false },
     status:          { type: String, enum: ["active", "inactive", "suspended"], default: "active" },
     suspendedReason: { type: String, enum: ["", "falta_pago", "solicitud", "otro"], default: "" },
     suspendedMessage: { type: String, default: "", maxlength: 300 },

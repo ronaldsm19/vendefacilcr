@@ -4,6 +4,7 @@ import { CashClose } from "@/models/CashClose";
 import { CashSession } from "@/models/CashSession";
 import { AccessLog } from "@/models/AccessLog";
 import { getSession, requireFeature, requireRole } from "@/lib/auth";
+import { requirePlan } from "@/lib/plan";
 import { buildArqueo, expectedCash } from "@/lib/cashCount";
 import { checkCardReconciliation, type CardReconciliation } from "@/lib/cardReconciliation";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
@@ -32,6 +33,8 @@ export async function PUT(
 ) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const deniedPlan = await requirePlan(session, "cierre-de-caja");
+  if (deniedPlan) return deniedPlan;
   const denied = requireFeature(session, "cierre-de-caja") ?? requireRole(session, "admin");
   if (denied) return denied;
 

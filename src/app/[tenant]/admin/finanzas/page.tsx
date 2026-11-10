@@ -7,6 +7,8 @@ import {
 } from "recharts";
 import StatsCard from "@/components/admin/StatsCard";
 import ServiceReportSection from "@/components/admin/ServiceReportSection";
+import { useAdminSession } from "@/components/admin/SessionContext";
+import { planAllows } from "@/lib/permissions";
 import { TrendingUp, TrendingDown, DollarSign, Percent } from "lucide-react";
 
 interface FinanceData {
@@ -48,6 +50,8 @@ function CustomTooltip({ active, payload, label }: RechartsTooltipProps) {
 }
 
 export default function AdminFinancesPage() {
+  const session = useAdminSession();
+  const showServiceReport = planAllows(session, "jornada");
   const [data, setData] = useState<FinanceData | null>(null);
   const [period, setPeriod] = useState<"week" | "month" | "year">("month");
   const [loading, setLoading] = useState(true);
@@ -255,7 +259,7 @@ export default function AdminFinancesPage() {
             </div>
           )}
 
-          <ServiceReportSection />
+          {showServiceReport && <ServiceReportSection />}
         </>
       )}
     </div>

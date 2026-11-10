@@ -80,14 +80,17 @@ export async function GET(
   const { id } = await params;
   await connectToDatabase();
 
-  const [tenant, payments, accessLogs] = await Promise.all([
+  if (!mongoose.isValidObjectId(id)) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  const [tenant, payments, accessLogs, productCount] = await Promise.all([
     Tenant.findById(id).lean(),
     Payment.find({ tenantId: id }).sort({ periodYear: -1, periodMonth: -1 }).limit(12).lean(),
     AccessLog.find({ tenantId: id }).sort({ createdAt: -1 }).limit(20).lean(),
+    // Para avisar antes de pasarlo a un plan con tope de productos.
+    Product.countDocuments({ tenantId: id }),
   ]);
 
   if (!tenant) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-  return NextResponse.json({ tenant, payments, accessLogs });
+  return NextResponse.json({ tenant, payments, accessLogs, productCount });
 }
 
 export async function PATCH(
@@ -106,6 +109,12 @@ export async function PATCH(
   for (const field of allowedFields) {
     if (body[field] !== undefined) update[field] = body[field];
   }
+  if (body.planLimits !== undefined) {
+    if (typeof body.planLimits !== "boolean") {
+      return NextResponse.json({ error: "Límites del plan inválidos" }, { status: 400 });
+    }
+    update.planLimits = body.planLimits;
+  }
 
   if (body.status !== undefined || body.suspendedReason !== undefined || body.suspendedMessage !== undefined) {
     const current = await Tenant.findById(id).select("status").lean() as { status: string } | null;
@@ -117,8 +126,8 @@ export async function PATCH(
 
   const tenant = await Tenant.findByIdAndUpdate(id, update, { returnDocument: "after", runValidators: true }).lean();
   if (!tenant) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-  // Las sesiones abiertas de este negocio se cortan (o vuelven) en el próximo pedido a esta
-  // instancia; en las demás, cuando venza su minuto de caché.
+  // Las sesiones abiertas de este negocio se cortan (o vuelven), y ven su plan nuevo, en el próximo
+  // pedido a esta instancia; en las demás, cuando venza su minuto de caché.
   forgetTenantStatus(id);
   return NextResponse.json({ tenant });
 }
