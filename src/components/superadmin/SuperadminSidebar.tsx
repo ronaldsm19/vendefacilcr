@@ -12,13 +12,13 @@ import {
   Wallet,
   Megaphone,
   LogOut,
+  Search,
   X,
-  Zap,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/superadmin",            label: "Dashboard",   icon: LayoutDashboard },
-  { href: "/superadmin/tenants",    label: "Tenants",     icon: Building2 },
+  { href: "/superadmin",            label: "Hoy",         icon: LayoutDashboard },
+  { href: "/superadmin/tenants",    label: "Negocios",    icon: Building2 },
   { href: "/superadmin/solicitudes",label: "Solicitudes", icon: ClipboardList },
   { href: "/superadmin/cobros",     label: "Cobros",      icon: Wallet },
   { href: "/superadmin/pagos",      label: "Pagos",       icon: CreditCard },
@@ -27,7 +27,19 @@ const navItems = [
   { href: "/superadmin/errores",    label: "Errores",     icon: Bug },
 ];
 
-export default function SuperadminSidebar({ onClose }: { onClose?: () => void }) {
+export function SuperadminBrand() {
+  return (
+    <div className="sa-brand">
+      <div className="sa-brand-mark" aria-hidden><span /><span /><span /><span /></div>
+      <div>
+        <p className="sa-brand-name" style={{ margin: 0 }}>VendeFácil</p>
+        <p className="sa-brand-sub" style={{ margin: 0 }}>Consola</p>
+      </div>
+    </div>
+  );
+}
+
+export default function SuperadminSidebar({ onClose, onSearch }: { onClose?: () => void; onSearch?: () => void }) {
   const pathname = usePathname();
   const router   = useRouter();
 
@@ -38,70 +50,45 @@ export default function SuperadminSidebar({ onClose }: { onClose?: () => void })
   }
 
   return (
-    <aside
-      className="w-60 h-screen flex flex-col overflow-hidden"
-      style={{ background: "#06060A", borderRight: "1px solid rgba(255,255,255,0.06)" }}
-    >
-      {/* Brand — altura fija, nunca se achica ni se scrollea */}
-      <div
-        className="shrink-0 px-6 py-6 flex items-center justify-between"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
-      >
-        <div className="flex items-center gap-2.5">
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center saas-accent-bg"
-          >
-            <Zap className="w-3.5 h-3.5 text-white" />
-          </div>
-          <div>
-            <p className="font-brand text-sm font-bold saas-accent-text">VendeFácil</p>
-            <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.3)" }}>Superadmin</p>
-          </div>
-        </div>
+    <aside className="sa-sidebar">
+      {/* Marca: altura fija, nunca se achica ni se desplaza */}
+      <div className="shrink-0 flex items-center justify-between px-4 pt-4 pb-3">
+        <SuperadminBrand />
         {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-            aria-label="Cerrar menú"
-          >
+          <button onClick={onClose} className="sa-icon-btn" aria-label="Cerrar menú">
             <X className="w-4 h-4" />
           </button>
         )}
       </div>
 
-      {/* Nav — única zona que se scrollea (min-h-0 permite que este hijo flex se encoja
-          por debajo de su contenido en vez de estirar todo el <aside>) */}
-      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-0.5">
+      {onSearch && (
+        <div className="shrink-0 px-3 pb-2">
+          <button type="button" onClick={onSearch} className="sa-nav-link" style={{ border: "1px solid var(--sa-line)", color: "var(--sa-ink-2)" }}>
+            <Search aria-hidden />
+            <span className="flex-1">Buscar negocio</span>
+            <span className="sa-kbd">Ctrl K</span>
+          </button>
+        </div>
+      )}
+
+      {/* Navegación: la única zona que se desplaza (min-h-0 deja que se encoja dentro del aside) */}
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-2 flex flex-col gap-0.5" aria-label="Secciones">
         {navItems.map((item) => {
-          const isActive =
-            item.href === "/superadmin"
-              ? pathname === "/superadmin"
-              : pathname.startsWith(item.href);
+          const isActive = item.href === "/superadmin" ? pathname === "/superadmin" : pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
-                isActive
-                  ? "saas-accent-bg text-white"
-                  : "text-white/50 hover:text-white hover:bg-white/8"
-              }`}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
+            <Link key={item.href} href={item.href} onClick={onClose} className="sa-nav-link" aria-current={isActive ? "page" : undefined}>
+              <Icon aria-hidden />
               {item.label}
             </Link>
           );
         })}
       </nav>
 
-      {/* Logout — altura fija, nunca se achica ni se scrollea */}
-      <div className="shrink-0 px-3 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-white hover:bg-white/8 transition-all cursor-pointer"
-        >
-          <LogOut className="w-4 h-4" />
+      {/* Salir: altura fija */}
+      <div className="shrink-0 px-3 py-3" style={{ borderTop: "1px solid var(--sa-line)" }}>
+        <button onClick={handleLogout} className="sa-nav-link">
+          <LogOut aria-hidden />
           Cerrar sesión
         </button>
       </div>

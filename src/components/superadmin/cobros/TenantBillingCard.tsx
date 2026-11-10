@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BadgePercent, Gift, Send, Save } from "lucide-react";
+import { BadgePercent, CircleAlert, Clock, Gift, Send, Save, TriangleAlert } from "lucide-react";
 import {
   priceFor, formatCRC, formatCrDate, toInputDate, fromInputDate, periodLabel, crDay, nextPeriod, periodDueDate,
   PLAN_LABELS, type PlanKey, type TenantBilling, type DiscountType, type PriceBreakdown,
@@ -26,7 +26,7 @@ interface Form {
   freeReason: string;
 }
 
-const CARD = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" };
+const PREVIEW_TITLES = ["Este mes", "Mes siguiente"];
 
 function toForm(b: TenantBilling): Form {
   return {
@@ -75,7 +75,13 @@ export default function TenantBillingCard({ tenantId, tenantEmail }: { tenantId:
   }, []);
 
   if (!view || !form) {
-    return <div className="rounded-2xl p-6 text-sm text-white/30" style={CARD}>Cargando cobro...</div>;
+    return (
+      <section className="sa-card sa-card-pad">
+        {msg && !msg.ok
+          ? <p className="sa-error" role="alert">{msg.text}</p>
+          : <p className="sa-muted">Cargando cobro...</p>}
+      </section>
+    );
   }
 
   const billing = billingFromForm(form);
@@ -133,125 +139,142 @@ export default function TenantBillingCard({ tenantId, tenantEmail }: { tenantId:
   }
 
   return (
-    <div className="rounded-2xl p-6 space-y-5" style={CARD}>
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-white/70 font-semibold text-sm uppercase tracking-wide">Precio y cobro</h2>
-          <p className="text-white/40 text-xs mt-1">
-            Plan {PLAN_LABELS[view.plan as PlanKey] ?? view.plan} · lista {formatCRC(view.prices[view.plan as PlanKey] ?? 0)} al mes
-          </p>
-        </div>
+    <section className="sa-card">
+      <div className="sa-card-head">
+        <h2 className="sa-h2">Precio y cobro</h2>
+        <p className="sa-muted text-[13px]">
+          Plan {PLAN_LABELS[view.plan as PlanKey] ?? view.plan} · lista{" "}
+          <span className="sa-num">{formatCRC(view.prices[view.plan as PlanKey] ?? 0)}</span> al mes
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-5 p-5">
         {!view.automationEnabled && (
-          <span className="text-xs text-amber-300/80">El cobro automático está apagado: los avisos solo salen a mano.</span>
-        )}
-      </div>
-
-      {/* Vista previa de lo que paga */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {previews.map(({ label, price }) => (
-          <div key={label} className="rounded-xl px-4 py-3" style={{ background: "rgba(255,255,255,0.04)" }}>
-            <p className="text-xs text-white/40 capitalize">{label}</p>
-            <p className="mt-1 flex items-baseline gap-2 flex-wrap">
-              {price.discountAmount > 0 && <span className="text-sm text-white/35 line-through tabular-nums">{formatCRC(price.listAmount)}</span>}
-              <span className="text-lg font-semibold text-white tabular-nums">{price.free ? "Sin costo" : formatCRC(price.amount)}</span>
-            </p>
-            {price.discountLabel && <p className="text-xs text-emerald-300/80 mt-0.5">{price.discountLabel}</p>}
+          <div className="sa-alert sa-alert-warn">
+            <TriangleAlert aria-hidden />
+            <span>El cobro automático está apagado: los avisos solo salen a mano.</span>
           </div>
-        ))}
-      </div>
+        )}
 
-      {/* Descuento */}
-      <fieldset className="space-y-3" disabled={form.free}>
-        <legend className="flex items-center gap-2 text-sm text-white/70 mb-1">
-          <BadgePercent className="w-4 h-4" aria-hidden /> Descuento {form.free && <span className="text-xs text-white/35">(no aplica mientras sea sin costo)</span>}
-        </legend>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="block space-y-1.5">
-            <span className="text-xs text-white/50">Tipo</span>
-            <select value={form.discountType} onChange={(e) => set("discountType", e.target.value as DiscountType)} className="saas-input cursor-pointer">
-              <option value="none">Sin descuento</option>
-              <option value="percent">Porcentaje</option>
-              <option value="amount">Monto fijo</option>
-            </select>
+        {/* Vista previa de lo que paga */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {previews.map(({ label, price }, i) => (
+            <div key={label} className="sa-inset px-4 py-3">
+              <p className="sa-stat-label">{PREVIEW_TITLES[i]} · {label}</p>
+              <p className="mt-1 flex flex-wrap items-baseline gap-x-2">
+                {price.discountAmount > 0 && (
+                  <s className="sa-muted sa-num" title="Precio de lista">{formatCRC(price.listAmount)}</s>
+                )}
+                <span className="sa-stat-value">{price.free ? "Sin costo" : formatCRC(price.amount)}</span>
+              </p>
+              {price.discountLabel && (
+                <p className="mt-1.5">
+                  <span className="sa-chip sa-chip-info max-w-full">
+                    {price.free ? <Gift aria-hidden /> : <BadgePercent aria-hidden />}
+                    <span className="truncate">{price.discountLabel}</span>
+                  </span>
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Descuento */}
+        <fieldset disabled={form.free}>
+          <legend className="mb-3">
+            <span className="sa-eyebrow inline-flex flex-wrap items-center gap-x-2">
+              <BadgePercent className="w-4 h-4" aria-hidden /> Descuento
+              {form.free && <span className="font-normal">(no aplica mientras sea sin costo)</span>}
+            </span>
+          </legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="sa-field">
+              <span className="sa-label">Tipo</span>
+              <select value={form.discountType} onChange={(e) => set("discountType", e.target.value as DiscountType)} className="sa-input">
+                <option value="none">Sin descuento</option>
+                <option value="percent">Porcentaje</option>
+                <option value="amount">Monto fijo</option>
+              </select>
+            </label>
+            {form.discountType !== "none" && (
+              <label className="sa-field">
+                <span className="sa-label">{form.discountType === "percent" ? "Porcentaje (1–100)" : "Monto a rebajar (₡)"}</span>
+                <input type="number" min={1} inputMode="numeric" value={form.discountValue} onChange={(e) => set("discountValue", e.target.value)} className="sa-input sa-num" />
+              </label>
+            )}
+            {form.discountType !== "none" && (
+              <>
+                <label className="sa-field">
+                  <span className="sa-label">Etiqueta (la ve el dueño)</span>
+                  <input value={form.discountLabel} maxLength={60} placeholder="Cliente fundador" onChange={(e) => set("discountLabel", e.target.value)} className="sa-input" />
+                </label>
+                <label className="sa-field">
+                  <span className="sa-label">Hasta (vacío = sin fecha de fin)</span>
+                  <input type="date" value={form.discountUntil} onChange={(e) => set("discountUntil", e.target.value)} className="sa-input" />
+                </label>
+              </>
+            )}
+          </div>
+        </fieldset>
+
+        {/* Sin costo */}
+        <div className="flex flex-col gap-3">
+          <label className="sa-check">
+            <input type="checkbox" checked={form.free} onChange={(e) => set("free", e.target.checked)} />
+            <span className="inline-flex items-center gap-1.5">
+              <Gift className="w-4 h-4" aria-hidden /> Sin costo (cortesía)
+            </span>
           </label>
-          {form.discountType !== "none" && (
-            <label className="block space-y-1.5">
-              <span className="text-xs text-white/50">{form.discountType === "percent" ? "Porcentaje (1–100)" : "Monto a rebajar (₡)"}</span>
-              <input type="number" min={1} inputMode="numeric" value={form.discountValue} onChange={(e) => set("discountValue", e.target.value)} className="saas-input tabular-nums" />
-            </label>
-          )}
-          {form.discountType !== "none" && (
-            <>
-              <label className="block space-y-1.5">
-                <span className="text-xs text-white/50">Etiqueta (la ve el dueño)</span>
-                <input value={form.discountLabel} maxLength={60} placeholder="Cliente fundador" onChange={(e) => set("discountLabel", e.target.value)} className="saas-input" />
+          {form.free && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="sa-field">
+                <span className="sa-label">Motivo</span>
+                <input value={form.freeReason} maxLength={60} placeholder="Prueba 30 días" onChange={(e) => set("freeReason", e.target.value)} className="sa-input" />
               </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs text-white/50">Hasta (vacío = sin fecha de fin)</span>
-                <input type="date" value={form.discountUntil} onChange={(e) => set("discountUntil", e.target.value)} className="saas-input" />
+              <label className="sa-field">
+                <span className="sa-label">Hasta (vacío = indefinido)</span>
+                <input type="date" value={form.freeUntil} onChange={(e) => set("freeUntil", e.target.value)} className="sa-input" />
               </label>
-            </>
+              <p className="sa-help sm:col-span-2">
+                Sin facturas, recordatorios ni suspensión por pago. Si tiene fecha de fin, 7 días antes le llega un aviso con lo que va a pagar.
+              </p>
+            </div>
           )}
         </div>
-      </fieldset>
 
-      {/* Sin costo */}
-      <div className="space-y-3">
-        <label className="flex items-center gap-2 text-sm text-white/70 cursor-pointer">
-          <input type="checkbox" checked={form.free} onChange={(e) => set("free", e.target.checked)} className="w-4 h-4 accent-emerald-500" />
-          <Gift className="w-4 h-4" aria-hidden /> Sin costo (cortesía)
-        </label>
-        {form.free && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="block space-y-1.5">
-              <span className="text-xs text-white/50">Motivo</span>
-              <input value={form.freeReason} maxLength={60} placeholder="Prueba 30 días" onChange={(e) => set("freeReason", e.target.value)} className="saas-input" />
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs text-white/50">Hasta (vacío = indefinido)</span>
-              <input type="date" value={form.freeUntil} onChange={(e) => set("freeUntil", e.target.value)} className="saas-input" />
-            </label>
-            <p className="sm:col-span-2 text-xs text-white/35">
-              Sin facturas, recordatorios ni suspensión por pago. Si tiene fecha de fin, 7 días antes le llega un aviso con lo que va a pagar.
-            </p>
+        {/* Sin pagar */}
+        {view.unpaid.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="sa-eyebrow">Sin pagar</p>
+            <ul className="sa-inset sa-divide">
+              {view.unpaid.map((u) => (
+                <li key={u._id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
+                  <span className="sa-strong capitalize">{periodLabel(u.periodYear, u.periodMonth)}</span>
+                  <span className="sa-muted sa-num text-[13px]">vence {formatCrDate(u.dueDate)}</span>
+                  {u.status === "late" ? (
+                    <span className="sa-chip sa-chip-danger"><CircleAlert aria-hidden />Atrasado</span>
+                  ) : (
+                    <span className="sa-chip sa-chip-warn"><Clock aria-hidden />Pendiente</span>
+                  )}
+                  <span className="sa-strong sa-num ml-auto">{formatCRC(u.amount)}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
-      </div>
 
-      {/* Sin pagar */}
-      {view.unpaid.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-white/50">Sin pagar</p>
-          <ul className="space-y-1">
-            {view.unpaid.map((u) => (
-              <li key={u._id} className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-white/70 capitalize">{periodLabel(u.periodYear, u.periodMonth)}</span>
-                <span className="text-white/40 text-xs">vence {formatCrDate(u.dueDate)}</span>
-                <span className={`tabular-nums font-medium ${u.status === "late" ? "text-red-300" : "text-amber-300"}`}>{formatCRC(u.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button" onClick={() => void save()} disabled={saving}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl saas-accent-bg text-white text-sm font-semibold hover:opacity-90 disabled:opacity-50 cursor-pointer"
-        >
-          <Save className="w-4 h-4" aria-hidden /> {saving ? "Guardando..." : "Guardar precio"}
-        </button>
-        {view.unpaid.length > 0 && !form.free && (
-          <button
-            type="button" onClick={() => void sendReminder()} disabled={sending}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-white/70 hover:text-white disabled:opacity-40 cursor-pointer"
-            style={{ border: "1px solid rgba(255,255,255,0.1)" }}
-          >
-            <Send className="w-4 h-4" aria-hidden /> {sending ? "Enviando..." : "Enviar aviso de cobro"}
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" onClick={() => void save()} disabled={saving} className="sa-btn sa-btn-primary">
+            <Save className="w-4 h-4" aria-hidden /> {saving ? "Guardando..." : "Guardar precio"}
           </button>
-        )}
-        {msg && <p className={`text-sm ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>{msg.text}</p>}
+          {view.unpaid.length > 0 && !form.free && (
+            <button type="button" onClick={() => void sendReminder()} disabled={sending} className="sa-btn sa-btn-secondary">
+              <Send className="w-4 h-4" aria-hidden /> {sending ? "Enviando..." : "Enviar aviso de cobro"}
+            </button>
+          )}
+          {msg && <p className={msg.ok ? "sa-success" : "sa-error"} role="status">{msg.text}</p>}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

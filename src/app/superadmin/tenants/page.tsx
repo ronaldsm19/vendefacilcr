@@ -2,9 +2,15 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Search, Plus, Mail } from "lucide-react";
+import {
+  Search, Plus, Mail, Check, X, Ban, CircleMinus, Hourglass, BadgePercent, Gift, CircleAlert,
+  ChevronLeft, ChevronRight,
+} from "lucide-react";
 import SuspendTenantDialog from "@/components/superadmin/SuspendTenantDialog";
 import type { SuspensionReason } from "@/lib/suspension";
+import {
+  priceFor, billingOf, formatCRC, DEFAULT_PLAN_PRICES, PLAN_LABELS, type PlanKey, type TenantBilling,
+} from "@/lib/billing";
 
 interface Tenant {
   _id: string;
@@ -14,25 +20,58 @@ interface Tenant {
   plan: string;
   status: string;
   passwordChanged?: boolean;
+  billing?: Partial<TenantBilling> | null;
   createdAt: string;
 }
 
-const PLAN_LABELS: Record<string, string>   = { emprende: "Emprende", pro: "Pro", premium: "Premium" };
-const PLAN_COLORS: Record<string, string>   = {
-  emprende: "bg-gray-500/20 text-gray-300",
-  pro:      "bg-blue-500/20 text-blue-400",
-  premium:  "bg-purple-500/20 text-purple-400",
-};
-const STATUS_COLORS: Record<string, string> = {
-  active:    "bg-emerald-500/20 text-emerald-400",
-  inactive:  "bg-gray-500/20 text-gray-400",
-  suspended: "bg-red-500/20 text-red-400",
-};
-const STATUS_LABELS: Record<string, string> = { active: "Activo", inactive: "Inactivo", suspended: "Suspendido" };
+const STATUS_FILTERS = [
+  { value: "", label: "Todos" },
+  { value: "active", label: "Activos" },
+  { value: "inactive", label: "Inactivos" },
+  { value: "suspended", label: "Suspendidos" },
+];
+const PASSWORD_FILTERS = [
+  { value: "", label: "Todas" },
+  { value: "true", label: "Cambiada" },
+  { value: "false", label: "Temporal" },
+];
+
+function StatusChip({ status }: { status: string }) {
+  if (status === "active") return <span className="sa-chip sa-chip-ok"><Check aria-hidden />Activo</span>;
+  if (status === "suspended") return <span className="sa-chip"><Ban aria-hidden />Suspendido</span>;
+  if (status === "inactive") return <span className="sa-chip"><CircleMinus aria-hidden />Inactivo</span>;
+  return <span className="sa-chip"><CircleMinus aria-hidden />{status}</span>;
+}
+
+/** Lo que paga el negocio hoy: el precio de lista de su plan menos el descuento o la cortesía vigentes. */
+function MonthlyFee({ tenant, prices, today }: { tenant: Tenant; prices: Record<PlanKey, number>; today: Date }) {
+  const price = priceFor(tenant.plan, billingOf(tenant), prices, today);
+  if (price.free) {
+    return (
+      <span className="sa-chip sa-chip-info" title={price.discountLabel}>
+        <Gift aria-hidden />Sin costo
+      </span>
+    );
+  }
+  return (
+    <>
+      <span className="sa-num">{formatCRC(price.amount)}</span>
+      {price.discountAmount > 0 && (
+        <span className="mt-1 flex justify-end">
+          <span className="sa-chip sa-chip-info max-w-[168px]" title={price.discountLabel}>
+            <BadgePercent aria-hidden />
+            <span className="truncate">{price.discountLabel}</span>
+          </span>
+        </span>
+      )}
+    </>
+  );
+}
 
 export default function TenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [total, setTotal]     = useState(0);
+  const [prices, setPrices]   = useState<Record<PlanKey, number>>(DEFAULT_PLAN_PRICES);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState("");
   const [status, setStatus]   = useState("");
@@ -43,6 +82,8 @@ export default function TenantsPage() {
   const [notice, setNotice]   = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [suspending, setSuspending] = useState<Tenant | null>(null);
   const [suspendError, setSuspendError] = useState("");
+  // El día con el que se calcula la mensualidad se fija al abrir la pantalla.
+  const [today] = useState(() => new Date());
 
   const load = useCallback(() => {
     setLoading(true);
@@ -52,7 +93,11 @@ export default function TenantsPage() {
     if (pwFilter) q.set("passwordChanged", pwFilter);
     fetch(`/api/superadmin/tenants?${q}`)
       .then((r) => r.json())
-      .then((d) => { setTenants(d.tenants ?? []); setTotal(d.total ?? 0); })
+      .then((d) => {
+        setTenants(d.tenants ?? []);
+        setTotal(d.total ?? 0);
+        setPrices(d.prices ?? DEFAULT_PLAN_PRICES);
+      })
       .finally(() => setLoading(false));
   }, [search, status, pwFilter, page]);
 
@@ -128,175 +173,177 @@ export default function TenantsPage() {
   const totalPages = Math.ceil(total / 20);
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+    <div className="sa-page">
+      <header className="sa-page-head">
         <div>
-          <h1 className="font-brand text-2xl md:text-3xl font-bold text-white">Tenants</h1>
-          <p className="text-white/40 text-sm mt-1">{total} registrados</p>
+          <h1 className="sa-title">Negocios</h1>
+          <p className="sa-subtitle"><span className="sa-num">{total}</span> registrados</p>
         </div>
-        <Link
-          href="/superadmin/tenants/nuevo"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl saas-accent-bg text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-4 h-4" /> Nuevo tenant
+        <Link href="/superadmin/tenants/nuevo" className="sa-btn sa-btn-primary">
+          <Plus className="w-4 h-4" aria-hidden /> Nuevo negocio
         </Link>
-      </div>
+      </header>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div
-          className="flex items-center gap-2 px-3 py-2 rounded-xl flex-1 min-w-[200px]"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          <Search className="w-4 h-4 text-white/30 shrink-0" />
-          <input
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Buscar por nombre, slug o email..."
-            className="bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none flex-1"
-          />
-        </div>
-        <select
-          value={status}
-          onChange={(e) => { setStatus(e.target.value); setPage(1); }}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 bg-transparent focus:outline-none cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          <option value="">Todos los estados</option>
-          <option value="active">Activos</option>
-          <option value="inactive">Inactivos</option>
-          <option value="suspended">Suspendidos</option>
-        </select>
-        <select
-          value={pwFilter}
-          onChange={(e) => { setPwFilter(e.target.value); setPage(1); }}
-          className="rounded-xl px-3 py-2 text-sm text-white/70 bg-transparent focus:outline-none cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          <option value="">Contraseña: todas</option>
-          <option value="true">Contraseña cambiada</option>
-          <option value="false">Pendiente de cambio</option>
-        </select>
-      </div>
-
-      {/* Notice */}
       {notice && (
-        <div
-          className={`flex items-start justify-between gap-3 rounded-xl px-4 py-3 text-sm ${
-            notice.type === "ok"
-              ? "bg-emerald-500/10 border border-emerald-500/25 text-emerald-300"
-              : "bg-red-500/10 border border-red-500/25 text-red-300"
-          }`}
-        >
-          <span className="break-all">{notice.text}</span>
-          <button
-            onClick={() => setNotice(null)}
-            className="shrink-0 text-white/40 hover:text-white transition-colors cursor-pointer"
-          >
-            ✕
+        <div className={`sa-alert ${notice.type === "ok" ? "sa-alert-ok" : "sa-alert-danger"}`} role="status">
+          {notice.type === "ok" ? <Check aria-hidden /> : <CircleAlert aria-hidden />}
+          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{notice.text}</span>
+          <button type="button" onClick={() => setNotice(null)} className="sa-icon-btn -my-1.5 shrink-0" aria-label="Cerrar aviso">
+            <X className="w-4 h-4" aria-hidden />
           </button>
         </div>
       )}
 
-      {/* Table */}
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{ border: "1px solid rgba(255,255,255,0.07)" }}
-      >
-        <div
-          className="grid grid-cols-[1fr_100px_90px_140px_90px_160px] px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/30"
-          style={{ background: "rgba(255,255,255,0.04)" }}
-        >
-          <span>Tenant</span>
-          <span>Plan</span>
-          <span>Estado</span>
-          <span>Contraseña</span>
-          <span>Creado</span>
-          <span>Acciones</span>
+      <section className="sa-card" aria-label="Lista de negocios">
+        {/* Filtros: en celular cada grupo baja a su propio renglón. */}
+        <div className="sa-card-head">
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--sa-ink-2)]" aria-hidden />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Buscar por nombre, slug o email..."
+              aria-label="Buscar por nombre, slug o email"
+              className="sa-input pl-9!"
+            />
+          </div>
+          <div className="sa-seg" role="group" aria-label="Estado">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                aria-pressed={status === f.value}
+                onClick={() => { setStatus(f.value); setPage(1); }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span id="filtro-contrasena" className="sa-eyebrow">Contraseña</span>
+            <div className="sa-seg" role="group" aria-labelledby="filtro-contrasena">
+              {PASSWORD_FILTERS.map((f) => (
+                <button
+                  key={f.value}
+                  type="button"
+                  aria-pressed={pwFilter === f.value}
+                  onClick={() => { setPwFilter(f.value); setPage(1); }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {loading ? (
-          <div className="px-5 py-10 text-center text-white/30 text-sm">Cargando...</div>
+          <div className="sa-empty">Cargando...</div>
         ) : tenants.length === 0 ? (
-          <div className="px-5 py-10 text-center text-white/30 text-sm">Sin tenants</div>
+          <div className="sa-empty">Sin negocios</div>
         ) : (
-          tenants.map((t, i) => (
-            <div
-              key={t._id}
-              className="grid grid-cols-[1fr_100px_90px_140px_90px_160px] px-5 py-3.5 items-center text-sm"
-              style={{ borderTop: i > 0 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
-            >
-              <div>
-                <p className="font-medium text-white/80">{t.name}</p>
-                <p className="text-white/35 text-xs mt-0.5">{t.slug} · {t.email}</p>
-              </div>
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full w-fit ${PLAN_COLORS[t.plan] ?? "bg-gray-500/20 text-gray-400"}`}>
-                {PLAN_LABELS[t.plan] ?? t.plan}
-              </span>
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full w-fit ${STATUS_COLORS[t.status] ?? "bg-gray-500/20 text-gray-400"}`}>
-                {STATUS_LABELS[t.status] ?? t.status}
-              </span>
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full w-fit ${
-                t.passwordChanged
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : "bg-amber-500/20 text-amber-400"
-              }`}>
-                {t.passwordChanged ? "Cambiada" : "Pendiente"}
-              </span>
-              <span className="text-white/35 text-xs">
-                {new Date(t.createdAt).toLocaleDateString("es-CR")}
-              </span>
-              <div className="flex items-center gap-2.5">
-                <Link
-                  href={`/superadmin/tenants/${t._id}`}
-                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                >
-                  Ver
-                </Link>
-                <button
-                  onClick={() => toggleStatus(t)}
-                  disabled={toggling === t._id}
-                  className={`text-xs transition-colors cursor-pointer ${t.status === "active" ? "text-red-400 hover:text-red-300" : "text-emerald-400 hover:text-emerald-300"}`}
-                >
-                  {toggling === t._id ? "..." : t.status === "active" ? "Suspender" : "Activar"}
-                </button>
-                <button
-                  onClick={() => resendInvite(t)}
-                  disabled={resendingId === t._id}
-                  title="Reenviar invitación (nueva contraseña temporal)"
-                  className="inline-flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  {resendingId === t._id ? "..." : "Reenviar"}
-                </button>
-              </div>
-            </div>
-          ))
+          <div className="sa-table-wrap">
+            <table className="sa-table">
+              <thead>
+                <tr>
+                  <th scope="col">Negocio</th>
+                  <th scope="col">Plan</th>
+                  <th scope="col" className="sa-right">Mensualidad</th>
+                  <th scope="col">Estado</th>
+                  <th scope="col">Contraseña</th>
+                  {/* La fecha de registro se muestra cuando hay ancho de sobra; en pantallas más angostas cede su lugar a las acciones. */}
+                  <th scope="col" className="hidden min-[1380px]:table-cell">Registro</th>
+                  <th scope="col" className="sa-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tenants.map((t) => (
+                  <tr key={t._id}>
+                    <td>
+                      <div className="min-w-[160px]">
+                        <Link href={`/superadmin/tenants/${t._id}`} className="sa-link">{t.name}</Link>
+                        <div className="sa-help [overflow-wrap:anywhere]">{t.slug} · {t.email}</div>
+                      </div>
+                    </td>
+                    <td>{PLAN_LABELS[t.plan as PlanKey] ?? t.plan}</td>
+                    <td className="sa-right">
+                      <MonthlyFee tenant={t} prices={prices} today={today} />
+                    </td>
+                    <td><StatusChip status={t.status} /></td>
+                    <td>
+                      {t.passwordChanged ? (
+                        <span className="sa-chip sa-chip-ok"><Check aria-hidden />Cambiada</span>
+                      ) : (
+                        <span className="sa-chip sa-chip-warn"><Hourglass aria-hidden />Temporal</span>
+                      )}
+                    </td>
+                    <td className="hidden min-[1380px]:table-cell">
+                      <span className="sa-muted sa-num whitespace-nowrap">
+                        {new Date(t.createdAt).toLocaleDateString("es-CR")}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="flex items-center justify-end gap-1">
+                        <Link
+                          href={`/superadmin/tenants/${t._id}`}
+                          className="sa-btn sa-btn-sm sa-btn-ghost"
+                          aria-label={`Ver ${t.name}`}
+                        >
+                          Ver
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => toggleStatus(t)}
+                          disabled={toggling === t._id}
+                          className={`sa-btn sa-btn-sm ${t.status === "active" ? "sa-btn-ghost-danger" : "sa-btn-ghost"}`}
+                        >
+                          {toggling === t._id ? "..." : t.status === "active" ? "Suspender" : "Activar"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => resendInvite(t)}
+                          disabled={resendingId === t._id}
+                          title="Reenviar invitación (nueva contraseña temporal)"
+                          aria-label={`Reenviar invitación a ${t.name}`}
+                          className="sa-btn sa-btn-sm sa-btn-ghost relative"
+                        >
+                          <Mail className="w-4 h-4" aria-hidden />
+                          {/* El texto solo cabe en pantallas anchas; en las demás queda el sobre con su etiqueta. */}
+                          {resendingId === t._id ? "..." : <span className="sr-only 2xl:not-sr-only">Reenviar</span>}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.05)" }}
-          >
-            ← Anterior
-          </button>
-          <span className="text-white/30 text-sm">{page} / {totalPages}</span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-            style={{ background: "rgba(255,255,255,0.05)" }}
-          >
-            Siguiente →
-          </button>
-        </div>
-      )}
+        {totalPages > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--sa-line)] px-5 py-3">
+            <span className="sa-muted sa-num">Página {page} de {totalPages}</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="sa-btn sa-btn-sm sa-btn-secondary"
+              >
+                <ChevronLeft className="w-4 h-4" aria-hidden /> Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="sa-btn sa-btn-sm sa-btn-secondary"
+              >
+                Siguiente <ChevronRight className="w-4 h-4" aria-hidden />
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
       {suspending && (
         <SuspendTenantDialog
