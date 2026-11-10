@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import ReminderToast from "@/components/admin/ReminderToast";
+import TenantNotices from "@/components/admin/TenantNotices";
 import { AdminSessionProvider, type AdminSession } from "@/components/admin/SessionContext";
 import { PendingComandasProvider, usePendingComandas } from "@/components/admin/PendingComandasContext";
 import SessionExpiredDialog from "@/components/admin/SessionExpiredDialog";
@@ -246,6 +247,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
             <MobileMenuButton onOpen={() => setSidebarOpen(true)} />
             <p className="font-brand text-lg font-bold gradient-text">{branding.tenantName}</p>
           </header>
+
+          <TenantNotices />
 
           <main className="flex-1 overflow-y-auto">{children}</main>
         </div>

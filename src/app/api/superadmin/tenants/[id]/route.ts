@@ -22,6 +22,7 @@ import { TenantRequest } from "@/models/TenantRequest";
 import { Comanda } from "@/models/Comanda";
 import { PrintJob } from "@/models/PrintJob";
 import { ErrorEvent } from "@/models/ErrorEvent";
+import { NoticeRead } from "@/models/NoticeRead";
 import { SalonTable } from "@/models/SalonTable";
 import { SalonWall } from "@/models/SalonWall";
 import { SalonReservation } from "@/models/SalonReservation";
@@ -170,6 +171,7 @@ export async function DELETE(
     ["comandas",      Comanda],
     ["printJobs",     PrintJob],
     ["errorEvents",   ErrorEvent],
+    ["noticeReads",   NoticeRead],
     ["salonTables",   SalonTable],
     ["salonWalls",    SalonWall],
     ["salonReservations", SalonReservation],
