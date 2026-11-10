@@ -10,6 +10,7 @@ import {
   Activity,
   Bug,
   Wallet,
+  Megaphone,
   LogOut,
   X,
   Zap,
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/superadmin/solicitudes",label: "Solicitudes", icon: ClipboardList },
   { href: "/superadmin/cobros",     label: "Cobros",      icon: Wallet },
   { href: "/superadmin/pagos",      label: "Pagos",       icon: CreditCard },
+  { href: "/superadmin/avisos",     label: "Avisos",      icon: Megaphone },
   { href: "/superadmin/actividad",  label: "Actividad",   icon: Activity },
   { href: "/superadmin/errores",    label: "Errores",     icon: Bug },
 ];

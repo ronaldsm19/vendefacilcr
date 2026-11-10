@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, Store } from "lucide-react";
+import { LOGIN_NOTICES_FLAG } from "@/lib/notices";
 
 interface LoginFormProps {
   slug: string;
@@ -49,6 +50,8 @@ export default function LoginForm({
       });
       const data = await res.json();
       if (res.ok) {
+        // El panel muestra los avisos (cobro, mensajes de VendeFácil) en cada inicio de sesión.
+        try { sessionStorage.setItem(LOGIN_NOTICES_FLAG, "1"); } catch {}
         if (data.role === "admin" && data.passwordChanged === false) {
           try { sessionStorage.setItem("vf_pw_reminder", "1"); } catch {}
         }

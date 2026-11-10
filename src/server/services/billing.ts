@@ -647,7 +647,11 @@ export async function ownerBillingView(tenantId: string, now = new Date()) {
   const nextDue = periodDueDate(next.y, next.m, BILLING_DUE_DAY);
   const price = priceFor(tenant.plan, b, settings.prices, nextDue);
 
-  let invoice: null | { period: string; amount: number; dueDate: string; status: "pending" | "late"; daysToDue: number; suspendDate: string | null } = null;
+  let invoice: null | {
+    period: string; amount: number; dueDate: string; status: "pending" | "late"; daysToDue: number; suspendDate: string | null;
+    /** Ya está dentro de los días de aviso (o vencida): toca avisarle al dueño dentro del panel. */
+    dueSoon: boolean;
+  } = null;
   if (settings.enabled && settings.startPeriod && !price.free) {
     const sy = Math.floor(settings.startPeriod / 100);
     const sm = settings.startPeriod % 100;
@@ -657,12 +661,14 @@ export async function ownerBillingView(tenantId: string, now = new Date()) {
       $or: [{ periodYear: { $gt: sy } }, { periodYear: sy, periodMonth: { $gte: sm } }],
     }).sort({ dueDate: 1 }).lean() as PaymentLean | null;
     if (open) {
+      const daysToDue = daysBetween(now, open.dueDate);
       invoice = {
         period: periodLabel(open.periodYear, open.periodMonth),
         amount: open.amount,
         dueDate: formatCrDate(open.dueDate),
         status: open.status === "late" ? "late" : "pending",
-        daysToDue: daysBetween(now, open.dueDate),
+        daysToDue,
+        dueSoon: open.status === "late" || daysToDue <= settings.reminderDays,
         suspendDate: settings.autoSuspend ? formatCrDate(addDays(open.dueDate, settings.graceDays + 1)) : null,
       };
     }
