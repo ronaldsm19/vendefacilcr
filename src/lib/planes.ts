@@ -57,7 +57,7 @@ export const PLAN_CARDS: PlanCard[] = [
     destacado: true,
     incluye: [
       "Usuarios para cajeros y meseros, cada uno con su PIN",
-      "App para meseros en Android (pronto en las tiendas)",
+      "App para meseros (muy pronto en las tiendas)",
       "Comandas desde la mesa, con notas y extras",
       "Impresión separada en cocina y en bebidas",
       "Cobro por partes de una misma mesa",
@@ -94,7 +94,7 @@ export const PLAN_MATRIX: PlanMatrixGroup[] = [
     filas: [
       { que: "Mapa de mesas y reservas", planes: [false, true, true] },
       { que: "Comandas desde la mesa", planes: [false, false, true] },
-      { que: "App para meseros", planes: [false, false, "Android"] },
+      { que: "App para meseros", planes: [false, false, "Muy pronto"] },
       { que: "Impresión en cocina y en bebidas", planes: [false, false, true] },
       { que: "Cobro por partes de una mesa", planes: [false, false, true] },
     ],

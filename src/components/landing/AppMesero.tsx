@@ -66,9 +66,9 @@ export default function AppMesero() {
           <div className="lp-stores">
             <p className="lp-stores-now">
               <span className="lp-stores-dot" aria-hidden="true" />
-              Hoy se instala en cualquier teléfono Android.
+              Hoy ya lo usan desde el navegador del teléfono.
             </p>
-            <p className="lp-stores-soon">Muy pronto en</p>
+            <p className="lp-stores-soon">Y muy pronto, con su propia app en</p>
             <ul className="lp-stores-list">
               {TIENDAS.map((t) => (
                 <li key={t}>{t}</li>
@@ -100,7 +100,7 @@ export default function AppMesero() {
             <button type="button" aria-pressed={!noche} onClick={() => setNoche(false)}>Día</button>
             <button type="button" aria-pressed={noche} onClick={() => setNoche(true)}>Noche</button>
           </div>
-          <p className="lp-app-note">Capturas de la app en Android, con un restaurante de demostración.</p>
+          <p className="lp-app-note">Capturas reales de la app, con un restaurante de demostración.</p>
         </div>
       </div>
     </section>

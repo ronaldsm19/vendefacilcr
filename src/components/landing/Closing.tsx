@@ -16,7 +16,7 @@ const PREGUNTAS = [
   },
   {
     q: "¿Tiene app para el celular?",
-    a: "Sí. Los meseros tienen su propia app, incluida en el plan Premium: ven el salón en vivo, toman la orden en la mesa y la mandan a cocina y barra. Hoy se instala en cualquier Android y muy pronto va a estar en App Store, Google Play y AppGallery. Todo lo demás se usa desde el navegador, sin instalar nada.",
+    a: "Muy pronto. Los meseros van a tener su propia app, incluida en el plan Premium, en App Store, Google Play y AppGallery. Mientras tanto, todo funciona desde el navegador del celular: el mesero ve el salón y manda las comandas a cocina y barra sin instalar nada.",
   },
   {
     q: "¿Sirve si no tengo salón ni meseros?",
