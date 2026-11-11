@@ -6,6 +6,7 @@ import { Brand, DemoButton } from "./shared";
 
 const LINKS = [
   { label: "Cómo funciona", href: "#como-funciona" },
+  { label: "La app", href: "#app" },
   { label: "Tus números", href: "#numeros" },
   { label: "Planes", href: "#planes" },
   { label: "Preguntas", href: "#preguntas" },

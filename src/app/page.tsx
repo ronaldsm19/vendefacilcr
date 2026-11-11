@@ -6,6 +6,7 @@ import LandingNav from "@/components/landing/LandingNav";
 import LandingMotion from "@/components/landing/LandingMotion";
 import Hero from "@/components/landing/Hero";
 import { Problem, Service, Numbers, Goal, Compare, Start } from "@/components/landing/Sections";
+import AppMesero from "@/components/landing/AppMesero";
 import Pricing from "@/components/landing/Pricing";
 import { Faq, FinalCta, LandingFooter, WhatsAppFab } from "@/components/landing/Closing";
 import "./landing.css";
@@ -45,6 +46,7 @@ export default async function HomePage() {
         <Hero />
         <Problem />
         <Service />
+        <AppMesero />
         <Numbers />
         <Goal />
         <Compare />

@@ -15,6 +15,10 @@ const PREGUNTAS = [
     a: "No. Cada persona ve solo lo que usa: el mesero las mesas y las comandas, la caja el cobro y el cierre. La capacitación toma cerca de 30 minutos y después tenés soporte por WhatsApp.",
   },
   {
+    q: "¿Tiene app para el celular?",
+    a: "Sí. Los meseros tienen su propia app, incluida en el plan Premium: ven el salón en vivo, toman la orden en la mesa y la mandan a cocina y barra. Hoy se instala en cualquier Android y muy pronto va a estar en App Store, Google Play y AppGallery. Todo lo demás se usa desde el navegador, sin instalar nada.",
+  },
+  {
     q: "¿Sirve si no tengo salón ni meseros?",
     a: "Sí. Los planes Emprende y Pro están pensados para quien vende por encargo, para llevar o en mostrador.",
   },
