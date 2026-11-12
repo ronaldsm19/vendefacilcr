@@ -11,6 +11,7 @@ import PeriodPicker from "@/components/admin/jornada/PeriodPicker";
 import CloseStuckShiftDialog, { type StuckShift } from "@/components/admin/jornada/CloseStuckShiftDialog";
 import EditShiftDialog, { type EditableShift } from "@/components/admin/jornada/EditShiftDialog";
 import StaffShiftDays, { type JornadaShift } from "@/components/admin/jornada/StaffShiftDays";
+import ShiftQrPanel from "@/components/admin/jornada/ShiftQrPanel";
 import { Button } from "@/components/ui/button";
 
 const DESKTOP_MESSAGE = "El marcaje de jornada solo se puede hacer desde la computadora del negocio";
@@ -127,6 +128,13 @@ export default function JornadaPage() {
     loadHours().finally(() => setHoursLoading(false));
   }, [isAdmin, loadHours]);
 
+  // Alguien marcó con el teléfono: "Trabajando ahora" y las horas se ponen al día sin esperar
+  // a la siguiente consulta, que es cada medio minuto.
+  const handleQrMarked = useCallback(() => {
+    loadActive();
+    if (isAdmin) loadHours();
+  }, [loadActive, isAdmin, loadHours]);
+
   const maxMinutes = Math.max(1, ...(hoursData?.totals.map((t) => t.minutes) ?? [0]));
   const adjustedStaffIds = useMemo(() => {
     const ids = new Set<string>();
@@ -200,6 +208,10 @@ export default function JornadaPage() {
               </Button>
             </div>
           )}
+
+          {/* El código para el teléfono, debajo del PIN: es la segunda forma de marcar, no la
+              reemplaza. Solo en la computadora, igual que el marcaje con PIN. */}
+          {!isSmallScreen && staff.length > 0 && <ShiftQrPanel onMarked={handleQrMarked} />}
         </div>
 
         {/* ── Quiénes están trabajando ahora ── */}

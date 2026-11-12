@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil } from "lucide-react";
+import { Pencil, Smartphone } from "lucide-react";
 import type { Role } from "@/lib/permissions";
 import { crDayKey, formatCRDayLabel, formatCRTime, formatHoursMinutes } from "@/lib/workPeriod";
 import type { EditableShift } from "@/components/admin/jornada/EditShiftDialog";
@@ -15,6 +15,9 @@ export interface JornadaShift {
   minutes: number;
   status: "abierta" | "cerrada";
   closedBy: "staff" | "admin";
+  /** Con qué marcó. Las jornadas anteriores al marcaje con el teléfono no lo traen. */
+  startedVia?: "pin" | "qr";
+  endedVia?: "pin" | "qr" | null;
   adjustedByName: string;
   adjustNote: string;
   edits?: {
@@ -42,6 +45,19 @@ export function toEditableShift(s: JornadaShift): EditableShift {
     // entrada hecha con la jornada abierta no tiene salida que recordar).
     originalEndedAt: edits.find((e) => e.fromEndedAt)?.fromEndedAt ?? null,
   };
+}
+
+/**
+ * Qué marcó con el teléfono, o null si todo fue con el PIN en la computadora. Solo se nombra el
+ * teléfono: el PIN es lo de siempre, y decirlo en cada jornada sería ruido.
+ */
+function phoneMarkLabel(s: JornadaShift): string | null {
+  const start = s.startedVia === "qr";
+  const end = s.endedVia === "qr";
+  if (start && end) return "Entrada y salida con el teléfono";
+  if (start) return "Entrada con el teléfono";
+  if (end) return "Salida con el teléfono";
+  return null;
 }
 
 interface StaffShiftDaysProps {
@@ -88,6 +104,7 @@ export default function StaffShiftDays({ shifts, nowMs, onEdit }: StaffShiftDays
               const minutes = end ? s.minutes : Math.max(0, Math.floor((nowMs - start.getTime()) / 60000));
               const nextDay = end && crDayKey(end) !== day.key;
               const lastEdit = s.edits?.length ? s.edits[s.edits.length - 1] : null;
+              const viaPhone = phoneMarkLabel(s);
               return (
                 <div key={s._id} className="flex items-center justify-between gap-3 bg-brand-muted/20 rounded-xl px-3 py-2.5">
                   <div className="min-w-0">
@@ -95,6 +112,11 @@ export default function StaffShiftDays({ shifts, nowMs, onEdit }: StaffShiftDays
                       {formatCRTime(start)} – {end ? `${formatCRTime(end)}${nextDay ? " (día sig.)" : ""}` : "en curso"}
                       <span className="text-brand-dark/50"> · {formatHoursMinutes(minutes)}</span>
                     </p>
+                    {viaPhone && (
+                      <p className="text-xs text-brand-dark/50 mt-0.5 flex items-center gap-1">
+                        <Smartphone className="w-3 h-3 shrink-0" /> {viaPhone}
+                      </p>
+                    )}
                     {lastEdit && (
                       <p className="text-xs text-amber-700 mt-0.5 break-words">
                         Editada por {lastEdit.byName}{lastEdit.note ? `: ${lastEdit.note}` : ""}
