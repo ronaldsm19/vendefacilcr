@@ -3,6 +3,8 @@ import type { StaffRole } from "@/models/StaffUser";
 
 export type WorkShiftStatus = "abierta" | "cerrada";
 export type WorkShiftClosedBy = "staff" | "admin";
+/** Con qué se marcó: el PIN en la computadora del negocio, o el código QR desde el teléfono. */
+export type WorkShiftVia = "pin" | "qr";
 
 export interface IWorkShiftEdit {
   at: Date;
@@ -25,6 +27,10 @@ export interface IWorkShift {
   minutes: number;
   status: WorkShiftStatus;
   closedBy: WorkShiftClosedBy;
+  /** Cómo marcó la entrada. Las jornadas anteriores al QR no lo tienen y cuentan como "pin". */
+  startedVia: WorkShiftVia;
+  /** Cómo marcó la salida. Null mientras está abierta, y cuando la cerró el admin. */
+  endedVia: WorkShiftVia | null;
   adjustedByName: string;
   adjustNote: string;
   edits: IWorkShiftEdit[];
@@ -64,6 +70,8 @@ const WorkShiftSchema = new Schema(
     minutes:        { type: Number, default: 0 },
     status:         { type: String, enum: ["abierta", "cerrada"], default: "abierta" },
     closedBy:       { type: String, enum: ["staff", "admin"], default: "staff" },
+    startedVia:     { type: String, enum: ["pin", "qr"], default: "pin" },
+    endedVia:       { type: String, enum: ["pin", "qr", null], default: null },
     adjustedByName: { type: String, default: "" },
     adjustNote:     { type: String, default: "" },
     // Historial de ediciones de entrada/salida hechas por el admin, en orden. El "from" de la primera

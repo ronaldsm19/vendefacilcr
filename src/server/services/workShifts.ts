@@ -2,8 +2,9 @@ import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { StaffUser, type StaffRole } from "@/models/StaffUser";
-import { WorkShift } from "@/models/WorkShift";
+import { WorkShift, type WorkShiftVia } from "@/models/WorkShift";
 import { AccessLog } from "@/models/AccessLog";
+import { SHIFT_QR_PREFIX, SHIFT_QR_STEP_MS, matchesShiftQr, shiftQrCode, shiftQrStep } from "@/lib/shiftQrCode";
 import { ServiceError } from "@/server/errors";
 import { consumeAttempt, clearAttempts } from "@/server/services/rateLimit";
 import {
@@ -44,6 +45,12 @@ const LONG_SHIFT_WARN_MS = LONG_SHIFT_WARN_HOURS * 60 * 60 * 1000;
 const PIN_MAX_ATTEMPTS = 5;
 const PIN_WINDOW_MS = 15 * 60 * 1000;
 const DUPLICATE_KEY = 11000;
+
+/** Intentos de marcar con código por persona. Más holgado que el PIN: un escaneo fallido es común. */
+const QR_MAX_ATTEMPTS = 10;
+const QR_WINDOW_MS = 15 * 60 * 1000;
+/** Cuánto tiempo se muestra un marcaje con código en la pantalla de la computadora. */
+const QR_RECENT_WINDOW_MS = 3 * 60 * 1000;
 
 interface StaffLean {
   _id: { toString(): string };
@@ -145,11 +152,17 @@ async function verifyStaffPin(tenantId: string, staffUserId: string, pin: string
   return staff;
 }
 
-export async function startShift(tenantId: string, staffUserId: string, pin: string) {
-  const staff = await verifyStaffPin(tenantId, staffUserId, pin);
+type ShiftStaff = Pick<StaffLean, "name" | "role">;
 
+/**
+ * Abre la jornada de alguien que YA fue identificado, por su PIN o por la sesión de su teléfono.
+ * `self` solo cambia a quién le habla el mensaje: en la computadora lo lee quien atiende la
+ * caja ("esta persona"); en el teléfono lo lee la persona misma.
+ */
+async function openShift(tenantId: string, staffUserId: string, staff: ShiftStaff, via: WorkShiftVia, self: boolean) {
+  const already = self ? "Ya tenés una jornada abierta" : "Esta persona ya tiene una jornada abierta";
   if (await WorkShift.exists({ tenantId, staffUserId, status: "abierta" })) {
-    throw new ServiceError(409, "Esta persona ya tiene una jornada abierta");
+    throw new ServiceError(409, already);
   }
   try {
     const shift = await WorkShift.create({
@@ -159,28 +172,31 @@ export async function startShift(tenantId: string, staffUserId: string, pin: str
       staffRole: staff.role,
       startedAt: new Date(),
       status: "abierta",
+      startedVia: via,
     });
     return { _id: String(shift._id), startedAt: shift.startedAt as Date, staffUserId, staffName: staff.name, staffRole: staff.role };
   } catch (err) {
     // Dos pestañas marcando a la vez: el índice único parcial frena el segundo turno abierto.
     if ((err as { code?: number }).code === DUPLICATE_KEY) {
-      throw new ServiceError(409, "Esta persona ya tiene una jornada abierta");
+      throw new ServiceError(409, already);
     }
     throw err;
   }
 }
 
-export async function stopShift(tenantId: string, staffUserId: string, pin: string) {
-  const staff = await verifyStaffPin(tenantId, staffUserId, pin);
-
+/** Cierra la jornada abierta de alguien que YA fue identificado. Ver openShift. */
+async function closeShift(tenantId: string, staffUserId: string, staff: ShiftStaff, via: WorkShiftVia, self: boolean) {
   const shift = await WorkShift.findOne({ tenantId, staffUserId, status: "abierta" });
-  if (!shift) throw new ServiceError(409, "Esta persona no tiene una jornada abierta");
+  if (!shift) {
+    throw new ServiceError(409, self ? "No tenés una jornada abierta" : "Esta persona no tiene una jornada abierta");
+  }
 
   const endedAt = new Date();
   shift.endedAt = endedAt;
   shift.minutes = minutesBetween(shift.startedAt, endedAt);
   shift.status = "cerrada";
   shift.closedBy = "staff";
+  shift.endedVia = via;
   await shift.save();
 
   return {
@@ -192,6 +208,115 @@ export async function stopShift(tenantId: string, staffUserId: string, pin: stri
     staffName: staff.name,
     staffRole: staff.role,
   };
+}
+
+export async function startShift(tenantId: string, staffUserId: string, pin: string) {
+  const staff = await verifyStaffPin(tenantId, staffUserId, pin);
+  return openShift(tenantId, staffUserId, staff, "pin", false);
+}
+
+export async function stopShift(tenantId: string, staffUserId: string, pin: string) {
+  const staff = await verifyStaffPin(tenantId, staffUserId, pin);
+  return closeShift(tenantId, staffUserId, staff, "pin", false);
+}
+
+// ── Marcaje con el código QR de la computadora ─────────────────────────────────────────────────
+
+export type ShiftQrAction = "entrada" | "salida";
+
+/**
+ * El secreto del que salen los códigos. Es el mismo que firma las sesiones: quien lo tuviera ya
+ * podría hacerse pasar por cualquiera, así que un secreto aparte no protegería nada más.
+ * Sin secreto configurado no hay marcaje por QR; no se cae a un valor de relleno, porque un
+ * código que cualquiera puede calcular es peor que no tener código.
+ */
+function shiftQrSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new ServiceError(503, "El marcaje con código no está disponible en este servidor");
+  return secret;
+}
+
+/**
+ * Lo que la computadora del negocio pone en pantalla: el código de ahora, cuándo cambia, y los
+ * marcajes con código de los últimos minutos, para que quien está en la caja vea que el del
+ * teléfono entró.
+ */
+export async function getShiftQr(tenantId: string) {
+  const now = Date.now();
+  const step = shiftQrStep(now);
+  const code = shiftQrCode(shiftQrSecret(), tenantId, step);
+
+  await connectToDatabase();
+  const since = new Date(now - QR_RECENT_WINDOW_MS);
+  const shifts = await WorkShift.find({
+    tenantId,
+    $or: [
+      { startedVia: "qr", startedAt: { $gte: since } },
+      { endedVia: "qr", endedAt: { $gte: since } },
+    ],
+  })
+    .select("staffName startedAt endedAt startedVia endedVia")
+    .lean<{ _id: mongoose.Types.ObjectId; staffName: string; startedAt: Date; endedAt: Date | null; startedVia?: WorkShiftVia; endedVia?: WorkShiftVia | null }[]>();
+
+  // Una jornada corta puede traer las dos marcas: entrada y salida dentro de la misma ventana.
+  const recent: { id: string; staffName: string; action: ShiftQrAction; at: Date }[] = [];
+  for (const s of shifts) {
+    if (s.startedVia === "qr" && s.startedAt >= since) {
+      recent.push({ id: `${s._id}:entrada`, staffName: s.staffName, action: "entrada", at: s.startedAt });
+    }
+    if (s.endedVia === "qr" && s.endedAt && s.endedAt >= since) {
+      recent.push({ id: `${s._id}:salida`, staffName: s.staffName, action: "salida", at: s.endedAt });
+    }
+  }
+  recent.sort((a, b) => b.at.getTime() - a.at.getTime());
+
+  return {
+    code,
+    /** Lo que va dentro del QR. */
+    payload: `${SHIFT_QR_PREFIX}${code}`,
+    /** Cuándo la pantalla pasa al código siguiente. */
+    changesAt: new Date((step + 1) * SHIFT_QR_STEP_MS),
+    stepMs: SHIFT_QR_STEP_MS,
+    /** La hora del servidor, para que la cuenta regresiva no dependa del reloj de la computadora. */
+    now: new Date(now),
+    recent,
+  };
+}
+
+/**
+ * Marca la entrada o la salida de quien tiene la sesión del teléfono, con el código que está
+ * mostrando la computadora del negocio.
+ *
+ * Quién marca sale de la sesión, nunca de lo que mande el teléfono: nadie puede marcar por otra
+ * persona. No se pide el PIN otra vez: ya lo puso para entrar a la app. El código solo demuestra
+ * que estaba frente a la pantalla del negocio.
+ *
+ * `action` es lo que la persona vio en su botón. Se respeta en vez de alternar según lo que haya
+ * en la base: si el teléfono estaba desactualizado, es mejor decirle "ya tenés una jornada
+ * abierta" que cerrarle una jornada cuando creía estar abriéndola.
+ */
+export async function markShiftByQr(tenantId: string, staffUserId: string, rawCode: string, action: ShiftQrAction) {
+  if (!mongoose.isValidObjectId(staffUserId)) throw new ServiceError(404, "Personal no encontrado");
+  await connectToDatabase();
+  const staff = await StaffUser.findOne({ _id: staffUserId, tenantId, active: true })
+    .select("name role")
+    .lean<ShiftStaff | null>();
+  if (!staff) throw new ServiceError(404, "Personal no encontrado");
+
+  // Ocho caracteres que cambian cada medio minuto no se adivinan probando, pero el tope evita
+  // que un teléfono mal programado le pegue al servidor sin parar.
+  const rateKey = `shift-qr:${tenantId}:${staffUserId}`;
+  if (!(await consumeAttempt(rateKey, QR_MAX_ATTEMPTS, QR_WINDOW_MS))) {
+    throw new ServiceError(429, "Demasiados intentos. Esperá unos minutos e intentá de nuevo.");
+  }
+  if (!matchesShiftQr(shiftQrSecret(), tenantId, rawCode, Date.now())) {
+    throw new ServiceError(403, "Ese código ya venció o no es de este negocio. Escaneá el que está ahora en la pantalla.");
+  }
+  await clearAttempts(rateKey);
+
+  return action === "entrada"
+    ? openShift(tenantId, staffUserId, staff, "qr", true)
+    : closeShift(tenantId, staffUserId, staff, "qr", true);
 }
 
 /**
