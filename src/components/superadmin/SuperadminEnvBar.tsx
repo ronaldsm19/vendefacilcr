@@ -21,9 +21,13 @@ function detectEnv(): Env {
 
 const subscribe = () => () => {};
 
-/** Franja oscura arriba de todo con el entorno. En el servidor se asume producción (lo más prudente). */
+/**
+ * Franja oscura arriba de la consola con el entorno, solo en desarrollo y en las vistas previas:
+ * en producción no se muestra nada. En el servidor se asume producción.
+ */
 export default function SuperadminEnvBar({ note }: { note?: string }) {
   const env = useSyncExternalStore<Env>(subscribe, detectEnv, () => "produccion");
+  if (env === "produccion") return null;
   const label = LABELS[env];
   return (
     <div className="sa-envbar">
