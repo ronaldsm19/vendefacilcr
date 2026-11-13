@@ -1,5 +1,7 @@
 "use client";
 
+import { ENNEA_WHATSAPP } from "@/lib/contacto";
+
 interface AboutSectionProps {
   aboutData?: {
     title: string;
@@ -25,7 +27,7 @@ export default function AboutSection({ aboutData, whatsappNumber }: AboutSection
     (url, i) => ({ img: url || DEFAULT_IMAGES[i], rotate: ["-2deg", "2deg", "1.5deg", "-1.5deg"][i] })
   );
 
-  const waNumber = whatsappNumber ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
+  const waNumber = whatsappNumber ?? ENNEA_WHATSAPP;
   const specialOrderMsg = encodeURIComponent(
     `Hola! Me interesa hacer un pedido especial 🎉\n\n¿Podrías darme más información sobre opciones y disponibilidad? Gracias! 😊`
   );
