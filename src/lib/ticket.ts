@@ -334,7 +334,7 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
   if (cfg.taxRegime) rows.push({ t: "center", text: cfg.taxRegime, size: 7 });
   rows.push({ t: "center", text: cfg.footerMessage || "¡Gracias por su compra!", size: 8 });
   rows.push({ t: "center", text: `Pedido ${ticketLabel}`, size: 7 });
-  rows.push({ t: "center", text: "Generado con VendeFácil CR", size: 7 });
+  rows.push({ t: "center", text: "Generado con Ennea", size: 7 });
 
   return rows;
 }
@@ -470,7 +470,7 @@ export function buildCashCloseRows(d: CashCloseTicketData, cfg: TicketConfigData
 
   rows.push({ t: "divider" });
   rows.push({ t: "center", text: cfg.footerMessage || "¡Gracias por su compra!", size: 8 });
-  rows.push({ t: "center", text: "Generado con VendeFácil CR", size: 7 });
+  rows.push({ t: "center", text: "Generado con Ennea", size: 7 });
 
   return rows;
 }

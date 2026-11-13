@@ -26,7 +26,7 @@ export default function PlanLockedScreen({
   const card = PLAN_CARDS.find((c) => c.key === plan);
   const current = PLAN_LABELS[currentPlan as PlanKey] ?? currentPlan;
   const wanted = PLAN_LABELS[plan];
-  const message = `Hola, soy de ${tenantName}. Quiero pasar del plan ${current} al plan ${wanted} de VendeFácil.`;
+  const message = `Hola, soy de ${tenantName}. Quiero pasar del plan ${current} al plan ${wanted} de Ennea.`;
 
   return (
     <div className="p-4 md:p-8">

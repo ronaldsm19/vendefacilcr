@@ -30,7 +30,7 @@ export default function SuspendedScreen({
         <p className="text-sm leading-relaxed text-neutral-600">{message}</p>
         {note && (
           <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-left">
-            <p className="text-xs font-medium text-neutral-400 mb-1">Mensaje de VendeFácil</p>
+            <p className="text-xs font-medium text-neutral-400 mb-1">Mensaje de Ennea</p>
             <p className="text-sm text-neutral-700 whitespace-pre-line">{note}</p>
           </div>
         )}

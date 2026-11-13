@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { EnneaMark, ENNEA_COLORS } from "@/components/brand/EnneaMark";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -30,9 +31,9 @@ const navItems = [
 export function SuperadminBrand() {
   return (
     <div className="sa-brand">
-      <div className="sa-brand-mark" aria-hidden><span /><span /><span /><span /></div>
+      <EnneaMark size={30} className="sa-brand-mark" dome={ENNEA_COLORS.navy} />
       <div>
-        <p className="sa-brand-name" style={{ margin: 0 }}>VendeFácil</p>
+        <p className="sa-brand-name" style={{ margin: 0 }}>Ennea</p>
         <p className="sa-brand-sub" style={{ margin: 0 }}>Consola</p>
       </div>
     </div>

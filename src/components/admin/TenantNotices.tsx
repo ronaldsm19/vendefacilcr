@@ -49,7 +49,7 @@ function dueText(b: Billing): string {
  * Avisos dentro del panel del negocio.
  * - Mensualidad por vencer o vencida (solo el dueño): una franja fija arriba y, además, una ventana
  *   en cada inicio de sesión. A quien nunca cierra sesión le sale una vez al día.
- * - Avisos que mandó VendeFácil: una ventana la primera vez (o en cada inicio de sesión, si el aviso
+ * - Avisos que mandó Ennea: una ventana la primera vez (o en cada inicio de sesión, si el aviso
  *   lo pide). Al cerrarla queda registrado quién lo vio.
  */
 export default function TenantNotices() {
@@ -174,7 +174,7 @@ function BillingNotice({ billing, tenantName }: { billing: Billing; tenantName: 
   return (
     <>
       <Heading
-        icon={Wallet} label="Mensualidad de VendeFácil"
+        icon={Wallet} label="Mensualidad de Ennea"
         tone={late ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}
         title={`Tu mensualidad ${dueText(billing)}`}
       />
@@ -213,7 +213,7 @@ function ManualNotice({ notice, plan, tenantName }: { notice: Notice; plan: Plan
   const style = KIND_STYLE[notice.kind] ?? KIND_STYLE.info;
   return (
     <>
-      <Heading icon={style.icon} tone={style.tone} label="Aviso de VendeFácil" title={notice.title} />
+      <Heading icon={style.icon} tone={style.tone} label="Aviso de Ennea" title={notice.title} />
       <p className="text-sm text-brand-dark/80 whitespace-pre-line">{notice.body}</p>
       {notice.kind === "cobro" && plan && (
         <>
@@ -233,7 +233,7 @@ function ManualNotice({ notice, plan, tenantName }: { notice: Notice; plan: Plan
 /** Cómo pagar y el botón para mandar el comprobante por WhatsApp con el mensaje ya escrito. */
 function HowToPay({ payment, message }: { payment: PaymentInfo | null; message: string }) {
   if (!payment) {
-    return <p className="text-sm text-brand-dark/60">Para coordinar el pago, contactá a VendeFácil.</p>;
+    return <p className="text-sm text-brand-dark/60">Para coordinar el pago, contactá a Ennea.</p>;
   }
   const wa = payment.whatsapp.replace(/\D/g, "");
   return (

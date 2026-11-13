@@ -11,7 +11,7 @@ import Pricing from "@/components/landing/Pricing";
 import { Faq, FinalCta, LandingFooter, WhatsAppFab } from "@/components/landing/Closing";
 import "./landing.css";
 
-const TITLE = "VendeFácil | Que tu restaurante llegue a la meta del mes";
+const TITLE = "Ennea | Que tu restaurante llegue a la meta del mes";
 const DESCRIPTION =
   "Comandas, caja, inventario y gastos en un solo lugar para restaurantes, sodas y cafeterías de Costa Rica. Sabé cada día cuánto vendiste y cuánto te está quedando.";
 

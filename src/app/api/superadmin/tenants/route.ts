@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
   // Correo de bienvenida — no bloquea la creación si falla (sendMail nunca lanza)
   await sendMail({
     to: emailNorm,
-    subject: "¡Bienvenido a VendeFácil! Tus accesos",
+    subject: "Tus accesos a Ennea",
     html: welcomeEmailHtml({ name, slug, email: emailNorm, tempPassword }),
   });
 
