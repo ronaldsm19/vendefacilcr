@@ -25,12 +25,37 @@ export interface TenantBilling {
   /** Último día (inclusive) sin costo; null = sin fecha de fin. */
   freeUntil: Date | string | null;
   freeReason: string;
+  /**
+   * Programa Restaurantes Fundadores: el primer mes del programa (00:00 de CR del día 1); null = no
+   * está en el programa. Mientras esté, el precio sale del calendario del programa y no de los
+   * campos de arriba (ver resolveBilling).
+   */
+  founderStart: Date | string | null;
 }
 
 export const DEFAULT_TENANT_BILLING: TenantBilling = {
   discountType: "none", discountValue: 0, discountUntil: null, discountLabel: "",
-  free: false, freeUntil: null, freeReason: "",
+  free: false, freeUntil: null, freeReason: "", founderStart: null,
 };
+
+// ── Programa Restaurantes Fundadores ────────────────────────────────────────
+
+/**
+ * Cupos del programa. Es un dato interno: no se publica en el landing ni en la propuesta.
+ * Cuenta todos los negocios que entraron, también los que ya no están activos.
+ */
+export const FOUNDER_SLOTS = 10;
+/** El programa es del plan Premium: en otro plan el negocio paga el precio de lista de ese plan. */
+export const FOUNDER_PLAN: PlanKey = "premium";
+export const FOUNDER_LABEL = "Restaurante fundador";
+
+/**
+ * El calendario del programa, por meses de cobro contados desde el primero:
+ * - mes 1 (y cualquier mes anterior, mientras se configura): sin costo;
+ * - meses 2 a 4: 50% de descuento;
+ * - del mes 5 en adelante: 20% de descuento, sin fecha de fin.
+ */
+export const FOUNDER_STAGES = { freeMonths: 1, halfMonths: 3, halfPercent: 50, foreverPercent: 20 } as const;
 
 /** El cobro de un negocio con los valores por defecto para lo que falte (negocios viejos). */
 export function billingOf(tenant: { billing?: Partial<TenantBilling> | null }): TenantBilling {
@@ -110,6 +135,61 @@ function coversDay(until: Date | string | null, day: Date): boolean {
   return startOfCrDay(day).getTime() <= startOfCrDay(new Date(until)).getTime();
 }
 
+/** De un <input type="month"> (AAAA-MM) a las 00:00 de CR del día 1 de ese mes (null si está mal). */
+export function fromInputMonth(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match || Number(match[2]) < 1 || Number(match[2]) > 12) return null;
+  return crMidnight(Number(match[1]), Number(match[2]), 1);
+}
+
+/** Valor para un <input type="month"> (AAAA-MM en hora de CR). */
+export function toInputMonth(date: Date | string | null | undefined): string {
+  if (!date) return "";
+  const { y, m } = crDay(new Date(date));
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
+/** Meses de cobro entre el primer mes del programa y el mes del día dado (0 = el primer mes). */
+function monthsSince(start: Date | string, day: Date): number {
+  const s = crDay(new Date(start));
+  const d = crDay(day);
+  return (d.y * 12 + d.m) - (s.y * 12 + s.m);
+}
+
+/** Las etapas del programa a partir de su primer mes, para mostrarlas ("diciembre 2026", etc.). */
+export function founderSchedule(start: Date | string) {
+  const s = crDay(new Date(start));
+  const at = (offset: number) => { const d = crDay(crMidnight(s.y, s.m + offset, 1)); return periodLabel(d.y, d.m); };
+  const { freeMonths, halfMonths } = FOUNDER_STAGES;
+  return {
+    free: at(0),
+    halfFrom: at(freeMonths),
+    halfTo: at(freeMonths + halfMonths - 1),
+    foreverFrom: at(freeMonths + halfMonths),
+  };
+}
+
+/**
+ * El cobro que rige un día dado. Para un negocio del programa de fundadores en el plan Premium, sale
+ * del calendario del programa; para cualquier otro, es el que definió el superadmin tal cual.
+ * Las fechas "hasta" que devuelve son las del fin de cada etapa, para mostrarlas al dueño.
+ */
+export function resolveBilling(plan: string, billing: TenantBilling, day: Date): TenantBilling {
+  if (!billing.founderStart || plan !== FOUNDER_PLAN) return billing;
+  const s = crDay(new Date(billing.founderStart));
+  const lastDayOf = (offset: number) => crMidnight(s.y, s.m + offset + 1, 0);
+  const k = monthsSince(billing.founderStart, day);
+  const { freeMonths, halfMonths, halfPercent, foreverPercent } = FOUNDER_STAGES;
+  const base = { ...billing, free: false, freeUntil: null, freeReason: "", discountLabel: FOUNDER_LABEL, discountType: "percent" as const };
+  if (k < freeMonths) {
+    return { ...base, free: true, freeUntil: lastDayOf(freeMonths - 1), freeReason: `${FOUNDER_LABEL}: mes sin costo`, discountType: "none", discountValue: 0, discountUntil: null, discountLabel: "" };
+  }
+  if (k < freeMonths + halfMonths) {
+    return { ...base, discountValue: halfPercent, discountUntil: lastDayOf(freeMonths + halfMonths - 1) };
+  }
+  return { ...base, discountValue: foreverPercent, discountUntil: null };
+}
+
 export function isFreeOn(billing: TenantBilling, day: Date): boolean {
   return billing.free && coversDay(billing.freeUntil, day);
 }
@@ -136,10 +216,11 @@ export function describeDiscount(billing: TenantBilling): string {
 /** Lo que paga un negocio por un mes, según su plan y su cobro, en la fecha de vencimiento de ese mes. */
 export function priceFor(
   plan: string,
-  billing: TenantBilling,
+  rawBilling: TenantBilling,
   prices: Record<PlanKey, number>,
   onDay: Date,
 ): PriceBreakdown {
+  const billing = resolveBilling(plan, rawBilling, onDay);
   const listAmount = prices[plan as PlanKey] ?? DEFAULT_PLAN_PRICES[plan as PlanKey] ?? DEFAULT_PLAN_PRICES.emprende;
   if (isFreeOn(billing, onDay)) {
     return { listAmount, discountAmount: listAmount, amount: 0, discountLabel: billing.freeReason.trim() || "Cortesía", free: true };
