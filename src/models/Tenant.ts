@@ -79,6 +79,8 @@ export interface ITenant {
     freeReason: string;
     /** Cuándo se le avisó que su periodo sin costo termina (una sola vez por fecha de fin). */
     freeEndNoticeAt: Date | null;
+    /** Programa Restaurantes Fundadores: primer mes del programa; null = no está (ver lib/billing). */
+    founderStart: Date | null;
   };
   theme: ITenantTheme;
   menuConfig: IMenuConfig;
@@ -122,6 +124,7 @@ const TenantSchema = new Schema(
       freeUntil:       { type: Date, default: null },
       freeReason:      { type: String, default: "", maxlength: 60 },
       freeEndNoticeAt: { type: Date, default: null },
+      founderStart:    { type: Date, default: null },
     },
     theme: {
       primaryColor:    { type: String, default: "#6366F1" },

@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BadgePercent, CircleAlert, Clock, Gift, Send, Save, TriangleAlert } from "lucide-react";
+import { Award, BadgePercent, CircleAlert, Clock, Gift, Send, Save, TriangleAlert } from "lucide-react";
 import {
-  priceFor, formatCRC, formatCrDate, toInputDate, fromInputDate, periodLabel, crDay, nextPeriod, periodDueDate,
+  priceFor, formatCRC, formatCrDate, toInputDate, fromInputDate, toInputMonth, fromInputMonth, periodLabel, crDay, nextPeriod,
+  periodDueDate, founderSchedule, FOUNDER_PLAN, FOUNDER_STAGES,
   PLAN_LABELS, type PlanKey, type TenantBilling, type DiscountType, type PriceBreakdown,
 } from "@/lib/billing";
 
@@ -14,6 +15,8 @@ interface View {
   prices: Record<PlanKey, number>;
   automationEnabled: boolean;
   unpaid: Unpaid[];
+  /** Cupos del programa de fundadores (dato interno del superadmin). */
+  founderSlots: { used: number; total: number };
 }
 
 interface Form {
@@ -24,9 +27,19 @@ interface Form {
   free: boolean;
   freeUntil: string;
   freeReason: string;
+  founder: boolean;
+  /** AAAA-MM: el primer mes del programa (el mes sin costo). */
+  founderStart: string;
 }
 
 const PREVIEW_TITLES = ["Este mes", "Mes siguiente"];
+
+/** Primer mes sugerido: este mes si todavía va por la primera quincena, si no el siguiente. */
+function defaultFounderMonth(): string {
+  const { y, m, d } = crDay(new Date());
+  const start = d <= 15 ? { y, m } : nextPeriod(y, m);
+  return `${start.y}-${String(start.m).padStart(2, "0")}`;
+}
 
 function toForm(b: TenantBilling): Form {
   return {
@@ -37,6 +50,8 @@ function toForm(b: TenantBilling): Form {
     free: b.free,
     freeUntil: toInputDate(b.freeUntil),
     freeReason: b.freeReason,
+    founder: Boolean(b.founderStart),
+    founderStart: toInputMonth(b.founderStart) || defaultFounderMonth(),
   };
 }
 
@@ -49,6 +64,7 @@ function billingFromForm(f: Form): TenantBilling {
     free: f.free,
     freeUntil: fromInputDate(f.freeUntil),
     freeReason: f.freeReason,
+    founderStart: f.founder ? fromInputMonth(f.founderStart) : null,
   };
 }
 
@@ -107,6 +123,8 @@ export default function TenantBillingCard({ tenantId, tenantEmail }: { tenantId:
           free: form.free,
           freeUntil: form.freeUntil,
           freeReason: form.freeReason,
+          founder: form.founder,
+          founderStart: form.founderStart,
         }),
       });
       const d = await res.json();
@@ -179,8 +197,11 @@ export default function TenantBillingCard({ tenantId, tenantEmail }: { tenantId:
           ))}
         </div>
 
+        {/* Programa Restaurantes Fundadores */}
+        <FounderSection view={view} form={form} set={set} />
+
         {/* Descuento */}
-        <fieldset disabled={form.free}>
+        <fieldset disabled={form.free || form.founder} hidden={form.founder}>
           <legend className="mb-3">
             <span className="sa-eyebrow inline-flex flex-wrap items-center gap-x-2">
               <BadgePercent className="w-4 h-4" aria-hidden /> Descuento
@@ -218,7 +239,7 @@ export default function TenantBillingCard({ tenantId, tenantEmail }: { tenantId:
         </fieldset>
 
         {/* Sin costo */}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3" hidden={form.founder}>
           <label className="sa-check">
             <input type="checkbox" checked={form.free} onChange={(e) => set("free", e.target.checked)} />
             <span className="inline-flex items-center gap-1.5">
@@ -267,7 +288,7 @@ export default function TenantBillingCard({ tenantId, tenantEmail }: { tenantId:
           <button type="button" onClick={() => void save()} disabled={saving} className="sa-btn sa-btn-primary">
             <Save className="w-4 h-4" aria-hidden /> {saving ? "Guardando..." : "Guardar precio"}
           </button>
-          {view.unpaid.length > 0 && !form.free && (
+          {view.unpaid.length > 0 && previews[0].price.amount > 0 && (
             <button type="button" onClick={() => void sendReminder()} disabled={sending} className="sa-btn sa-btn-secondary">
               <Send className="w-4 h-4" aria-hidden /> {sending ? "Enviando..." : "Enviar aviso de cobro"}
             </button>
@@ -276,5 +297,62 @@ export default function TenantBillingCard({ tenantId, tenantEmail }: { tenantId:
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * El programa Restaurantes Fundadores: un mes sin costo, tres al 50% y el 20% para siempre, solo en
+ * Premium. El sistema cambia de etapa solo; acá se elige el primer mes y se ven los cupos.
+ */
+function FounderSection({ view, form, set }: {
+  view: View;
+  form: Form;
+  set: <K extends keyof Form>(key: K, value: Form[K]) => void;
+}) {
+  const wasFounder = Boolean(view.billing.founderStart);
+  const isPremium = view.plan === FOUNDER_PLAN;
+  const full = !wasFounder && view.founderSlots.used >= view.founderSlots.total;
+  const start = fromInputMonth(form.founderStart);
+  const plan = start ? founderSchedule(start) : null;
+  const { halfPercent, foreverPercent } = FOUNDER_STAGES;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <label className="sa-check">
+        <input
+          type="checkbox"
+          checked={form.founder}
+          disabled={!form.founder && (!isPremium || full)}
+          onChange={(e) => set("founder", e.target.checked)}
+        />
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="inline-flex items-center gap-1.5"><Award className="w-4 h-4" aria-hidden /> Restaurante fundador</span>
+          <span className="sa-muted text-[13px]">
+            {view.founderSlots.used} de {view.founderSlots.total} cupos usados
+          </span>
+        </span>
+      </label>
+      {!form.founder && !isPremium && <p className="sa-help">Solo para negocios en el plan Premium.</p>}
+      {!form.founder && isPremium && full && <p className="sa-help">Ya se usaron todos los cupos del programa.</p>}
+      {form.founder && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="sa-field">
+            <span className="sa-label">Primer mes (sin costo)</span>
+            <input type="month" value={form.founderStart} onChange={(e) => set("founderStart", e.target.value)} className="sa-input" />
+          </label>
+          {plan && (
+            <ul className="sa-inset flex flex-col gap-1 px-4 py-3 text-[13px]" aria-label="Calendario del programa">
+              <li><span className="sa-strong capitalize">{plan.free}</span>: sin costo</li>
+              <li><span className="sa-strong capitalize">{plan.halfFrom}</span> a <span className="sa-strong">{plan.halfTo}</span>: {halfPercent}% de descuento</li>
+              <li>Desde <span className="sa-strong">{plan.foreverFrom}</span>: {foreverPercent}% para siempre</li>
+            </ul>
+          )}
+          <p className="sa-help sm:col-span-2">
+            El sistema cambia de etapa solo, mes a mes. Si el negocio deja el plan Premium, paga el precio de lista de su plan;
+            al quitarlo del programa, el cupo queda libre. El descuento o la cortesía manuales no aplican mientras esté en el programa.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
