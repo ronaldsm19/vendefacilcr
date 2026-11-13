@@ -10,6 +10,7 @@ import { sendMail, billingEmailHtml, getBaseUrl, escapeHtml } from "@/lib/email"
 import { forgetTenantStatus } from "@/server/services/tenantAccess";
 import {
   PLAN_KEYS, PLAN_LABELS, DEFAULT_PLAN_PRICES, PAYMENT_METHODS, billingOf, priceFor, isFreeOn, crDay, crMidnight, startOfCrDay,
+  resolveBilling, fromInputMonth, FOUNDER_SLOTS, FOUNDER_PLAN,
   addDays, daysBetween, formatCrDate, formatCRC, periodLabel, nextPeriod, periodKey, periodDueDate,
   type PlanKey, type TenantBilling, type PriceBreakdown, type DiscountType,
 } from "@/lib/billing";
@@ -371,7 +372,8 @@ export async function runBillingCycle(
   for (const inv of [...open, ...virtual]) {
     const tenant = byId.get(String(inv.tenantId));
     if (!tenant) continue;
-    if (isFreeOn(billingOf(tenant), periodDueDate(inv.periodYear, inv.periodMonth, BILLING_DUE_DAY))) continue;
+    const invDue = periodDueDate(inv.periodYear, inv.periodMonth, BILLING_DUE_DAY);
+    if (isFreeOn(resolveBilling(tenant.plan, billingOf(tenant), invDue), invDue)) continue;
     const reminders = inv.reminders ?? {};
     const daysToDue = daysBetween(today, inv.dueDate);
     const who = { tenantSlug: tenant.slug, tenantName: tenant.name, amount: inv.amount };
@@ -422,9 +424,10 @@ export async function runBillingCycle(
     }
   }
 
-  // 3. Aviso 7 días antes de que termine un periodo sin costo con fecha de fin.
+  // 3. Aviso 7 días antes de que termine un periodo sin costo con fecha de fin (también el mes sin
+  // costo del programa de fundadores).
   for (const t of activeTenants) {
-    const b = billingOf(t);
+    const b = resolveBilling(t.plan, billingOf(t), today);
     if (!b.free || !b.freeUntil || t.billing?.freeEndNoticeAt) continue;
     const left = daysBetween(today, new Date(b.freeUntil));
     if (left < 0 || left > 7) continue;
@@ -556,11 +559,15 @@ export async function tenantBillingView(tenantId: string) {
   if (!tenant) throw new ServiceError(404, "Negocio no encontrado");
   const { y, m } = crDay(new Date());
   const next = nextPeriod(y, m);
-  const unpaid = await Payment.find({ tenantId: tenant._id, status: { $in: ["pending", "late"] } })
-    .sort({ dueDate: 1 }).select("periodYear periodMonth amount dueDate status").lean();
+  const [unpaid, foundersUsed] = await Promise.all([
+    Payment.find({ tenantId: tenant._id, status: { $in: ["pending", "late"] } })
+      .sort({ dueDate: 1 }).select("periodYear periodMonth amount dueDate status").lean(),
+    Tenant.countDocuments({ "billing.founderStart": { $ne: null } }),
+  ]);
   return {
     plan: tenant.plan,
     billing: billingOf(tenant),
+    founderSlots: { used: foundersUsed, total: FOUNDER_SLOTS },
     prices: settings.prices,
     automationEnabled: settings.enabled,
     current: { period: periodLabel(y, m), ...priceFor(tenant.plan, billingOf(tenant), settings.prices, periodDueDate(y, m, BILLING_DUE_DAY)) },
@@ -570,8 +577,8 @@ export async function tenantBillingView(tenantId: string) {
 }
 
 /**
- * Guarda el descuento o el periodo sin costo de un negocio. Las facturas sin pagar de este mes en
- * adelante se recalculan (las viejas y las pagadas quedan como están).
+ * Guarda el descuento, el periodo sin costo o el programa de fundadores de un negocio. Las facturas
+ * sin pagar de este mes en adelante se recalculan (las viejas y las pagadas quedan como están).
  */
 export async function updateTenantBilling(tenantId: string, raw: Record<string, unknown>) {
   if (!mongoose.isValidObjectId(tenantId)) throw new ServiceError(404, "Negocio no encontrado");
@@ -589,18 +596,39 @@ export async function updateTenantBilling(tenantId: string, raw: Record<string, 
   if (discountType === "amount") discountValue = intIn(raw.discountValue, { min: 100, max: BILLING_LIMITS.price.max }, "Monto de descuento");
   if (typeof raw.free !== "boolean") throw new ServiceError(400, "Falta indicar si es sin costo");
 
-  const freeUntil = raw.free ? parseDay(raw.freeUntil, "Sin costo hasta") : null;
+  // Programa de fundadores: solo en Premium y con cupo. Mientras esté, el precio lo maneja el
+  // calendario del programa y el descuento o la cortesía manuales se limpian.
+  const founder = raw.founder === true;
+  const wasFounder = Boolean(tenant.billing?.founderStart);
+  let founderStart: Date | null = null;
+  if (founder) {
+    if (tenant.plan !== FOUNDER_PLAN) throw new ServiceError(400, "El programa de fundadores es solo para el plan Premium");
+    founderStart = typeof raw.founderStart === "string" ? fromInputMonth(raw.founderStart) : null;
+    if (!founderStart) throw new ServiceError(400, "Elegí el primer mes del programa");
+    if (!wasFounder) {
+      const used = await Tenant.countDocuments({ "billing.founderStart": { $ne: null } });
+      if (used >= FOUNDER_SLOTS) throw new ServiceError(409, `Ya se usaron los ${FOUNDER_SLOTS} cupos del programa de fundadores`);
+    }
+  }
+
+  const free = founder ? false : raw.free;
+  const freeUntil = free ? parseDay(raw.freeUntil, "Sin costo hasta") : null;
   const previousFreeUntil = tenant.billing?.freeUntil ? new Date(tenant.billing.freeUntil).getTime() : null;
+  const previousFounderStart = tenant.billing?.founderStart ? new Date(tenant.billing.founderStart).getTime() : null;
+  const manualDiscount = founder ? "none" : discountType;
   const billing = {
-    discountType,
-    discountValue,
-    discountUntil: discountType === "none" ? null : parseDay(raw.discountUntil, "Descuento hasta"),
-    discountLabel: discountType === "none" ? "" : text(raw.discountLabel, 60, "Etiqueta del descuento"),
-    free: raw.free,
+    discountType: manualDiscount,
+    discountValue: manualDiscount === "none" ? 0 : discountValue,
+    discountUntil: manualDiscount === "none" ? null : parseDay(raw.discountUntil, "Descuento hasta"),
+    discountLabel: manualDiscount === "none" ? "" : text(raw.discountLabel, 60, "Etiqueta del descuento"),
+    free,
     freeUntil,
-    freeReason: raw.free ? text(raw.freeReason, 60, "Motivo") : "",
-    // Si cambia la fecha de fin, el aviso de "termina pronto" vuelve a salir para la nueva fecha.
-    freeEndNoticeAt: (freeUntil?.getTime() ?? null) === previousFreeUntil ? tenant.billing?.freeEndNoticeAt ?? null : null,
+    freeReason: free ? text(raw.freeReason, 60, "Motivo") : "",
+    founderStart,
+    // Si cambia la fecha de fin (o el programa), el aviso de "termina pronto" vuelve a salir.
+    freeEndNoticeAt: (freeUntil?.getTime() ?? null) === previousFreeUntil && (founderStart?.getTime() ?? null) === previousFounderStart
+      ? tenant.billing?.freeEndNoticeAt ?? null
+      : null,
   };
   await Tenant.updateOne({ _id: tenant._id }, { $set: { billing } });
 
@@ -658,10 +686,10 @@ export async function ownerBillingView(tenantId: string, now = new Date()) {
   ]);
   if (!tenant) throw new ServiceError(404, "Negocio no encontrado");
 
-  const b = billingOf(tenant);
   const { y, m } = crDay(now);
   const next = nextPeriod(y, m);
   const nextDue = periodDueDate(next.y, next.m, BILLING_DUE_DAY);
+  const b = resolveBilling(tenant.plan, billingOf(tenant), nextDue);
   const price = priceFor(tenant.plan, b, settings.prices, nextDue);
 
   let invoice: null | {
