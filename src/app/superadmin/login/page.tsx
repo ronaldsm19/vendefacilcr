@@ -3,14 +3,13 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Eye, EyeOff, Lock, ShieldCheck } from "lucide-react";
-import SuperadminEnvBar from "@/components/superadmin/SuperadminEnvBar";
 import { SuperadminBrand } from "@/components/superadmin/SuperadminSidebar";
 
 const subscribe = () => () => {};
 
 /**
  * Ingreso a la consola. Es solo para el superadministrador: no muestra nada de los negocios antes
- * de entrar, y deja a la vista el entorno para no confundir producción con una prueba.
+ * de entrar.
  */
 export default function SuperadminLoginPage() {
   const router = useRouter();
@@ -55,7 +54,6 @@ export default function SuperadminLoginPage() {
 
   return (
     <>
-      <SuperadminEnvBar note="Consola de administración" />
       <header className="flex items-center gap-3 px-4 sm:px-8 py-4">
         <SuperadminBrand />
       </header>
