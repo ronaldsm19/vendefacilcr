@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { SeedProduct } from "@/data/seed";
 import type { LineExtra } from "@/lib/pricing";
+import { ENNEA_WHATSAPP } from "@/lib/contacto";
 
 interface WhatsAppButtonProps {
   product?: SeedProduct & { _id?: string };
@@ -27,7 +28,7 @@ function colones(n: number): string {
 
 /** `businessName`: el nombre del negocio de la tienda (Tenant.name); sin nombre, el saludo va sin él. */
 export function buildWhatsAppMessage(order?: WhatsAppOrder, whatsappNumber?: string, businessName?: string): string {
-  const number = whatsappNumber ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
+  const number = whatsappNumber ?? ENNEA_WHATSAPP;
   let msg: string;
 
   if (order) {
@@ -89,7 +90,7 @@ export function WhatsAppInlineButton({
 export default function WhatsAppButton({ floating, whatsappNumber }: WhatsAppButtonProps) {
   if (!floating) return null;
 
-  const number = whatsappNumber ?? process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "50688888888";
+  const number = whatsappNumber ?? ENNEA_WHATSAPP;
   const msg    = encodeURIComponent("Hola! Quiero hacer un pedido 😊");
   const url    = `https://wa.me/${number}?text=${msg}`;
 

@@ -1,6 +1,6 @@
 // Piezas que comparten varias secciones del landing: la marca, el enlace de WhatsApp y su ícono.
 
-import { VENDEFACIL_WHATSAPP as WA_NUMBER, waLink } from "@/lib/contacto";
+import { ENNEA_WHATSAPP as WA_NUMBER, waLink } from "@/lib/contacto";
 import { EnneaMark } from "@/components/brand/EnneaMark";
 
 export { waLink };

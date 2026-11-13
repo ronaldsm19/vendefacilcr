@@ -65,7 +65,7 @@ export default function ThermalPrintButton({
         <div className="flex items-start gap-2 text-amber-700">
           <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <p className="font-semibold">vfprintagent no está activo</p>
+            <p className="font-semibold">La impresora no está lista</p>
             <p className="text-amber-600 mt-0.5 leading-snug">
               El agente de impresión no responde en esta computadora.
             </p>
