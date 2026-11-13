@@ -33,9 +33,14 @@ export const metadata: Metadata = {
   title: "Ennea | Comandas, caja y números para tu restaurante",
   description:
     "Comandas, caja, inventario y gastos en un solo lugar para restaurantes, sodas y cafeterías de Costa Rica.",
+  // La campana de Ennea: SVG para los navegadores actuales, .ico para los viejos y para Google, y un
+  // PNG para el ícono que guarda el iPhone (Safari no acepta SVG ahí).
   icons: {
-    icon: "/favicon.svg",
-    apple: "/favicon.svg",
+    icon: [
+      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
   openGraph: {
     title: "Ennea | Comandas, caja y números para tu restaurante",
