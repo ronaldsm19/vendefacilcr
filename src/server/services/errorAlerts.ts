@@ -145,7 +145,7 @@ export async function checkErrorAlerts(now = Date.now()): Promise<void> {
       { $group: { _id: null, total: { $sum: "$count" } } },
     ]);
     if (total >= settings.spikeThreshold && await claim("lastSpikeAlertAt", settings.cooldownMinutes * 60_000, now)) {
-      await deliver(settings, `${total} errores en ${settings.spikeWindowMinutes} min — VendeFácil`, errorAlertEmailHtml({
+      await deliver(settings, `${total} errores en ${settings.spikeWindowMinutes} min — Ennea`, errorAlertEmailHtml({
         title: "Pico de errores",
         intro: `Hubo <strong>${total} errores</strong> en los últimos ${settings.spikeWindowMinutes} minutos (hasta las ${escapeHtml(crTime(new Date(now)))}). No vas a recibir otro correo de pico en los próximos ${settings.cooldownMinutes} minutos.`,
         sections: await spikeSections(since),
@@ -160,14 +160,14 @@ export async function checkErrorAlerts(now = Date.now()): Promise<void> {
     if (!pending.length || !await claim("lastNewErrorAlertAt", NEW_ERROR_COOLDOWN_MS, now)) return;
     const names = await tenantNames(pending.map((p) => p.tenantId));
     const sent = await deliver(settings, pending.length === 1
-      ? `Error nuevo: ${pending[0].message.slice(0, 70) || pending[0].route} — VendeFácil`
-      : `${pending.length} errores nuevos — VendeFácil`, errorAlertEmailHtml({
+      ? `Error nuevo: ${pending[0].message.slice(0, 70) || pending[0].route} — Ennea`
+      : `${pending.length} errores nuevos — Ennea`, errorAlertEmailHtml({
       title: pending.length === 1 ? "Error nuevo" : `${pending.length} errores nuevos`,
       intro: "Estos errores aparecieron por primera vez en los últimos 90 días.",
       sections: [{
         heading: "Errores",
         rows: pending.map((p) => ({
-          label: `${escapeHtml(p.message || "(sin mensaje)")}<br/><span style="font-size:12px;color:#1A1A2E99;">${escapeHtml(`${p.method} ${p.route}`.trim())} · ${escapeHtml(p.tenantId ? names.get(String(p.tenantId)) ?? "Negocio borrado" : "Sin negocio identificado")} · ${escapeHtml(crTime(new Date(p.firstAt)))}</span>`,
+          label: `${escapeHtml(p.message || "(sin mensaje)")}<br/><span style="font-size:12px;color:#15223B99;">${escapeHtml(`${p.method} ${p.route}`.trim())} · ${escapeHtml(p.tenantId ? names.get(String(p.tenantId)) ?? "Negocio borrado" : "Sin negocio identificado")} · ${escapeHtml(crTime(new Date(p.firstAt)))}</span>`,
           value: p.status ? String(p.status) : "—",
         })),
       }],
@@ -185,9 +185,9 @@ export async function checkErrorAlerts(now = Date.now()): Promise<void> {
 export async function sendTestAlert(): Promise<{ ok: boolean; error?: string; recipients: string[] }> {
   const settings = await getAlertSettings();
   if (!settings.recipients.length) throw new ServiceError(400, "Agregá al menos un destinatario y guardá antes de probar");
-  const result = await deliver(settings, "Correo de prueba — Errores VendeFácil", errorAlertEmailHtml({
+  const result = await deliver(settings, "Correo de prueba — Errores Ennea", errorAlertEmailHtml({
     title: "Correo de prueba",
-    intro: "Si te llegó este correo, las alertas de errores de VendeFácil están bien configuradas.",
+    intro: "Si te llegó este correo, las alertas de errores de Ennea están bien configuradas.",
     sections: [],
     panelUrl: `${getBaseUrl()}/superadmin/errores`,
   }));

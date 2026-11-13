@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { siteHost } from "@/lib/site";
 import Link from "next/link";
 import { ArrowLeft, Check, CircleAlert, Copy, Eye, EyeOff } from "lucide-react";
 import { formatCRC, DEFAULT_PLAN_PRICES, PLAN_KEYS, PLAN_LABELS } from "@/lib/billing";
@@ -81,7 +82,7 @@ export default function NuevoTenantPage() {
 
   function copyCredentials() {
     if (!created) return;
-    const text = `Tu tienda ya está lista en VendeFácil!\n\nPanel de administración: ${window.location.origin}/${created.slug}/admin/\nEmail: ${form.email}\nContraseña temporal: ${created.tempPassword}\n\nIngresá al panel y cambiá tu contraseña en la primera sesión.`;
+    const text = `¡Tu negocio ya está listo en Ennea!\n\nPanel de administración: ${window.location.origin}/${created.slug}/admin/\nEmail: ${form.email}\nContraseña temporal: ${created.tempPassword}\n\nIngresá al panel y cambiá tu contraseña en la primera sesión.`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -170,7 +171,7 @@ export default function NuevoTenantPage() {
             </Link>
           </p>
           <h1 className="sa-title">Nuevo negocio</h1>
-          <p className="sa-subtitle">Crear una nueva tienda en VendeFácil</p>
+          <p className="sa-subtitle">Crear un negocio nuevo en Ennea</p>
         </div>
       </header>
 
@@ -204,7 +205,7 @@ export default function NuevoTenantPage() {
                 className="sa-input"
               />
               <span className="sa-help [overflow-wrap:anywhere]">
-                vendefacilcr.com/<span className="sa-strong">{form.slug || "mireposteria"}</span>
+                {siteHost()}/<span className="sa-strong">{form.slug || "mireposteria"}</span>
                 {" · "}Solo letras minúsculas, números y guiones.
               </span>
             </label>

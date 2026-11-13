@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Store, Loader2, Check } from "lucide-react";
+import { siteHost } from "@/lib/site";
 import MiPlanCard from "@/components/admin/MiPlanCard";
 
 interface Profile {
@@ -85,7 +86,7 @@ export default function PerfilPage() {
 
   const rows: { label: string; value: string }[] = [
     { label: "Nombre del negocio", value: profile?.tenantName ?? "—" },
-    { label: "URL de la tienda", value: `vendefacilcr.com/${profile?.tenantSlug ?? ""}` },
+    { label: "URL de la tienda", value: `${siteHost()}/${profile?.tenantSlug ?? ""}` },
     { label: "Correo de administrador", value: profile?.email ?? "—" },
     { label: "WhatsApp", value: profile?.whatsappNumber || "—" },
     { label: "Plan", value: PLAN_LABELS[profile?.plan ?? ""] ?? profile?.plan ?? "—" },

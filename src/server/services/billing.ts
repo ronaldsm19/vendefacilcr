@@ -204,7 +204,7 @@ function billingEmail(kind: EmailKind, tenant: TenantLean, settings: Settings, i
     const rows: EmailRow[] = [{ label: `Plan ${PLAN_LABELS[tenant.plan as PlanKey] ?? tenant.plan}`, value: formatCRC(price.listAmount) }];
     if (price.discountAmount > 0 && !price.free) rows.push({ label: price.discountLabel, value: `−${formatCRC(price.discountAmount)}`, muted: true });
     return {
-      subject: `Tu periodo sin costo en VendeFácil termina el ${formatCrDate(extra!.freeUntil!)}`,
+      subject: `Tu periodo sin costo en Ennea termina el ${formatCrDate(extra!.freeUntil!)}`,
       html: billingEmailHtml({
         title: "Tu periodo sin costo termina pronto",
         intro: `Hola, ${name}. Tu periodo sin costo termina el <strong>${formatCrDate(extra!.freeUntil!)}</strong>. Desde ahí, tu mensualidad queda así:`,
@@ -222,17 +222,17 @@ function billingEmail(kind: EmailKind, tenant: TenantLean, settings: Settings, i
   switch (kind) {
     case "recordatorio":
       return {
-        subject: `Tu mensualidad de VendeFácil vence el ${due}`,
+        subject: `Tu mensualidad de Ennea vence el ${due}`,
         html: billingEmailHtml({ ...base, title: "Tu mensualidad vence pronto", intro: `Hola, ${name}. Te recordamos que tu mensualidad de <strong>${period}</strong> vence el <strong>${due}</strong>.`, note: suspendNote }),
       };
     case "vence_hoy":
       return {
-        subject: "Hoy vence tu mensualidad de VendeFácil",
+        subject: "Hoy vence tu mensualidad de Ennea",
         html: billingEmailHtml({ ...base, title: "Hoy vence tu mensualidad", intro: `Hola, ${name}. Hoy vence tu mensualidad de <strong>${period}</strong>.`, note: suspendNote }),
       };
     case "vencida":
       return {
-        subject: "Tu mensualidad de VendeFácil está vencida",
+        subject: "Tu mensualidad de Ennea está vencida",
         html: billingEmailHtml({ ...base, title: "Tu mensualidad está vencida", intro: `Hola, ${name}. Tu mensualidad de <strong>${period}</strong> venció el <strong>${due}</strong> y todavía no está registrada.`, note: suspendNote }),
       };
     case "suspendido":

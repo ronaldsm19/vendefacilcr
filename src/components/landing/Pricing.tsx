@@ -33,7 +33,7 @@ export default function Pricing({ prices }: { prices: Record<PlanKey, number> })
                 </p>
                 <a
                   className={`lp-btn lp-btn-block ${plan.destacado ? "lp-btn-primary" : "lp-btn-secondary"}`}
-                  href={waLink(`Hola, me interesa el plan ${name} de VendeFácil.`)}
+                  href={waLink(`Hola, me interesa el plan ${name} de Ennea.`)}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

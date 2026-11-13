@@ -62,7 +62,7 @@ export default function GoalCalculator() {
           <li><span>Si cada cliente gasta ₡500 más, sumás</span><b className="lp-ok-text">+{colones(quinientosMas)} al mes</b></li>
         </ul>
         <p className="lp-calc-foot">
-          VendeFácil te muestra cada noche cuánto vendiste hoy y cuánto llevás en el mes. Así sabés si vas a tiempo
+          Ennea te muestra cada noche cuánto vendiste hoy y cuánto llevás en el mes. Así sabés si vas a tiempo
           cuando todavía se puede hacer algo.
         </p>
       </div>

@@ -116,7 +116,7 @@ export default function SuperadminLoginPage() {
       </main>
 
       <footer className="flex flex-wrap justify-between gap-3 px-4 sm:px-8 py-3.5 text-xs sa-muted" style={{ borderTop: "1px solid var(--sa-line)" }}>
-        <span>VendeFácil · Uso interno</span>
+        <span>Ennea · Uso interno</span>
       </footer>
     </>
   );

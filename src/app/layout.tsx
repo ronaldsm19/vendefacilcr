@@ -30,16 +30,16 @@ const lato = Lato({
 });
 
 export const metadata: Metadata = {
-  title: "VendeFácil | Tu tienda online lista para vender",
+  title: "Ennea | Comandas, caja y números para tu restaurante",
   description:
-    "Creá tu página de ventas profesional en minutos. Vendé por WhatsApp e Instagram como un negocio establecido. Para emprendedores costarricenses.",
+    "Comandas, caja, inventario y gastos en un solo lugar para restaurantes, sodas y cafeterías de Costa Rica.",
   icons: {
     icon: "/favicon.svg",
     apple: "/favicon.svg",
   },
   openGraph: {
-    title: "VendeFácil | Tu tienda online lista para vender",
-    description: "Creá tu página de ventas profesional en minutos. Para emprendedores costarricenses.",
+    title: "Ennea | Comandas, caja y números para tu restaurante",
+    description: "Comandas, caja, inventario y gastos en un solo lugar para restaurantes de Costa Rica.",
     type: "website",
   },
 };

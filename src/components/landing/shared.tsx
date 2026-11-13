@@ -1,10 +1,11 @@
 // Piezas que comparten varias secciones del landing: la marca, el enlace de WhatsApp y su ícono.
 
 import { VENDEFACIL_WHATSAPP as WA_NUMBER, waLink } from "@/lib/contacto";
+import { EnneaMark } from "@/components/brand/EnneaMark";
 
 export { waLink };
 
-export const WA_DEMO = waLink("Hola, quiero ver una demostración de VendeFácil para mi negocio.");
+export const WA_DEMO = waLink("Hola, quiero ver una demostración de Ennea para mi negocio.");
 
 /** 50661266865 → "+506 6126-6865" */
 export function waDisplayNumber(): string {
@@ -14,9 +15,9 @@ export function waDisplayNumber(): string {
 
 export function Brand({ href = "#inicio" }: { href?: string }) {
   return (
-    <a className="lp-brand" href={href} aria-label="VendeFácil, ir al inicio">
-      <span className="lp-brand-mark" aria-hidden="true"><span /><span /><span /><span /></span>
-      VendeFácil
+    <a className="lp-brand" href={href} aria-label="Ennea, ir al inicio">
+      <EnneaMark className="lp-brand-mark" />
+      Ennea
     </a>
   );
 }
