@@ -50,7 +50,7 @@ export default function LoginForm({
       });
       const data = await res.json();
       if (res.ok) {
-        // El panel muestra los avisos (cobro, mensajes de VendeFácil) en cada inicio de sesión.
+        // El panel muestra los avisos (cobro, mensajes de Ennea) en cada inicio de sesión.
         try { sessionStorage.setItem(LOGIN_NOTICES_FLAG, "1"); } catch {}
         if (data.role === "admin" && data.passwordChanged === false) {
           try { sessionStorage.setItem("vf_pw_reminder", "1"); } catch {}

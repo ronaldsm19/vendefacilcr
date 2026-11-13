@@ -14,7 +14,7 @@ import { resolveInvite } from "@/server/services/appInvites";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Vincular teléfono · VendeFácil",
+  title: "Vincular teléfono · Ennea",
   robots: { index: false, follow: false },
 };
 
@@ -54,7 +54,7 @@ export default async function InvitacionPage({ params }: { params: Promise<{ cod
             <ol className="space-y-3 text-sm text-brand-dark/70">
               <li>
                 <span className="font-medium text-brand-dark">1.</span> Instalá la app{" "}
-                <span className="font-medium text-brand-dark">VendeFácil Mesero</span> en el teléfono.
+                <span className="font-medium text-brand-dark">Ennea</span> en el teléfono.
               </li>
               <li>
                 <span className="font-medium text-brand-dark">2.</span> Abrila y tocá{" "}

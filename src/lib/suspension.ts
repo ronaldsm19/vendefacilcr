@@ -32,22 +32,22 @@ export interface SuspensionNotice {
 
 const NEUTRAL: SuspensionNotice = {
   title: "Panel suspendido",
-  message: "El acceso a este panel está suspendido por ahora. Si sos la persona encargada del negocio, contactá a VendeFácil.",
+  message: "El acceso a este panel está suspendido por ahora. Si sos la persona encargada del negocio, contactá a Ennea.",
   note: "",
 };
 
 const FOR_OWNER: Record<SuspensionReason, Omit<SuspensionNotice, "note">> = {
   falta_pago: {
     title: "Acceso suspendido por falta de pago",
-    message: "El panel y la tienda en línea quedan suspendidos hasta que se registre el pago. Contactá a VendeFácil para ponerte al día y reactivarlos.",
+    message: "El panel y la tienda en línea quedan suspendidos hasta que se registre el pago. Contactá a Ennea para ponerte al día y reactivarlos.",
   },
   solicitud: {
     title: "Cuenta pausada",
-    message: "Pausamos el panel y la tienda en línea a pedido tuyo. Contactá a VendeFácil cuando quieras reactivarlos.",
+    message: "Pausamos el panel y la tienda en línea a pedido tuyo. Contactá a Ennea cuando quieras reactivarlos.",
   },
   otro: {
     title: "Cuenta suspendida",
-    message: "El panel y la tienda en línea están suspendidos. Contactá a VendeFácil para más información.",
+    message: "El panel y la tienda en línea están suspendidos. Contactá a Ennea para más información.",
   },
 };
 

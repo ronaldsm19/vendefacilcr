@@ -55,14 +55,14 @@ export async function sendMail({
     // propio (el usuario suele ser fijo, tipo "resend") la dirección tiene que ser de ese dominio.
     const from = process.env.SMTP_FROM || process.env.SMTP_USER!;
     await tx.sendMail({
-      from: `VendeFácil CR <${from}>`,
+      from: `Ennea <${from}>`,
       to,
       subject,
       html,
       // Logo embebido inline (CID) — no depende de un host externo
       attachments: [
         {
-          filename: "vendefacil.png",
+          filename: "ennea.png",
           content: Buffer.from(VF_LOGO_BASE64, "base64"),
           cid: LOGO_CID,
           contentType: "image/png",
@@ -78,9 +78,10 @@ export async function sendMail({
 
 // ── Plantillas HTML de marca ──────────────────────────────────────
 
-// Marca VendeFácil (no la del tenant): degradado azul→morado + rayo blanco.
-const BRAND_GRADIENT = "linear-gradient(135deg,#3b82f6 0%,#9333ea 100%)";
-const BRAND_PURPLE = "#9333ea";
+// Marca Ennea (no la del negocio): azul noche con la campana de servicio en latón. Los enlaces van en
+// latón oscuro, que se lee bien sobre blanco.
+const BRAND_GRADIENT = "#15223B";
+const BRAND_PURPLE = "#7A5E1C";
 
 /** Envoltura común: header con degradado + logo, cuerpo y footer. */
 function layout(title: string, bodyHtml: string): string {
@@ -88,20 +89,20 @@ function layout(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F8F0F5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8F0F5;padding:24px 0;">
+<body style="margin:0;padding:0;background:#EEF1F5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EEF1F5;padding:24px 0;">
     <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(26,26,46,0.08);">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(21,34,59,0.08);">
         <tr>
           <td style="background:${BRAND_GRADIENT};padding:32px 32px 28px;text-align:center;">
-            <img src="${logo}" alt="VendeFácil CR" width="56" height="56" style="display:inline-block;border-radius:14px;background:#ffffff;padding:6px;" />
+            <img src="${logo}" alt="Ennea" width="56" height="56" style="display:inline-block;border-radius:14px;" />
             <h1 style="margin:14px 0 0;color:#ffffff;font-size:22px;font-weight:700;">${title}</h1>
           </td>
         </tr>
-        <tr><td style="padding:32px;color:#1A1A2E;font-size:15px;line-height:1.6;">${bodyHtml}</td></tr>
+        <tr><td style="padding:32px;color:#15223B;font-size:15px;line-height:1.6;">${bodyHtml}</td></tr>
         <tr>
-          <td style="padding:20px 32px 28px;border-top:1px solid #F0E6EE;text-align:center;color:#1A1A2E80;font-size:12px;">
-            VendeFácil CR — Tu tienda en línea, fácil.<br/>
+          <td style="padding:20px 32px 28px;border-top:1px solid #E3E6EC;text-align:center;color:#15223B80;font-size:12px;">
+            Ennea — Comandas, caja y números de tu negocio en un solo lugar.<br/>
             <a href="${getBaseUrl()}" style="color:${BRAND_PURPLE};text-decoration:none;">${getBaseUrl().replace(/^https?:\/\//, "")}</a>
           </td>
         </tr>
@@ -114,7 +115,7 @@ function layout(title: string, bodyHtml: string): string {
 
 function linkRow(label: string, url: string): string {
   return `<div style="margin:0 0 14px;">
-    <p style="margin:0 0 2px;font-size:13px;color:#1A1A2E99;">${label}</p>
+    <p style="margin:0 0 2px;font-size:13px;color:#15223B99;">${label}</p>
     <a href="${url}" style="color:${BRAND_PURPLE};font-weight:600;text-decoration:none;word-break:break-all;">${url}</a>
   </div>`;
 }
@@ -133,24 +134,24 @@ export function welcomeEmailHtml({
   const base = getBaseUrl();
   const body = `
     <p style="margin:0 0 16px;">¡Hola <strong>${name}</strong>! 🎉</p>
-    <p style="margin:0 0 20px;">Tu tienda en VendeFácil CR ya está lista. Acá están tus accesos:</p>
+    <p style="margin:0 0 20px;">Tu negocio ya está listo en Ennea. Acá están tus accesos:</p>
 
     ${linkRow("Tu página de ventas / pedidos:", `${base}/${slug}`)}
     ${linkRow("Tu menú:", `${base}/${slug}/menu`)}
     ${linkRow("Panel de administración:", `${base}/${slug}/admin/login`)}
 
     <div style="margin:24px 0;padding:18px 20px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:12px;">
-      <p style="margin:0 0 8px;font-size:13px;color:#1A1A2E99;">Usuario (correo)</p>
-      <p style="margin:0 0 16px;font-size:15px;font-weight:600;color:#1A1A2E;">${email}</p>
-      <p style="margin:0 0 8px;font-size:13px;color:#1A1A2E99;">Contraseña temporal</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#15223B99;">Usuario (correo)</p>
+      <p style="margin:0 0 16px;font-size:15px;font-weight:600;color:#15223B;">${email}</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#15223B99;">Contraseña temporal</p>
       <p style="margin:0;font-size:20px;font-weight:700;letter-spacing:1px;color:${BRAND_PURPLE};font-family:monospace;">${tempPassword}</p>
     </div>
 
-    <p style="margin:0;font-size:13px;color:#1A1A2E99;">
+    <p style="margin:0;font-size:13px;color:#15223B99;">
       🔒 Por seguridad, ingresá al panel y <strong>actualizá tu contraseña</strong> desde la sección
       <em>Perfil</em> en tu primera sesión.
     </p>`;
-  return layout("¡Bienvenido a VendeFácil!", body);
+  return layout("Te damos la bienvenida a Ennea", body);
 }
 
 /** Escapa texto que viene de afuera (mensajes de error, nombres) antes de meterlo en el HTML del correo. */
@@ -184,12 +185,12 @@ export function errorAlertEmailHtml({
   const blocks = sections
     .filter((s) => s.rows.length)
     .map((s) => `
-      <p style="margin:24px 0 8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#1A1A2E99;">${s.heading}</p>
+      <p style="margin:24px 0 8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#15223B99;">${s.heading}</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
         ${s.rows.map((r) => `
           <tr>
-            <td style="padding:8px 0;border-bottom:1px solid #F0E6EE;font-size:14px;color:#1A1A2E;">${r.label}</td>
-            <td style="padding:8px 0 8px 12px;border-bottom:1px solid #F0E6EE;font-size:14px;font-weight:700;color:#1A1A2E;text-align:right;white-space:nowrap;">${r.value}</td>
+            <td style="padding:8px 0;border-bottom:1px solid #E3E6EC;font-size:14px;color:#15223B;">${r.label}</td>
+            <td style="padding:8px 0 8px 12px;border-bottom:1px solid #E3E6EC;font-size:14px;font-weight:700;color:#15223B;text-align:right;white-space:nowrap;">${r.value}</td>
           </tr>`).join("")}
       </table>`)
     .join("");
@@ -239,8 +240,8 @@ export function billingEmailHtml({
 }): string {
   const detail = rows.map((r) => `
       <tr>
-        <td style="padding:8px 0;border-bottom:1px solid #F0E6EE;font-size:14px;color:${r.muted ? "#1A1A2E99" : "#1A1A2E"};">${escapeHtml(r.label)}</td>
-        <td style="padding:8px 0 8px 12px;border-bottom:1px solid #F0E6EE;font-size:14px;color:${r.muted ? "#1A1A2E99" : "#1A1A2E"};text-align:right;white-space:nowrap;">${escapeHtml(r.value)}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #E3E6EC;font-size:14px;color:${r.muted ? "#15223B99" : "#15223B"};">${escapeHtml(r.label)}</td>
+        <td style="padding:8px 0 8px 12px;border-bottom:1px solid #E3E6EC;font-size:14px;color:${r.muted ? "#15223B99" : "#15223B"};text-align:right;white-space:nowrap;">${escapeHtml(r.value)}</td>
       </tr>`).join("");
 
   const p = payment;
@@ -252,21 +253,21 @@ export function billingEmailHtml({
   if (wa) lines.push(`Mandá el comprobante por WhatsApp al <a href="https://wa.me/${wa}" style="color:${BRAND_PURPLE};font-weight:600;text-decoration:none;">${escapeHtml(p!.whatsapp)}</a>.`);
   const howToPay = lines.length
     ? `<div style="margin:24px 0 0;padding:16px 18px;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:12px;">
-        <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#1A1A2E99;">CÓMO PAGAR</p>
-        ${lines.map((l) => `<p style="margin:0 0 6px;font-size:14px;color:#1A1A2E;">${l}</p>`).join("")}
+        <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#15223B99;">CÓMO PAGAR</p>
+        ${lines.map((l) => `<p style="margin:0 0 6px;font-size:14px;color:#15223B;">${l}</p>`).join("")}
       </div>`
-    : `<p style="margin:24px 0 0;font-size:14px;color:#1A1A2E;">Para coordinar el pago, contactá a VendeFácil CR.</p>`;
+    : `<p style="margin:24px 0 0;font-size:14px;color:#15223B;">Para coordinar el pago, contactá a Ennea.</p>`;
 
   const body = `
     <p style="margin:0 0 16px;">${intro}</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
       ${detail}
       <tr>
-        <td style="padding:12px 0 0;font-size:15px;font-weight:700;color:#1A1A2E;">${escapeHtml(totalLabel)}</td>
-        <td style="padding:12px 0 0 12px;font-size:18px;font-weight:700;color:#1A1A2E;text-align:right;white-space:nowrap;">${escapeHtml(totalValue)}</td>
+        <td style="padding:12px 0 0;font-size:15px;font-weight:700;color:#15223B;">${escapeHtml(totalLabel)}</td>
+        <td style="padding:12px 0 0 12px;font-size:18px;font-weight:700;color:#15223B;text-align:right;white-space:nowrap;">${escapeHtml(totalValue)}</td>
       </tr>
     </table>
-    ${note ? `<p style="margin:20px 0 0;font-size:14px;color:#1A1A2E;">${note}</p>` : ""}
+    ${note ? `<p style="margin:20px 0 0;font-size:14px;color:#15223B;">${note}</p>` : ""}
     ${payment ? howToPay : ""}
     <p style="margin:28px 0 0;text-align:center;">
       <a href="${panelUrl}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:${BRAND_GRADIENT};color:#ffffff;font-weight:700;text-decoration:none;">Ir a mi panel</a>
@@ -281,8 +282,8 @@ export function passwordChangedEmailHtml({ name }: { name: string }): string {
       Te confirmamos que la contraseña de tu panel de administración fue
       <strong>cambiada correctamente</strong>. ✅
     </p>
-    <p style="margin:0;font-size:13px;color:#1A1A2E99;">
-      Si no realizaste este cambio, contactá de inmediato a VendeFácil CR.
+    <p style="margin:0;font-size:13px;color:#15223B99;">
+      Si no realizaste este cambio, contactá de inmediato a Ennea.
     </p>`;
   return layout("Contraseña actualizada", body);
 }

@@ -37,7 +37,7 @@ export function Problem() {
           </ol>
           <p className="lp-callout">
             <Link2 aria-hidden="true" />
-            <span>VendeFácil deja anotado cada uno de esos pasos mientras trabajás, sin pedirte trabajo aparte.</span>
+            <span>Ennea deja anotado cada uno de esos pasos mientras trabajás, sin pedirte trabajo aparte.</span>
           </p>
         </div>
       </div>
@@ -214,11 +214,11 @@ export function Compare() {
         <div className="lp-head" data-reveal>
           <h2 id="lp-cambios" className="lp-h2">Lo que cambia cuando todo queda anotado.</h2>
         </div>
-        <div className="lp-compare" data-reveal role="table" aria-label="Cómo se trabaja hoy y cómo se trabaja con VendeFácil">
+        <div className="lp-compare" data-reveal role="table" aria-label="Cómo se trabaja hoy y cómo se trabaja con Ennea">
           <div className="lp-compare-row lp-compare-head" role="row">
             <span role="columnheader"><span className="sr-only">Qué</span></span>
             <span role="columnheader">Hoy</span>
-            <span role="columnheader">Con VendeFácil</span>
+            <span role="columnheader">Con Ennea</span>
           </div>
           {CAMBIOS.map((c) => (
             <div key={c.que} className="lp-compare-row" role="row">

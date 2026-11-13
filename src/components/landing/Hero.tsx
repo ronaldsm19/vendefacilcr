@@ -81,7 +81,7 @@ export default function Hero() {
             Que tu restaurante llegue a la <span className="lp-mark-word">meta del mes</span>.
           </h1>
           <p className="lp-lead">
-            VendeFácil ordena las comandas, la caja, el inventario y los gastos en un solo lugar. Cada noche sabés
+            Ennea ordena las comandas, la caja, el inventario y los gastos en un solo lugar. Cada noche sabés
             cuánto vendiste, cuánto llevás en el mes y cuánto te está quedando.
           </p>
           <div className="lp-hero-actions">

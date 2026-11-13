@@ -1,2 +1,5 @@
 Geist (Vercel) y Familjen Grotesk (Familjen STHLM AB): fuentes variables, subconjunto latino,
-bajo la SIL Open Font License 1.1 (https://openfontlicense.org). Las usa solo el superadmin.
+bajo la SIL Open Font License 1.1 (https://openfontlicense.org). Las usan el superadmin y el landing.
+
+Young Serif (Bastien Sozeau): la letra de la marca Ennea en el landing, subconjuntos latino y
+latino extendido, bajo la SIL Open Font License 1.1 (https://openfontlicense.org).

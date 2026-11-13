@@ -1,10 +1,11 @@
 /*
  * Sistema visual del landing público. Todo vive bajo .lp, así no toca las tiendas ni los paneles.
  *
- * Comparte con el superadmin las letras, la tinta, el azul y el verde. Acá cada color también tiene un
- * trabajo: azul = confianza y acción (marca, botones, lo que controla el negocio); cálido (papaya) =
- * la comida, la meta y lo que da ganas; verde = plata que entra. Los fondos son planos y suaves:
- * blanco, azul muy claro, durazno muy claro y un azul noche para las secciones de foco.
+ * Marca Ennea: azul noche y latón, los colores de la campana de servicio del logo. Cada color tiene un
+ * trabajo: azul noche = la marca, los botones y lo que controla el negocio; latón = el detalle cálido,
+ * la meta y lo que da ganas (nunca texto chico: para texto va el latón oscuro); verde = plata que
+ * entra. Los fondos son planos y suaves: blanco, niebla, marfil y el azul noche de las secciones de
+ * foco. Los títulos grandes van en Young Serif, la letra del logo.
  *
  * Va en la capa "components" para que las utilidades de Tailwind ganen cuando haga falta un ajuste.
  */
@@ -12,26 +13,28 @@
 @layer components {
   .lp {
     --lp-bg: #FFFFFF;
-    --lp-ink: #14171C;
-    --lp-ink-2: #4B5362;
+    --lp-ink: #15223B;
+    --lp-ink-2: #4A5468;
     --lp-ink-3: #697182;
     --lp-line: #E3E6EC;
     --lp-line-strong: #CBD1DB;
     --lp-subtle: #F6F7F9;
 
-    --lp-blue: #2148C0;
-    --lp-blue-hover: #1A3A9E;
-    --lp-blue-tint: #EEF3FF;
-    --lp-blue-tint-2: #DCE6FF;
-    --lp-navy: #0E1A3C;
-    --lp-navy-2: #18285A;
+    --lp-blue: #15223B;
+    --lp-blue-hover: #0C1629;
+    --lp-blue-tint: #EEF1F5;
+    --lp-blue-tint-2: #DCE1E9;
+    --lp-navy: #15223B;
+    --lp-navy-2: #1F2E4D;
     --lp-navy-line: rgba(255, 255, 255, 0.14);
-    --lp-on-navy: #C9D3EE;
+    --lp-on-navy: #CBD2DE;
 
-    --lp-warm: #F2703D;
-    --lp-warm-ink: #B4461A;
-    --lp-warm-tint: #FFF2E9;
-    --lp-warm-tint-2: #FFE1CD;
+    --lp-warm: #B8902F;
+    --lp-warm-hover: #C9A247;
+    --lp-warm-ink: #7A5E1C;
+    --lp-warm-light: #E2C374;
+    --lp-warm-tint: #F6F1E6;
+    --lp-warm-tint-2: #EADBB2;
 
     --lp-green: #0E7A4F;
     --lp-green-tint: #E7F5EE;
@@ -49,6 +52,7 @@
 
     --lp-font: var(--font-sa-sans), var(--font-sa-display-ext), system-ui, -apple-system, "Segoe UI", sans-serif;
     --lp-font-display: var(--font-sa-display), var(--font-sa-display-ext), var(--font-sa-sans), system-ui, sans-serif;
+    --lp-font-brand: var(--font-ennea-serif), var(--font-ennea-serif-ext), Georgia, "Times New Roman", serif;
     --lp-font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
 
     background: var(--lp-bg);
@@ -57,6 +61,8 @@
     font-size: 17px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    /* Young Serif viene en un solo peso: sin negrita inventada por el navegador. */
+    font-synthesis-weight: none;
     overflow-x: clip;
   }
 
@@ -78,8 +84,9 @@
   /* ── Texto ──────────────────────────────────────────────────────────────── */
 
   .lp-h1, .lp-h2, .lp-h3 { margin: 0; font-family: var(--lp-font-display); color: var(--lp-ink); text-wrap: balance; }
-  .lp-h1 { font-weight: 700; font-size: clamp(2.5rem, 5.6vw, 4.1rem); line-height: 1.03; letter-spacing: -0.035em; }
-  .lp-h2 { font-weight: 700; font-size: clamp(1.9rem, 3.7vw, 2.8rem); line-height: 1.08; letter-spacing: -0.028em; }
+  .lp-h1, .lp-h2 { font-family: var(--lp-font-brand); font-weight: 400; }
+  .lp-h1 { font-size: clamp(2.5rem, 5.6vw, 4.1rem); line-height: 1.06; letter-spacing: -0.02em; }
+  .lp-h2 { font-size: clamp(1.9rem, 3.7vw, 2.8rem); line-height: 1.1; letter-spacing: -0.015em; }
   .lp-h3 { font-weight: 600; font-size: 1.25rem; line-height: 1.25; letter-spacing: -0.012em; }
   .lp-section--navy .lp-h2, .lp-section--navy .lp-h3 { color: #FFFFFF; }
   .lp-lead { margin: 20px 0 0; font-size: clamp(1.06rem, 1.5vw, 1.2rem); line-height: 1.55; color: var(--lp-ink-2); text-wrap: pretty; }
@@ -87,7 +94,7 @@
   .lp-p { margin: 0; color: var(--lp-ink-2); text-wrap: pretty; }
   .lp-eyebrow { display: block; margin: 0 0 14px; font-size: 0.9rem; font-weight: 600; color: var(--lp-blue); }
   .lp-section--warm .lp-eyebrow { color: var(--lp-warm-ink); }
-  .lp-section--navy .lp-eyebrow { color: #FFB995; }
+  .lp-section--navy .lp-eyebrow { color: var(--lp-warm-light); }
   .lp-num { font-variant-numeric: tabular-nums; }
   /* La palabra que importa del título: una raya cálida debajo, sin cambiarle el color al texto. */
   .lp-mark-word { text-decoration: underline; text-decoration-color: var(--lp-warm); text-decoration-thickness: 0.11em; text-underline-offset: 0.14em; text-decoration-skip-ink: none; white-space: nowrap; }
@@ -103,7 +110,7 @@
   .lp .lp-btn-secondary:hover { border-color: var(--lp-ink); }
   /* Sobre azul noche el botón principal pasa a cálido con texto oscuro: es lo único que resalta ahí. */
   .lp .lp-btn-warm { background: var(--lp-warm); color: var(--lp-navy); }
-  .lp .lp-btn-warm:hover { background: #F58556; }
+  .lp .lp-btn-warm:hover { background: var(--lp-warm-hover); }
   .lp .lp-btn-ghost-light { border-color: var(--lp-navy-line); color: #FFFFFF; }
   .lp .lp-btn-ghost-light:hover { border-color: #FFFFFF; }
   .lp-btn-sm { min-height: 40px; padding: 0 16px; font-size: 0.94rem; }
@@ -114,15 +121,16 @@
 
   /* ── Marca y barra superior ─────────────────────────────────────────────── */
 
-  .lp-brand { display: inline-flex; align-items: center; gap: 10px; font-family: var(--lp-font-display); font-weight: 700; font-size: 1.22rem; letter-spacing: -0.02em; color: var(--lp-ink); }
-  .lp-brand-mark { width: 30px; height: 30px; flex: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; padding: 7px; border-radius: 8px; background: var(--lp-ink); }
-  .lp-brand-mark > span { border-radius: 1.5px; background: #FFFFFF; }
-  .lp-brand-mark > span:nth-child(2) { background: #5B82F5; }
-  .lp-brand-mark > span:nth-child(3) { background: #2FB37C; }
-  .lp-brand-mark > span:nth-child(4) { background: var(--lp-warm); }
-  .lp .lp-footer .lp-brand { color: #FFFFFF; }
-  .lp-footer .lp-brand-mark { background: #FFFFFF; }
-  .lp-footer .lp-brand-mark > span:nth-child(1) { background: var(--lp-navy); }
+  .lp-brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--lp-font-brand); font-weight: 400; font-size: 1.6rem; line-height: 1; letter-spacing: -0.01em; color: var(--lp-ink); }
+  /* La campana de servicio: cúpula y bandeja en el color del texto, perilla y brillo en latón. */
+  .lp-brand-mark { width: 34px; height: 34px; flex: none; }
+  .lp-brand-mark .ennea-dome { fill: currentColor; }
+  .lp-brand-mark .ennea-knob { fill: var(--lp-warm); }
+  .lp-brand-mark .ennea-shine { fill: none; stroke: var(--lp-warm); }
+  .lp .lp-footer .lp-brand { color: #F6F1E6; }
+  .lp-footer .lp-brand-mark .ennea-dome { fill: var(--lp-warm); }
+  .lp-footer .lp-brand-mark .ennea-knob { fill: #F6F1E6; }
+  .lp-footer .lp-brand-mark .ennea-shine { stroke: var(--lp-navy); }
 
   .lp-nav { position: fixed; inset: 0 0 auto 0; z-index: 40; border-bottom: 1px solid transparent; transition: background-color 0.2s, border-color 0.2s; }
   .lp-nav[data-scrolled="true"], .lp-nav[data-open="true"] { background: #FFFFFF; border-bottom-color: var(--lp-line); }

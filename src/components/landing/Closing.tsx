@@ -4,7 +4,7 @@ import { Brand, DemoButton, WA_DEMO, WhatsAppIcon, waDisplayNumber } from "./sha
 const PREGUNTAS = [
   {
     q: "¿Tengo que comprar equipo?",
-    a: "Para empezar, no. VendeFácil funciona en el navegador del celular, la tablet o la computadora que ya tenés. Si querés imprimir tiquetes y comandas hace falta una impresora térmica y una computadora en el local, y te ayudamos a dejarla funcionando.",
+    a: "Para empezar, no. Ennea funciona en el navegador del celular, la tablet o la computadora que ya tenés. Si querés imprimir tiquetes y comandas hace falta una impresora térmica y una computadora en el local, y te ayudamos a dejarla funcionando.",
   },
   {
     q: "¿En cuánto tiempo puedo empezar?",
@@ -36,7 +36,7 @@ const PREGUNTAS = [
   },
   {
     q: "¿Emite factura electrónica?",
-    a: "Todavía no. VendeFácil lleva tu operación (órdenes, caja, inventario y números) e imprime el tiquete de la venta. La factura electrónica de Hacienda la seguís emitiendo con el sistema que ya usás.",
+    a: "Todavía no. Ennea lleva tu operación (órdenes, caja, inventario y números) e imprime el tiquete de la venta. La factura electrónica de Hacienda la seguís emitiendo con el sistema que ya usás.",
   },
   {
     q: "¿Qué pasa con mis datos si cancelo?",
@@ -73,7 +73,7 @@ export function FinalCta() {
       <div className="lp-wrap lp-final" data-reveal>
         <div>
           <h2 id="lp-cierre" className="lp-h2">Este mes puede cerrar como lo planeaste.</h2>
-          <p className="lp-lead">Escribinos y te mostramos VendeFácil funcionando con el menú de un negocio como el tuyo.</p>
+          <p className="lp-lead">Escribinos y te mostramos Ennea funcionando con el menú de un negocio como el tuyo.</p>
         </div>
         <div className="lp-final-actions">
           <DemoButton variant="warm" />
@@ -102,7 +102,7 @@ export function LandingFooter() {
           </nav>
         </div>
         <div className="lp-footer-base">
-          <span>© {new Date().getFullYear()} VendeFácil</span>
+          <span>© {new Date().getFullYear()} Ennea</span>
           <span>Hecho en Costa Rica</span>
         </div>
       </div>

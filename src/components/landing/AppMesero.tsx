@@ -49,7 +49,7 @@ export default function AppMesero() {
           <span className="lp-eyebrow">App para meseros · Plan Premium</span>
           <h2 id="lp-app" className="lp-h2">Tus meseros toman la orden desde el teléfono.</h2>
           <p className="lp-lead">
-            Con la app de VendeFácil cada mesero ve el salón en vivo, toma la orden en la mesa y la manda directo a
+            Con la app de Ennea cada mesero ve el salón en vivo, toma la orden en la mesa y la manda directo a
             cocina y barra. Sin papelitos y sin carreras.
           </p>
           <ul className="lp-points">

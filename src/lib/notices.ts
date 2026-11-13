@@ -1,5 +1,5 @@
 /**
- * Avisos de VendeFácil a los negocios: los escribe el superadmin y aparecen dentro del panel de cada
+ * Avisos de Ennea a los negocios: los escribe el superadmin y aparecen dentro del panel de cada
  * negocio. Tipos y textos compartidos entre el servidor y las pantallas.
  */
 

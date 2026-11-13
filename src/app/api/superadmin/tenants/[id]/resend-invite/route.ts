@@ -42,7 +42,7 @@ export async function POST(
 
   const result = await sendMail({
     to: user.email,
-    subject: "Tus accesos a VendeFácil (reenvío)",
+    subject: "Tus accesos a Ennea (reenvío)",
     html: welcomeEmailHtml({ name: tenant.name, slug: tenant.slug, email: user.email, tempPassword }),
   });
 
