@@ -5,8 +5,8 @@ import { Payment } from "@/models/Payment";
 import { Tenant } from "@/models/Tenant";
 import { getSuperadminSession } from "@/lib/auth";
 import { ensureInvoice, generateMonth, getBillingSettings } from "@/server/services/billing";
-import { REVIEW_QUEUE_FILTER, reviewQueueCount } from "@/server/services/mensualidad";
-import { crDay } from "@/lib/billing";
+import { REVIEW_QUEUE_FILTER, periodOfDate, reviewQueueCount } from "@/server/services/mensualidad";
+import { crDay, nextPeriod } from "@/lib/billing";
 
 export async function GET(request: NextRequest) {
   const session = await getSuperadminSession(request);
@@ -70,10 +70,20 @@ export async function POST(request: NextRequest) {
   if (!body.tenantId || !mongoose.isValidObjectId(body.tenantId)) {
     return NextResponse.json({ error: "tenantId, periodYear, periodMonth requeridos" }, { status: 400 });
   }
-  const tenant = await Tenant.findById(body.tenantId).select("_id slug name email plan status suspendedReason billing").lean();
+  const tenant = await Tenant.findById(body.tenantId).select("_id slug name email plan status suspendedReason billing createdAt").lean() as { createdAt?: Date } | null;
   if (!tenant) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
 
-  await ensureInvoice(tenant as never, year, month, await getBillingSettings());
+  // Solo meses en que el negocio ya existía, y a lo sumo el que viene.
+  const period = year * 100 + month;
+  const next = nextPeriod(now.y, now.m);
+  if (tenant.createdAt && period < periodOfDate(tenant.createdAt)) {
+    return NextResponse.json({ error: "Ese mes es anterior a la creación del negocio" }, { status: 400 });
+  }
+  if (period > next.y * 100 + next.m) {
+    return NextResponse.json({ error: "Solo se puede crear hasta la mensualidad del mes que viene" }, { status: 400 });
+  }
+
+  const { created } = await ensureInvoice(tenant as never, year, month, await getBillingSettings());
   const payment = await Payment.findOne({ tenantId: body.tenantId, periodYear: year, periodMonth: month }).lean();
-  return NextResponse.json({ payment }, { status: 201 });
+  return NextResponse.json({ payment, created }, { status: created ? 201 : 200 });
 }
