@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, Store } from "lucide-react";
 import { LOGIN_NOTICES_FLAG } from "@/lib/notices";
 
@@ -27,6 +26,21 @@ export default function LoginForm({
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [otherSession, setOtherSession] = useState<{ name: string; slug: string } | null>(null);
+
+  // La sesión es una sola por navegador: si está abierta la de otro negocio, se avisa antes de
+  // ingresar acá (al ingresar, esa se cierra). El encabezado va explícito porque este efecto corre
+  // antes de que el panel instale el suyo.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/admin/auth/me", { headers: { "x-ennea-tenant": slug } })
+      .then(async (res) => {
+        const data = await res.json().catch(() => null) as { code?: string; other?: { name: string; slug: string } } | null;
+        if (alive && res.status === 401 && data?.code === "OTHER_TENANT" && data.other) setOtherSession(data.other);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [slug]);
 
   const isStaff = form.login.trim() !== "" && !form.login.includes("@");
 
@@ -118,6 +132,17 @@ export default function LoginForm({
             Acceso al panel
           </p>
         </div>
+
+        {otherSession && (
+          <div role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p>
+              Tenés abierta la sesión de <strong>{otherSession.name}</strong> en este navegador. Si ingresás acá, esa sesión se cierra.
+            </p>
+            <a href={`/${otherSession.slug}/admin`} className="mt-1 inline-block font-semibold underline underline-offset-2">
+              Volver a {otherSession.name}
+            </a>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
