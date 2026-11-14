@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, Ban, CheckCircle2, Clock, CreditCard, ExternalLink, FileText, Gift, Hourglass, ImageIcon, Loader2,
-  MessageCircle, Trash2, Upload, type LucideIcon,
+  AlertTriangle, Ban, Check, CheckCircle2, Clock, Copy, CreditCard, ExternalLink, FileText, Gift, Hourglass, ImageIcon,
+  Landmark, Loader2, MessageCircle, Smartphone, Trash2, Upload, Wallet, type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ProofUploadDialog, { type UploadTarget } from "@/components/admin/mensualidad/ProofUploadDialog";
@@ -132,7 +132,7 @@ export default function MensualidadPage() {
   const openUpload = (m: Month) => { setNotice(""); setUploadFor({ id: m.id, period: m.period, amount: m.amount }); };
 
   return (
-    <div className="p-4 md:p-8 space-y-6 max-w-3xl">
+    <div className="p-4 md:p-8 space-y-6 max-w-6xl">
       <div>
         <h1 className="font-brand text-2xl md:text-3xl font-bold text-brand-dark">Mensualidad</h1>
         <p className="text-brand-dark/50 text-sm mt-1">Lo que pagás por Ennea cada mes, tus comprobantes y el historial de pagos</p>
@@ -146,27 +146,33 @@ export default function MensualidadPage() {
       )}
 
       {view && (
-        <>
-          {focus ? (
-            <FocusCard month={focus} onUpload={() => openUpload(focus)} onRemove={(p) => removeProof(focus, p)} />
-          ) : (
-            <div className="bg-white rounded-2xl card-shadow p-6 text-sm text-brand-dark/60">
-              Todavía no hay mensualidades para mostrar.
-            </div>
-          )}
-
-          <div className="grid gap-6 md:grid-cols-2">
-            <PlanCard view={view} />
-            <HowToPayCard payment={view.payment} />
+        // En pantallas anchas: el mes y el historial a la izquierda; cómo pagar y el plan a la derecha.
+        // En el teléfono quedan en este orden: mes, cómo pagar, plan, historial.
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] xl:grid-rows-[auto_1fr] xl:items-start">
+          <div className="xl:col-start-1 xl:row-start-1">
+            {focus ? (
+              <FocusCard month={focus} onUpload={() => openUpload(focus)} onRemove={(p) => removeProof(focus, p)} />
+            ) : (
+              <div className="bg-white rounded-2xl card-shadow p-6 text-sm text-brand-dark/60">
+                Todavía no hay mensualidades para mostrar.
+              </div>
+            )}
           </div>
 
-          <HistoryCard
-            months={view.months}
-            focusId={view.focusId}
-            onUpload={openUpload}
-            onRemove={removeProof}
-          />
-        </>
+          <aside className="space-y-6 xl:col-start-2 xl:row-start-1 xl:row-span-2" aria-label="Cómo pagar y tu plan">
+            <HowToPayCard payment={view.payment} />
+            <PlanCard view={view} />
+          </aside>
+
+          <div className="xl:col-start-1 xl:row-start-2">
+            <HistoryCard
+              months={view.months}
+              focusId={view.focusId}
+              onUpload={openUpload}
+              onRemove={removeProof}
+            />
+          </div>
+        </div>
       )}
 
       {uploadFor && view && (
@@ -352,24 +358,42 @@ function PlanCard({ view }: { view: View }) {
   );
 }
 
+/** El IBAN en grupos de 4 para leerlo (se copia sin espacios). */
+const formatIban = (iban: string) => iban.replace(/\s+/g, "").toUpperCase().replace(/(.{4})(?=.)/g, "$1 ");
+
+/** El número de SINPE como lo piden las apps del banco: 8 dígitos, sin +506 ni guiones. */
+function sinpeDigits(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  return digits.length === 11 && digits.startsWith("506") ? digits.slice(3) : digits;
+}
+
 function HowToPayCard({ payment }: { payment: View["payment"] }) {
   const hasData = Boolean(payment.sinpeNumber || payment.iban || payment.notes);
   const wa = `https://wa.me/${payment.whatsapp}?text=${encodeURIComponent("Hola, tengo una consulta sobre mi mensualidad de Ennea.")}`;
   return (
-    <section className="bg-white rounded-2xl card-shadow p-6" aria-labelledby="como-pagar">
-      <h2 id="como-pagar" className="font-semibold text-brand-dark mb-4">Cómo pagar</h2>
+    <section className="@container bg-white rounded-2xl card-shadow p-6" aria-labelledby="como-pagar">
+      <div className="flex items-center gap-2">
+        <Wallet className="w-4 h-4 text-brand-pink" aria-hidden />
+        <h2 id="como-pagar" className="font-semibold text-brand-dark">Cómo pagar</h2>
+      </div>
       {hasData ? (
-        <div className="space-y-2 text-sm text-brand-dark/80">
-          {payment.sinpeNumber && (
-            <p>SINPE Móvil: <strong className="text-brand-dark tabular-nums">{payment.sinpeNumber}</strong>{payment.sinpeName && ` (${payment.sinpeName})`}</p>
-          )}
-          {payment.iban && (
-            <p className="break-all">IBAN: <strong className="text-brand-dark">{payment.iban}</strong>{payment.ibanName && ` (${payment.ibanName})`}</p>
-          )}
-          {payment.notes && <p className="whitespace-pre-line">{payment.notes}</p>}
-        </div>
+        <>
+          <p className="mt-1 mb-4 text-sm text-brand-dark/55">Pagá por cualquiera de estas opciones y después subí el comprobante en esta página.</p>
+          {/* Con la tarjeta a todo lo ancho, las dos formas de pago van una al lado de la otra. */}
+          <div className="grid gap-3 @xl:grid-cols-2">
+            {payment.sinpeNumber && (
+              <PayMethod icon={Smartphone} title="SINPE Móvil" value={payment.sinpeNumber} copy={sinpeDigits(payment.sinpeNumber)} holder={payment.sinpeName} />
+            )}
+            {payment.iban && (
+              <PayMethod icon={Landmark} title="Transferencia (IBAN)" value={formatIban(payment.iban)} copy={payment.iban.replace(/\s+/g, "").toUpperCase()} holder={payment.ibanName} />
+            )}
+            {payment.notes && (
+              <p className="@xl:col-span-2 rounded-xl bg-brand-muted/40 px-4 py-3 text-sm text-brand-dark/80 whitespace-pre-line break-words">{payment.notes}</p>
+            )}
+          </div>
+        </>
       ) : (
-        <p className="text-sm text-brand-dark/70">Escribinos por WhatsApp y te pasamos los datos para pagar.</p>
+        <p className="mt-3 text-sm text-brand-dark/70">Escribinos por WhatsApp y te pasamos los datos para pagar.</p>
       )}
       <a
         href={wa} target="_blank" rel="noopener noreferrer"
@@ -378,6 +402,49 @@ function HowToPayCard({ payment }: { payment: View["payment"] }) {
         <MessageCircle className="w-4 h-4" aria-hidden /> {hasData ? "¿Dudas? Escribinos" : "Pedir los datos por WhatsApp"}
       </a>
     </section>
+  );
+}
+
+function PayMethod({ icon: Icon, title, value, copy, holder }: { icon: LucideIcon; title: string; value: string; copy: string; holder: string }) {
+  return (
+    <div className="rounded-xl border border-brand-muted px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-dark/45">
+          <Icon className="w-3.5 h-3.5" aria-hidden /> {title}
+        </p>
+        <CopyButton value={copy} label={`Copiar ${title}`} />
+      </div>
+      <p className="mt-1 text-base md:text-lg font-bold text-brand-dark tabular-nums break-all">{value}</p>
+      {holder && <p className="text-sm text-brand-dark/60">{holder}</p>}
+    </div>
+  );
+}
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [state, setState] = useState<"idle" | "ok" | "error">("idle");
+  useEffect(() => {
+    if (state === "idle") return;
+    const t = setTimeout(() => setState("idle"), 2000);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setState("ok");
+    } catch {
+      setState("error");
+    }
+  };
+
+  return (
+    <button
+      type="button" onClick={() => void copy()} aria-label={label}
+      className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-dark/60 hover:bg-brand-muted/50 hover:text-brand-dark cursor-pointer"
+    >
+      {state === "ok" ? <Check className="w-3.5 h-3.5 text-emerald-600" aria-hidden /> : <Copy className="w-3.5 h-3.5" aria-hidden />}
+      <span aria-live="polite">{state === "ok" ? "Copiado" : state === "error" ? "No se pudo copiar" : "Copiar"}</span>
+    </button>
   );
 }
 
