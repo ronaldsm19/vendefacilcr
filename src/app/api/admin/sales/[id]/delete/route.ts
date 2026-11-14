@@ -9,6 +9,7 @@ import { getSession, requireFeature } from "@/lib/auth";
 import { syncTableWithComandas } from "@/lib/tableSync";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { verifyAuthorizationPassword } from "@/server/services/authorizationPassword";
+import { uncountInvoiceForCustomer } from "@/server/services/saleInvoice";
 
 interface SaleLean {
   _id: string;
@@ -19,6 +20,7 @@ interface SaleLean {
   comandaIds: string[];
   comandaClaims: ISaleComandaClaim[];
   items: ISaleItem[];
+  customerId?: string;
 }
 
 export async function POST(
@@ -168,6 +170,12 @@ export async function POST(
 
   // (4) Borrar la venta.
   await Sale.deleteOne({ _id: id, tenantId: session.tenantId });
+
+  // (5) La factura de la venta deja de contar para su cliente. El comprobante que ya se le mandó
+  // no se puede "desenviar": la pantalla lo avisa antes de borrar.
+  if (sale.customerId) {
+    await uncountInvoiceForCustomer(session.tenantId, sale.customerId);
+  }
 
   AccessLog.create({
     tenantId:   session.tenantId,

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Sale } from "@/models/Sale";
 import { Product } from "@/models/Product";
@@ -11,6 +11,7 @@ import { syncTableWithComandas } from "@/lib/tableSync";
 import { computeSaleTotals, isOrderType, readAppliedCharges, readPosCharges, subtotalOf } from "@/lib/pricing";
 import { checkCatalogPrices, checkComandaLines, parseSaleItems, type SaleItemRecord } from "@/server/services/saleItems";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { countInvoiceForCustomer, invoiceSnapshotFor, sendSaleInvoice, type InvoiceSnapshot } from "@/server/services/saleInvoice";
 import mongoose from "mongoose";
 
 export async function GET(request: NextRequest) {
@@ -81,6 +82,21 @@ export async function POST(request: NextRequest) {
   const parsedItems = parseSaleItems(items);
   if (!parsedItems) {
     return NextResponse.json({ error: "Ítems inválidos" }, { status: 400 });
+  }
+
+  // Factura: cliente del registro al que se le manda el comprobante por correo después del cobro.
+  // Se valida antes de tocar comandas o stock, para no tener que deshacer nada si no sirve.
+  let invoice: InvoiceSnapshot | null = null;
+  if (body.invoiceCustomerId) {
+    const deniedClientes = await requirePlan(session, "clientes");
+    if (deniedClientes) return deniedClientes;
+    invoice = await invoiceSnapshotFor(session.tenantId, String(body.invoiceCustomerId));
+    if (!invoice) {
+      return NextResponse.json(
+        { error: "El cliente para la factura ya no existe. Elegilo de nuevo.", code: "INVOICE_CUSTOMER_NOT_FOUND" },
+        { status: 400 },
+      );
+    }
   }
 
   const selections: ComandaSelectionInput[] = Array.isArray(comandaSelections) ? comandaSelections : [];
@@ -250,7 +266,8 @@ export async function POST(request: NextRequest) {
       ticketNumber,
       cashUserId:   session.userId,
       cashUserName: session.name,
-      customerName: customerName ?? "",
+      // Sin nombre escrito en la caja, la venta queda a nombre del cliente de la factura.
+      customerName: (typeof customerName === "string" && customerName.trim()) ? customerName : (invoice?.customerName ?? ""),
       tableNumber:  tableNumber  ?? "",
       orderType,
       pickupTime:      pickupTime      ?? "",
@@ -274,6 +291,7 @@ export async function POST(request: NextRequest) {
       paymentMethod,
       mixedPayment: mixedPayment ?? { efectivo: 0, sinpe: 0, tarjeta: 0 },
       notes: notes ?? "",
+      ...(invoice ? { customerId: invoice.customerId, invoice: invoice.invoice } : {}),
       saleDate: new Date(),
     });
   } catch (err) {
@@ -344,6 +362,19 @@ export async function POST(request: NextRequest) {
       console.error("[sales POST] Error cerrando comandas/mesa:", err);
       warning = "La venta se registró, pero no se pudo actualizar el estado de las comandas o la mesa.";
     }
+  }
+
+  // El comprobante sale después de responder: armar el PDF y hablar con el SMTP no debe atrasar
+  // la caja, y si falla la venta queda igual (con el envío "fallido" para reenviarlo).
+  if (invoice) {
+    const tenantId = session.tenantId;
+    const saleId = String(sale._id);
+    const customerId = invoice.customerId;
+    const at = sale.saleDate as Date;
+    after(async () => {
+      await countInvoiceForCustomer(tenantId, customerId, at);
+      await sendSaleInvoice(tenantId, saleId);
+    });
   }
 
   return NextResponse.json({ sale, comandas: comandasOut, table: tableResult, ...(warning ? { warning } : {}) }, { status: 201 });

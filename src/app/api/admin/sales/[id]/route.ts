@@ -56,8 +56,9 @@ export async function PUT(
   // cliente o pago, pero no cambia los cobros con los que se hizo la venta (ni se pueden cambiar
   // mandándolos en el cuerpo).
   const existing = await Sale.findOne({ _id: id, tenantId: session.tenantId })
-    .select("items orderType ivaEnabled ivaRate serviceEnabled serviceRate tipEnabled tipAmount deliveryFee")
+    .select("items orderType ivaEnabled ivaRate serviceEnabled serviceRate tipEnabled tipAmount deliveryFee invoice.kind invoice.sendCount")
     .lean() as {
+      invoice?: { kind?: string; sendCount?: number };
       items?: { productId: string; unitPrice: number; quantity: number; extras?: unknown }[];
       orderType?: string;
       ivaEnabled?: boolean; ivaRate?: number;
@@ -109,6 +110,9 @@ export async function PUT(
         notes:         notes         ?? "",
         subtotal:      totals.subtotal,
         total:         totals.total,
+        // Si ya se le mandó el comprobante al cliente, el que tiene dejó de coincidir: se avisa en
+        // Pedidos y ventas para reenviarlo. Se apaga solo al reenviar.
+        ...(existing.invoice?.kind && (existing.invoice.sendCount ?? 0) > 0 ? { "invoice.outdated": true } : {}),
       },
     },
     { returnDocument: "after" }

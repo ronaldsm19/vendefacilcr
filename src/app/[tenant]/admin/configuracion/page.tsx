@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import {
   Upload, X, Loader2, Check, Plus, Trash2, Phone, Palette, GripVertical, ChevronUp, ChevronDown, AlertCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TicketPreview from "@/components/admin/TicketPreview";
@@ -16,6 +17,7 @@ import { useAdminSession } from "@/components/admin/SessionContext";
 import { planAllows } from "@/lib/permissions";
 import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } from "@/lib/comandaConfig";
 import { DEFAULT_POS_CHARGES, readPosCharges, type PosCharges } from "@/lib/pricing";
+import { isSimplifiedRegime } from "@/lib/saleReceipt";
 import {
   EMPTY_PRODUCTS_SECTION, PRODUCTS_SECTION_FALLBACK, PRODUCTS_SECTION_LIMITS, productsSectionForDisplay,
   readProductsSectionText, type ProductsSectionText,
@@ -2082,6 +2084,9 @@ export default function ConfiguracionPage() {
                 onChange={(e) => setTicketConfig((prev) => ({ ...prev, email: e.target.value }))}
                 className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
               />
+              <p className="text-xs text-brand-dark/40 mt-1">
+                Si un cliente responde el correo de su factura, la respuesta llega acá.
+              </p>
             </div>
 
             <div>
@@ -2115,6 +2120,17 @@ export default function ConfiguracionPage() {
                 onChange={(e) => setTicketConfig((prev) => ({ ...prev, taxRegime: e.target.value }))}
                 className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
               />
+              {/* En el simplificado el IVA va incluido en el precio y no se le cobra aparte al cliente;
+                  solo se avisa, porque el régimen es texto libre y la decisión es del negocio. */}
+              {isSimplifiedRegime(ticketConfig.taxRegime) && posCharges.ivaEnabled && (
+                <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
+                  <span>
+                    En el régimen simplificado no se cobra IVA aparte: va incluido en el precio. Tenés encendido
+                    &quot;Cobrar impuesto&quot; en la caja; revisalo con tu contador.
+                  </span>
+                </p>
+              )}
             </div>
 
             <div>

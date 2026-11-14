@@ -4,6 +4,7 @@ import { Order, type IOrder } from "@/models/Order";
 import { Sale, type ISale } from "@/models/Sale";
 import { getSession, requireFeature } from "@/lib/auth";
 import { startOfDayCR, endOfDayExclusiveCR } from "@/lib/crDate";
+import { summarizeInvoice } from "@/lib/saleReceipt";
 
 // El rango por defecto (cuando la pantalla no manda from/to) se calcula en hora
 // de Costa Rica. Con los getters locales de Date el servidor, que corre en UTC,
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
       cashierName:   s.cashUserName ?? "",
       notes:         s.notes ?? "",
       itemCount:     s.items?.length ?? 0,
+      invoice:       summarizeInvoice(s.invoice),
     })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 

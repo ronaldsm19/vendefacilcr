@@ -25,6 +25,7 @@ import {
   Wallet,
   Lock,
   CreditCard,
+  Contact,
 } from "lucide-react";
 import { can, planNeededFor, seesLockedSections, ROLE_LABELS, type Role, type Feature } from "@/lib/permissions";
 import { PLAN_KEYS, PLAN_LABELS } from "@/lib/billing";
@@ -41,6 +42,7 @@ function buildNavItems(base: string): { href: string; label: string; icon: typeo
     { href: `${base}/materiales`,       label: "Materiales",    icon: FlaskConical,    feature: "materiales" },
     { href: `${base}/recetas`,          label: "Recetas",       icon: BookOpen,        feature: "recetas" },
     { href: `${base}/pedidos`,          label: "Pedidos y ventas", icon: ShoppingBag,  feature: "pedidos" },
+    { href: `${base}/clientes`,         label: "Clientes",       icon: Contact,         feature: "clientes" },
     { href: `${base}/gastos`,           label: "Gastos",         icon: Receipt,         feature: "gastos" },
     { href: `${base}/finanzas`,         label: "Finanzas",       icon: TrendingUp,      feature: "finanzas" },
     { href: `${base}/pos`,              label: "Punto de venta", icon: MonitorCheck,    feature: "pos" },
