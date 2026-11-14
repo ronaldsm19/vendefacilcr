@@ -51,7 +51,13 @@ interface PaymentLean {
   status: string;
   dueDate: Date;
   reminders?: { beforeAt?: Date | null; dueAt?: Date | null; suspendedAt?: Date | null };
+  /** Comprobantes que subió el dueño desde Mensualidad (las facturas viejas no los tienen). */
+  proofs?: { status: string }[];
+  review?: { status?: string };
 }
+
+/** El dueño ya subió un comprobante y falta que lo revisemos: la demora es nuestra, no suya. */
+const inReview = (inv: Pick<PaymentLean, "review">) => inv.review?.status === "submitted";
 
 const TENANT_FIELDS = "_id slug name email plan status suspendedReason billing";
 
@@ -372,6 +378,8 @@ export async function runBillingCycle(
   for (const inv of [...open, ...virtual]) {
     const tenant = byId.get(String(inv.tenantId));
     if (!tenant) continue;
+    // Con un comprobante esperando revisión no se recuerda, no se atrasa ni se suspende.
+    if (inReview(inv)) continue;
     const invDue = periodDueDate(inv.periodYear, inv.periodMonth, BILLING_DUE_DAY);
     if (isFreeOn(resolveBilling(tenant.plan, billingOf(tenant), invDue), invDue)) continue;
     const reminders = inv.reminders ?? {};
@@ -487,11 +495,15 @@ function buildUpcoming(tenants: TenantLean[], settings: Settings, y: number, m: 
 /**
  * Registra el pago de una factura. Si el negocio estaba suspendido por falta de pago y ya no le queda
  * nada vencido más allá de la gracia (en los meses que maneja el cobro automático), se reactiva.
+ *
+ * Si el dueño había subido comprobantes que esperaban revisión, quedan aprobados: registrar el pago
+ * a mano o desde la revisión es lo mismo.
  */
 export async function markPaid(
   paymentId: string,
   raw: { method?: unknown; reference?: unknown; paidAt?: unknown; notes?: unknown },
-): Promise<{ payment: unknown; reactivated: boolean }> {
+  reviewedBy = "",
+): Promise<{ payment: unknown; reactivated: boolean; approvedProofs: boolean }> {
   if (!mongoose.isValidObjectId(paymentId)) throw new ServiceError(404, "Factura no encontrada");
   await connectToDatabase();
   const payment = await Payment.findById(paymentId).lean() as PaymentLean | null;
@@ -509,7 +521,19 @@ export async function markPaid(
   }
   const set: Record<string, unknown> = { status: "paid", paidAt, method, reference: text(raw.reference, 80, "Referencia") };
   if (raw.notes !== undefined) set.notes = text(raw.notes, 300, "Notas");
-  const updated = await Payment.findByIdAndUpdate(paymentId, { $set: set }, { returnDocument: "after" }).lean();
+  const approvedProofs = (payment.proofs ?? []).some((p) => p.status === "submitted");
+  if (approvedProofs) {
+    Object.assign(set, {
+      "proofs.$[p].status": "approved",
+      "review.status": "approved", "review.reviewedAt": new Date(), "review.reviewedBy": reviewedBy,
+      "review.reason": "", "review.ownerSeenAt": null,
+    });
+  }
+  const updated = await Payment.findByIdAndUpdate(
+    paymentId,
+    { $set: set },
+    { returnDocument: "after", ...(approvedProofs ? { arrayFilters: [{ "p.status": "submitted" }] } : {}) },
+  ).lean();
 
   let reactivated = false;
   const tenant = await Tenant.findById(payment.tenantId).select("status suspendedReason").lean() as { status: string; suspendedReason?: string } | null;
@@ -536,7 +560,7 @@ export async function markPaid(
       if (reactivated) forgetTenantStatus(String(payment.tenantId));
     }
   }
-  return { payment: updated, reactivated };
+  return { payment: updated, reactivated, approvedProofs };
 }
 
 // ── Cobro de un negocio ─────────────────────────────────────────────────────
@@ -700,9 +724,11 @@ export async function ownerBillingView(tenantId: string, now = new Date()) {
   if (settings.enabled && settings.startPeriod && !price.free) {
     const sy = Math.floor(settings.startPeriod / 100);
     const sm = settings.startPeriod % 100;
+    // Un mes con el comprobante en revisión no se le recuerda: ya pagó, falta que lo veamos.
     const open = await Payment.findOne({
       tenantId: tenant._id,
       status: { $in: ["pending", "late"] },
+      "review.status": { $ne: "submitted" },
       $or: [{ periodYear: { $gt: sy } }, { periodYear: sy, periodMonth: { $gte: sm } }],
     }).sort({ dueDate: 1 }).lean() as PaymentLean | null;
     if (open) {

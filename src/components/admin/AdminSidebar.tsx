@@ -24,6 +24,7 @@ import {
   Clock,
   Wallet,
   Lock,
+  CreditCard,
 } from "lucide-react";
 import { can, planNeededFor, seesLockedSections, ROLE_LABELS, type Role, type Feature } from "@/lib/permissions";
 import { PLAN_KEYS, PLAN_LABELS } from "@/lib/billing";
@@ -50,6 +51,7 @@ function buildNavItems(base: string): { href: string; label: string; icon: typeo
     { href: `${base}/comandas`,         label: "Comandas",       icon: ClipboardList,   feature: "comandas" },
     { href: `${base}/usuarios`,         label: "Usuarios",       icon: Users,           feature: "usuarios" },
     { href: `${base}/configuracion`,    label: "Configuración",  icon: Settings,        feature: "configuracion" },
+    { href: `${base}/mensualidad`,      label: "Mensualidad",    icon: CreditCard,      feature: "mensualidad" },
     { href: `${base}/perfil`,           label: "Perfil",         icon: UserCircle,      feature: "perfil" },
   ];
 }

@@ -5,6 +5,7 @@ import { TenantNotice, type ITenantNotice } from "@/models/TenantNotice";
 import { NoticeRead } from "@/models/NoticeRead";
 import { ServiceError } from "@/server/errors";
 import { ownerBillingView } from "@/server/services/billing";
+import { reviewNoticeFor } from "@/server/services/mensualidad";
 import { crMidnight } from "@/lib/billing";
 import { isNoticeKind, NOTICE_LIMITS, type NoticeRoles } from "@/lib/notices";
 import type { AdminPayload } from "@/lib/auth";
@@ -38,10 +39,11 @@ export async function noticesForSession(session: AdminPayload, now = new Date())
   if (!mongoose.isValidObjectId(session.tenantId)) throw new ServiceError(401, "No autorizado");
   await connectToDatabase();
 
-  const [notices, plan] = await Promise.all([
+  const [notices, plan, review] = await Promise.all([
     TenantNotice.find(visibleFilter(session, now)).sort({ createdAt: -1 }).limit(20).lean() as unknown as Promise<NoticeLean[]>,
     // Un problema con el cobro no puede dejar al panel sin los demás avisos.
     isOwner(session) ? ownerBillingView(session.tenantId, now).catch(() => null) : Promise.resolve(null),
+    isOwner(session) ? reviewNoticeFor(session.tenantId, now).catch(() => null) : Promise.resolve(null),
   ]);
   const reads = await NoticeRead.find({ noticeId: { $in: notices.map((n) => n._id) }, userId: session.userId })
     .select("noticeId").lean() as unknown as { noticeId: mongoose.Types.ObjectId }[];
@@ -55,6 +57,8 @@ export async function noticesForSession(session: AdminPayload, now = new Date())
       : null,
     /** Para los avisos de tipo cobro: lo que paga el negocio y cómo pagar. */
     plan: plan ? { planLabel: plan.planLabel, price: plan.price, payment: plan.payment } : null,
+    /** Resultado de la revisión de un comprobante que el dueño todavía no vio (solo el dueño). */
+    review,
     notices: notices.map((n) => ({
       id: String(n._id),
       kind: n.kind,
