@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { VF_LOGO_BASE64 } from "@/lib/vf-logo";
+import { ENNEA_EMAIL } from "@/lib/contacto";
 
 const LOGO_CID = "vflogo";
 
@@ -11,20 +12,40 @@ export function getBaseUrl(): string {
 // ── Transporter perezoso ──────────────────────────────────────────
 let transporter: nodemailer.Transporter | null = null;
 
+/**
+ * Una variable de entorno sin espacios ni saltos de línea de más: al pegar una clave en Vercel es
+ * fácil arrastrar uno, y con eso el servidor de correo rechaza la contraseña.
+ */
+const env = (name: string) => (process.env[name] ?? "").trim();
+
 function getTransporter(): nodemailer.Transporter | null {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
+  const host = env("SMTP_HOST");
+  const user = env("SMTP_USER");
+  const pass = env("SMTP_PASS");
+  if (!host || !user || !pass) return null;
+  const port = Number(env("SMTP_PORT") || 587);
 
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT ?? 587),
+      host,
+      port,
       // 465 es TLS directo; 587 (y los demás) negocian STARTTLS.
-      secure: Number(SMTP_PORT ?? 587) === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
+      secure: port === 465,
+      auth: { user, pass },
     });
   }
   return transporter;
+}
+
+/**
+ * El remitente: "Ennea <hola@enneacr.com>". SMTP_FROM es la dirección (con un servicio de envío y
+ * dominio propio, como Resend, el usuario SMTP es fijo y no sirve de remitente); sin ella, el usuario
+ * SMTP (Gmail). Si SMTP_FROM ya trae un nombre ("Ennea <...>"), se respeta tal cual.
+ */
+function senderAddress(): string | null {
+  const from = env("SMTP_FROM") || env("SMTP_USER");
+  if (from.includes("<")) return from;
+  return from.includes("@") ? `Ennea <${from}>` : null;
 }
 
 /**
@@ -50,12 +71,16 @@ export async function sendMail({
     console.warn("[email] SMTP no configurado (faltan SMTP_HOST/SMTP_USER/SMTP_PASS); correo no enviado:", subject);
     return { ok: false, error: "SMTP no configurado (faltan variables SMTP_*)" };
   }
+  const from = senderAddress();
+  if (!from) {
+    console.warn("[email] Falta SMTP_FROM (el usuario SMTP no es una dirección de correo); correo no enviado:", subject);
+    return { ok: false, error: "Falta SMTP_FROM: la dirección que envía los correos" };
+  }
   try {
-    // SMTP_FROM permite un remitente distinto del usuario SMTP: con un servicio de envío y dominio
-    // propio (el usuario suele ser fijo, tipo "resend") la dirección tiene que ser de ese dominio.
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER!;
     await tx.sendMail({
-      from: `Ennea <${from}>`,
+      from,
+      // enneacr.com no tiene buzón: si un negocio responde un aviso, la respuesta llega al correo de Ennea.
+      replyTo: env("SMTP_REPLY_TO") || ENNEA_EMAIL,
       to,
       subject,
       html,
