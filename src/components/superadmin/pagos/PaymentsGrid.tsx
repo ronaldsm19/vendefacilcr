@@ -13,6 +13,8 @@ interface Grid {
     name: string;
     slug: string;
     status: string;
+    /** Desde qué mes existe el negocio (aaaamm). */
+    since: number;
     cells: ({ id: string; status: OwnerStatus; amount: number } | null)[];
   }[];
 }
@@ -20,17 +22,27 @@ interface Grid {
 const LEGEND: OwnerStatus[] = ["verificado", "revision", "pendiente", "atrasada", "rechazado", "sin_costo", "anulada"];
 
 /**
- * Negocios por meses: de un vistazo, quién pagó cada mes. Cada celda abre la revisión de ese mes.
+ * Negocios por meses: de un vistazo, quién pagó cada mes. Cada celda abre la revisión de ese mes, y
+ * un mes sin factura (desde que existe el negocio) se puede crear desde su celda: sale con el cobro
+ * que tenga el negocio en su ficha, así que una cortesía que cubre ese mes la deja sin costo.
  * `reloadKey` cambia cuando se aprueba o rechaza algo, para volver a pedir la cuadrícula.
  */
 export default function PaymentsGrid({ onOpen, reloadKey, query }: { onOpen: (id: string) => void; reloadKey: number; query: string }) {
   const [grid, setGrid] = useState<Grid | null>(null);
   const [error, setError] = useState("");
+  const [bump, setBump] = useState(0);
+  const [creating, setCreating] = useState("");
+  const [cellError, setCellError] = useState("");
   const wrap = useRef<HTMLDivElement>(null);
+  const scrolled = useRef(false);
 
   // Los meses van del más viejo al más nuevo: arranca mostrando los últimos (el mes actual a la derecha).
+  // Solo la primera vez, para no mover la tabla cada vez que se crea un mes.
   useEffect(() => {
-    if (grid && wrap.current) wrap.current.scrollLeft = wrap.current.scrollWidth;
+    if (grid && wrap.current && !scrolled.current) {
+      wrap.current.scrollLeft = wrap.current.scrollWidth;
+      scrolled.current = true;
+    }
   }, [grid]);
 
   useEffect(() => {
@@ -43,7 +55,27 @@ export default function PaymentsGrid({ onOpen, reloadKey, query }: { onOpen: (id
       })
       .catch(() => alive && setError("Error de red"));
     return () => { alive = false; };
-  }, [reloadKey]);
+  }, [reloadKey, bump]);
+
+  async function createInvoice(row: Grid["rows"][number], period: Grid["periods"][number]) {
+    if (!confirm(`¿Crear la mensualidad de ${period.title} para ${row.name}?\n\nSe calcula con el cobro que tiene hoy en su ficha: si ese mes le queda dentro de una cortesía, se crea sin costo; si no, queda pendiente con el precio de su plan.`)) return;
+    setCreating(`${row.id}:${period.key}`);
+    setCellError("");
+    try {
+      const res = await fetch("/api/superadmin/pagos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId: row.id, year: Math.floor(period.key / 100), month: period.key % 100 }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) setBump((b) => b + 1);
+      else setCellError(d.error ?? "No se pudo crear la mensualidad");
+    } catch {
+      setCellError("Error de red: no se creó la mensualidad");
+    } finally {
+      setCreating("");
+    }
+  }
 
   if (error) return <p className="sa-alert sa-alert-danger" role="alert">{error}</p>;
   if (!grid) return <div className="sa-card sa-empty">Cargando...</div>;
@@ -53,6 +85,7 @@ export default function PaymentsGrid({ onOpen, reloadKey, query }: { onOpen: (id
 
   return (
     <section className="sa-card overflow-hidden" aria-label="Mensualidades por negocio y mes">
+      {cellError && <p className="sa-alert sa-alert-danger m-4" role="alert">{cellError}</p>}
       {rows.length === 0 ? (
         <div className="sa-empty">Ningún negocio coincide con la búsqueda.</div>
       ) : (
@@ -77,7 +110,24 @@ export default function PaymentsGrid({ onOpen, reloadKey, query }: { onOpen: (id
                   </th>
                   {r.cells.map((c, i) => {
                     const period = grid.periods[i];
-                    if (!c) return <td key={period.key} className="text-center sa-muted" aria-label={`${period.title}: sin factura`}>·</td>;
+                    if (!c) {
+                      if (period.key < r.since) return <td key={period.key} className="text-center" aria-label={`${period.title}: el negocio todavía no existía`} />;
+                      const busy = creating === `${r.id}:${period.key}`;
+                      return (
+                        <td key={period.key} className="text-center">
+                          <button
+                            type="button"
+                            onClick={() => void createInvoice(r, period)}
+                            disabled={Boolean(creating)}
+                            className="sa-muted cursor-pointer rounded px-2 py-0.5 hover:bg-[var(--sa-line)] disabled:cursor-wait"
+                            title={`${period.title}: sin factura. Tocá para crearla`}
+                            aria-label={`${r.name}, ${period.title}: sin factura. Crear la mensualidad`}
+                          >
+                            {busy ? "…" : "·"}
+                          </button>
+                        </td>
+                      );
+                    }
                     const s = PAYMENT_STATE[c.status];
                     const Icon = s.icon;
                     return (
@@ -106,7 +156,7 @@ export default function PaymentsGrid({ onOpen, reloadKey, query }: { onOpen: (id
           const Icon = s.icon;
           return <span key={k} className={s.className}><Icon aria-hidden />{s.label}</span>;
         })}
-        <span className="sa-muted text-xs">· sin factura</span>
+        <span className="sa-muted text-xs">· sin factura (tocalo para crearla)</span>
       </div>
     </section>
   );
