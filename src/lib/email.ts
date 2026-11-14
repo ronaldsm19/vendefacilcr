@@ -275,6 +275,36 @@ export function billingEmailHtml({
   return layout(title, body);
 }
 
+/**
+ * Aviso al superadmin: un negocio subió el comprobante de su mensualidad. No lleva la imagen (tiene
+ * datos bancarios y el enlace firmado vencería): se ve en Pagos, con sesión.
+ */
+export function proofSubmittedEmailHtml({
+  tenantName,
+  period,
+  rows,
+  reviewUrl,
+}: {
+  tenantName: string;
+  period: string;
+  /** Filas del detalle (texto plano: se escapan acá). */
+  rows: { label: string; value: string }[];
+  reviewUrl: string;
+}): string {
+  const detail = rows.map((r) => `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #E3E6EC;font-size:14px;color:#15223B99;">${escapeHtml(r.label)}</td>
+        <td style="padding:8px 0 8px 12px;border-bottom:1px solid #E3E6EC;font-size:14px;color:#15223B;text-align:right;">${escapeHtml(r.value)}</td>
+      </tr>`).join("");
+  const body = `
+    <p style="margin:0 0 16px;"><strong>${escapeHtml(tenantName)}</strong> subió el comprobante de su mensualidad de <strong>${escapeHtml(period)}</strong>.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${detail}</table>
+    <p style="margin:28px 0 0;text-align:center;">
+      <a href="${reviewUrl}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:${BRAND_GRADIENT};color:#ffffff;font-weight:700;text-decoration:none;">Revisar el comprobante</a>
+    </p>`;
+  return layout("Comprobante por revisar", body);
+}
+
 export function passwordChangedEmailHtml({ name }: { name: string }): string {
   const body = `
     <p style="margin:0 0 16px;">Hola <strong>${name}</strong>,</p>

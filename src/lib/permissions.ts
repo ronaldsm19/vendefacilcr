@@ -32,6 +32,7 @@ export type Feature =
   | "salon:editar"         // diseño, estados manuales, reservas
   | "configuracion"
   | "perfil"
+  | "mensualidad"          // lo que el negocio le paga a Ennea y sus comprobantes
   | "usuarios"
   | "comandas"             // reservado para Fase 3
   | "jornada"             // control de jornada laboral (marcaje + reportes)
@@ -59,6 +60,8 @@ export const PERMISSIONS: Record<Feature, Role[]> = {
   "salon:editar":     ["admin", "cajero"],
   configuracion:      ["admin"],
   perfil:             ["admin"],
+  // Lo que paga el negocio es cosa del dueño: el personal no lo ve.
+  mensualidad:        ["admin"],
   usuarios:           ["admin"],
   comandas:           ["admin", "cajero", "mesero"],
   jornada:            ["admin", "cajero"],
@@ -167,6 +170,7 @@ export const ROUTE_FEATURES: Record<string, Feature> = {
   salon:            "salon",
   configuracion:    "configuracion",
   perfil:           "perfil",
+  mensualidad:      "mensualidad",
   usuarios:         "usuarios",
   comandas:         "comandas",
   jornada:          "jornada",
@@ -192,6 +196,7 @@ export const SECTION_LABELS: Record<string, string> = {
   usuarios:         "Usuarios",
   configuracion:    "Configuración",
   perfil:           "Perfil",
+  mensualidad:      "Mensualidad",
 };
 
 /** Las secciones del menú que el plan del negocio no incluye, con el plan que piden. */

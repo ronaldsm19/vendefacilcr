@@ -215,6 +215,7 @@
   .sa .sa-ok-text { color: var(--sa-ok-ink); }
   .sa .sa-warn-text { color: var(--sa-warn-ink); }
   .sa .sa-danger-text { color: var(--sa-danger-ink); }
+  .sa .sa-primary-text { color: var(--sa-primary); }
 
   @media (prefers-reduced-motion: reduce) {
     .sa-btn { transition: none; }

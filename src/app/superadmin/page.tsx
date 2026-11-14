@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bug, Check, CircleAlert, Clock, Gift, Inbox, Lock, Tag, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Bug, Check, CircleAlert, Clock, Gift, Hourglass, Inbox, Lock, Tag, TriangleAlert, type LucideIcon } from "lucide-react";
 import { PLAN_LABELS, formatCRC, type PlanKey } from "@/lib/billing";
 import { suspensionReasonLabel } from "@/lib/suspension";
 
 type BillingState = "suspendido" | "gratis" | "atrasado" | "vence" | "aldia";
-type TodayKind = "late" | "dueSoon" | "suspended" | "request" | "errors";
+type TodayKind = "proof" | "late" | "dueSoon" | "suspended" | "request" | "errors";
 type Filter = "todos" | "vence" | "atrasado" | "suspendido";
 
 interface TenantRow {
@@ -30,7 +30,7 @@ interface TenantRow {
 interface DashboardData {
   period: string;
   month: { expected: number; paid: number; pending: number; late: number; withoutInvoiceCount: number; withoutInvoiceExpected: number };
-  attention: { dueSoon: number; late: number; suspended: number; pendingRequests: number; errors24h: number };
+  attention: { proofs: number; dueSoon: number; late: number; suspended: number; pendingRequests: number; errors24h: number };
   today: { kind: TodayKind; title: string; detail: string; href: string }[];
   tenants: TenantRow[];
   automation: { enabled: boolean; cronConfigured: boolean; lastRunAt: string | null; lastRunSummary: string; lastRunError: string };
@@ -45,6 +45,7 @@ const STATE_CHIP: Record<BillingState, { label: string; className: string; icon:
 };
 
 const TODAY_KIND: Record<TodayKind, { icon: LucideIcon; tone: string; action: string }> = {
+  proof: { icon: Hourglass, tone: "sa-primary-text", action: "Revisar" },
   late: { icon: CircleAlert, tone: "sa-danger-text", action: "Ver negocio" },
   dueSoon: { icon: Clock, tone: "sa-warn-text", action: "Ver negocio" },
   suspended: { icon: Lock, tone: "sa-muted", action: "Ver negocio" },
@@ -146,6 +147,7 @@ function MoneyPanel({ period, month }: Pick<DashboardData, "period" | "month">) 
 
 function AttentionPanel({ attention }: Pick<DashboardData, "attention">) {
   const rows: { label: string; n: number; href: string; icon: LucideIcon; tone: string }[] = [
+    { label: "Comprobantes por revisar", n: attention.proofs, href: "/superadmin/pagos?tab=revisar", icon: Hourglass, tone: "sa-primary-text" },
     { label: "Cobros por vencer", n: attention.dueSoon, href: "/superadmin/pagos", icon: Clock, tone: "sa-warn-text" },
     { label: "Atrasados", n: attention.late, href: "/superadmin/pagos", icon: CircleAlert, tone: "sa-danger-text" },
     { label: "Suspendidos", n: attention.suspended, href: "/superadmin/tenants", icon: Lock, tone: "sa-strong" },
