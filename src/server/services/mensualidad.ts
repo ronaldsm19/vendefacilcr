@@ -506,6 +506,12 @@ export async function reopenProofs(paymentId: string) {
 }
 
 /** Cuadrícula de negocios por meses: el estado de cada mensualidad en los últimos `months` meses. */
+/** El mes (aaaamm, hora de CR) de una fecha. */
+export function periodOfDate(date: Date): number {
+  const { y, m } = crDay(new Date(date));
+  return y * 100 + m;
+}
+
 export async function paymentsGrid(months = 12, now = new Date()) {
   await connectToDatabase();
   const count = Math.min(24, Math.max(3, Math.floor(months)));
@@ -520,7 +526,7 @@ export async function paymentsGrid(months = 12, now = new Date()) {
   const first = periods[0];
 
   const [tenants, invoices] = await Promise.all([
-    Tenant.find().select("_id name slug status").lean() as unknown as Promise<{ _id: mongoose.Types.ObjectId; name: string; slug: string; status: string }[]>,
+    Tenant.find().select("_id name slug status createdAt").lean() as unknown as Promise<{ _id: mongoose.Types.ObjectId; name: string; slug: string; status: string; createdAt?: Date }[]>,
     Payment.find({ $or: [{ periodYear: { $gt: first.y } }, { periodYear: first.y, periodMonth: { $gte: first.m } }] })
       .select("tenantId periodYear periodMonth amount status review.status").lean() as unknown as Promise<InvoiceLean[]>,
   ]);
@@ -539,6 +545,8 @@ export async function paymentsGrid(months = 12, now = new Date()) {
         name: t.name,
         slug: t.slug,
         status: t.status,
+        // Desde qué mes existe el negocio (aaaamm): antes de eso no se ofrece crear mensualidades.
+        since: t.createdAt ? periodOfDate(t.createdAt) : 0,
         cells: periods.map((p) => {
           const inv = cells.get(`${t._id}:${p.y * 100 + p.m}`);
           return inv ? { id: String(inv._id), status: ownerStatusOf(inv), amount: inv.amount } : null;
