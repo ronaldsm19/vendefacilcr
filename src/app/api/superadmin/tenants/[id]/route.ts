@@ -31,6 +31,7 @@ import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
 import { getSuperadminSession } from "@/lib/auth";
 import { isSuspensionReason, SUSPENSION_MESSAGE_MAX } from "@/lib/suspension";
 import { forgetTenantStatus } from "@/server/services/tenantAccess";
+import { repriceOpenInvoices } from "@/server/services/billing";
 
 const STATUSES = ["active", "inactive", "suspended"];
 
@@ -129,7 +130,12 @@ export async function PATCH(
   // Las sesiones abiertas de este negocio se cortan (o vuelven), y ven su plan nuevo, en el próximo
   // pedido a esta instancia; en las demás, cuando venza su minuto de caché.
   forgetTenantStatus(id);
-  return NextResponse.json({ tenant });
+  // Con otro plan, la mensualidad sin pagar de este mes (y la del siguiente, si ya existe) pasa al
+  // precio del plan nuevo.
+  const recalculated = update.plan !== undefined
+    ? await repriceOpenInvoices(tenant as unknown as Parameters<typeof repriceOpenInvoices>[0])
+    : 0;
+  return NextResponse.json({ tenant, recalculated });
 }
 
 /**
