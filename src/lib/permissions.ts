@@ -24,6 +24,7 @@ export type Feature =
   | "materiales"
   | "recetas"
   | "pedidos"
+  | "clientes"             // los que piden factura: se registran una vez y se buscan por cédula o nombre
   | "gastos"
   | "finanzas"
   | "pos"
@@ -52,6 +53,9 @@ export const PERMISSIONS: Record<Feature, Role[]> = {
   materiales:         ["admin"],
   recetas:            ["admin"],
   pedidos:            ["admin", "cajero"],
+  // La caja es quien está delante cuando alguien pide factura, así que registra y corrige clientes.
+  // Borrarlos queda para la dueña (lo revisa la ruta con requireRole).
+  clientes:           ["admin", "cajero"],
   gastos:             ["admin"],
   finanzas:           ["admin"],
   pos:                ["admin", "cajero"],
@@ -74,6 +78,7 @@ export const PERMISSIONS: Record<Feature, Role[]> = {
  */
 export const FEATURE_MIN_PLAN: Partial<Record<Feature, PlanKey>> = {
   pos:              "pro",
+  clientes:         "pro",
   "cierre-de-caja": "pro",
   salon:            "pro",
   "salon:editar":   "pro",
@@ -163,6 +168,7 @@ export const ROUTE_FEATURES: Record<string, Feature> = {
   materiales:       "materiales",
   recetas:          "recetas",
   pedidos:          "pedidos",
+  clientes:         "clientes",
   gastos:           "gastos",
   finanzas:         "finanzas",
   pos:              "pos",
@@ -185,6 +191,7 @@ export const SECTION_LABELS: Record<string, string> = {
   materiales:       "Materiales",
   recetas:          "Recetas",
   pedidos:          "Pedidos y ventas",
+  clientes:         "Clientes",
   gastos:           "Gastos",
   finanzas:         "Finanzas",
   pos:              "Punto de venta",

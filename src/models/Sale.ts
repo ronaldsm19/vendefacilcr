@@ -16,6 +16,39 @@ export interface ISaleComandaClaim {
   items: { index: number; qty: number }[]; // qty que ESTA venta cobró de cada índice
 }
 
+/**
+ * Factura de la venta. En la fase 1 es un "comprobante de venta" en PDF que se le manda por correo
+ * al cliente registrado (kind "comprobante"); "electronica" y los campos de Hacienda quedan
+ * reservados para cuando se emita por API. El cliente va congelado: editarlo o borrarlo del
+ * registro no cambia lo que ya se le mandó.
+ */
+export type SaleInvoiceKind = "" | "comprobante" | "electronica";
+export type SaleInvoiceEmailStatus = "" | "pendiente" | "enviado" | "fallido";
+
+export interface ISaleInvoiceCustomer {
+  idType: string;
+  idNumber: string;
+  name: string;
+  email: string;
+  ccEmails: string[];
+  activityCode: string;
+}
+
+export interface ISaleInvoice {
+  kind: SaleInvoiceKind;
+  customer: ISaleInvoiceCustomer;
+  issuedAt: Date | null;
+  emailStatus: SaleInvoiceEmailStatus;
+  emailSentAt: Date | null;
+  emailError: string;
+  sendCount: number;
+  /** La venta se editó después de mandar el comprobante: el que tiene el cliente ya no coincide. */
+  outdated: boolean;
+  haciendaKey: string;
+  haciendaStatus: string;
+  providerId: string;
+}
+
 export interface ISale {
   _id: string;
   tenantId: string;
@@ -50,6 +83,10 @@ export interface ISale {
   paymentMethod: "efectivo" | "sinpe" | "tarjeta" | "mixto";
   mixedPayment: { efectivo: number; sinpe: number; tarjeta: number };
   notes?: string;
+  /** Cliente del registro (Customer._id) si la venta lleva factura; "" si no. */
+  customerId: string;
+  /** Ventas anteriores a la factura no lo tienen. */
+  invoice?: ISaleInvoice;
   saleDate: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -74,6 +111,30 @@ const SaleComandaClaimSchema = new Schema(
       type: [{ index: { type: Number, required: true }, qty: { type: Number, required: true }, _id: false }],
       default: [],
     },
+  },
+  { _id: false }
+);
+
+const SaleInvoiceSchema = new Schema(
+  {
+    kind:        { type: String, enum: ["", "comprobante", "electronica"], default: "" },
+    customer: {
+      idType:       { type: String, default: "" },
+      idNumber:     { type: String, default: "" },
+      name:         { type: String, default: "" },
+      email:        { type: String, default: "" },
+      ccEmails:     { type: [String], default: [] },
+      activityCode: { type: String, default: "" },
+    },
+    issuedAt:       { type: Date, default: null },
+    emailStatus:    { type: String, enum: ["", "pendiente", "enviado", "fallido"], default: "" },
+    emailSentAt:    { type: Date, default: null },
+    emailError:     { type: String, default: "" },
+    sendCount:      { type: Number, default: 0 },
+    outdated:       { type: Boolean, default: false },
+    haciendaKey:    { type: String, default: "" },
+    haciendaStatus: { type: String, default: "" },
+    providerId:     { type: String, default: "" },
   },
   { _id: false }
 );
@@ -112,6 +173,9 @@ const SaleSchema = new Schema(
       tarjeta:  { type: Number, default: 0 },
     },
     notes:    { type: String, default: "" },
+    customerId: { type: String, default: "" },
+    // Sin default: solo lo llevan las ventas con factura, así las demás no cargan un objeto vacío.
+    invoice:  { type: SaleInvoiceSchema, default: undefined },
     saleDate: { type: Date, default: Date.now },
   },
   { timestamps: true }
@@ -119,6 +183,11 @@ const SaleSchema = new Schema(
 
 SaleSchema.index({ tenantId: 1, saleDate: -1 });
 SaleSchema.index({ tenantId: 1, comandaIds: 1 });
+// Comprobantes de un cliente (detalle en Clientes). Parcial: la gran mayoría de ventas no lleva factura.
+SaleSchema.index(
+  { tenantId: 1, customerId: 1, saleDate: -1 },
+  { partialFilterExpression: { customerId: { $gt: "" } } }
+);
 
 export const Sale =
   mongoose.models.Sale || mongoose.model<ISale>("Sale", SaleSchema);
