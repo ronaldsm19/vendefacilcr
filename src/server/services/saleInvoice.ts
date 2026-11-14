@@ -42,6 +42,7 @@ export async function invoiceSnapshotFor(tenantId: string, customerId: string): 
       emailSentAt: null,
       emailError: "",
       sendCount: 0,
+      outdated: false,
       haciendaKey: "",
       haciendaStatus: "",
       providerId: "",
@@ -57,7 +58,15 @@ export async function countInvoiceForCustomer(tenantId: string, customerId: stri
   ).catch((err) => console.error("[saleInvoice] No se pudo actualizar el contador del cliente:", err));
 }
 
-type TenantForReceipt = { name: string; email: string; ticketConfig?: Partial<ITicketConfig> };
+/** Al borrar una venta facturada (o pasar su factura a otro cliente). Nunca baja de cero. */
+export async function uncountInvoiceForCustomer(tenantId: string, customerId: string): Promise<void> {
+  await Customer.updateOne(
+    { _id: customerId, tenantId, invoiceCount: { $gt: 0 } },
+    { $inc: { invoiceCount: -1 } },
+  ).catch((err) => console.error("[saleInvoice] No se pudo descontar la factura del cliente:", err));
+}
+
+type TenantForReceipt ={ name: string; email: string; ticketConfig?: Partial<ITicketConfig> };
 
 /**
  * Arma el PDF y lo manda al cliente de la venta. Nunca lanza: devuelve el resultado y deja el
@@ -129,7 +138,7 @@ export async function sendSaleInvoice(tenantId: string, saleId: string): Promise
     await Sale.updateOne(
       { _id: saleId, tenantId },
       result.ok
-        ? { $set: { "invoice.emailStatus": "enviado", "invoice.emailSentAt": new Date(), "invoice.emailError": "" }, $inc: { "invoice.sendCount": 1 } }
+        ? { $set: { "invoice.emailStatus": "enviado", "invoice.emailSentAt": new Date(), "invoice.emailError": "", "invoice.outdated": false }, $inc: { "invoice.sendCount": 1 } }
         : { $set: { "invoice.emailStatus": "fallido", "invoice.emailError": (result.error ?? "Error al enviar").slice(0, 300) } },
     );
     return result;

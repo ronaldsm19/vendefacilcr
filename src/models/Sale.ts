@@ -42,6 +42,8 @@ export interface ISaleInvoice {
   emailSentAt: Date | null;
   emailError: string;
   sendCount: number;
+  /** La venta se editó después de mandar el comprobante: el que tiene el cliente ya no coincide. */
+  outdated: boolean;
   haciendaKey: string;
   haciendaStatus: string;
   providerId: string;
@@ -129,6 +131,7 @@ const SaleInvoiceSchema = new Schema(
     emailSentAt:    { type: Date, default: null },
     emailError:     { type: String, default: "" },
     sendCount:      { type: Number, default: 0 },
+    outdated:       { type: Boolean, default: false },
     haciendaKey:    { type: String, default: "" },
     haciendaStatus: { type: String, default: "" },
     providerId:     { type: String, default: "" },

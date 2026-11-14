@@ -7,12 +7,16 @@ import OrderForm from "@/components/admin/OrderForm";
 import Pagination from "@/components/admin/Pagination";
 import PeriodFilter, { getRange, PeriodMode } from "@/components/admin/PeriodFilter";
 import { IOrder } from "@/models/Order";
-import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle } from "lucide-react";
+import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle, Mail } from "lucide-react";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
 import { computeSaleTotals, extraLabel, extraQty, isOrderType, lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
 import PaymentMethodPicker, { PaymentMethodChip, PaymentMethodLabel } from "@/components/admin/PaymentMethodPicker";
 import { SPLIT_METHODS, isPaymentMethod } from "@/lib/payments";
+import SaleInvoiceDialog, { invoiceBadge, type SaleInvoiceTarget } from "@/components/admin/SaleInvoiceDialog";
+import type { SaleInvoiceSummary } from "@/lib/saleReceipt";
+import { useAdminSession } from "@/components/admin/SessionContext";
+import { can, planAllows } from "@/lib/permissions";
 
 function fmt(n: number) {
   return `₡${n.toLocaleString("es-CR", { minimumFractionDigits: 0 })}`;
@@ -33,6 +37,8 @@ interface VentaItem {
   notes?: string;
   itemCount: number;
   ticketNumber?: number | null;
+  /** Solo ventas POS con factura. */
+  invoice?: SaleInvoiceSummary | null;
 }
 
 interface VentaStats {
@@ -68,6 +74,11 @@ interface ProductOption { _id: string; name: string; price: number; }
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminOrdersPage() {
+  const session = useAdminSession();
+  const canInvoice = can(session, "clientes") && planAllows(session, "clientes");
+  // Venta POS cuya factura se está mandando o reenviando.
+  const [invoiceTarget, setInvoiceTarget] = useState<SaleInvoiceTarget | null>(null);
+
   // Period filter state
   const [periodMode, setPeriodMode] = useState<PeriodMode>("dia");
   const [anchor, setAnchor]         = useState(() => new Date());
@@ -567,6 +578,11 @@ export default function AdminOrdersPage() {
                       {item.source === "pos" && item.cashierName && (
                         <p className="text-xs text-brand-dark/40 mt-0.5">{item.cashierName}</p>
                       )}
+                      {item.source === "pos" && item.invoice && (
+                        <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${invoiceBadge(item.invoice).className}`}>
+                          {invoiceBadge(item.invoice).text}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell text-brand-dark/60 text-xs">
                       {new Date(item.date).toLocaleDateString("es-CR", { day:"2-digit", month:"short" })}
@@ -616,6 +632,24 @@ export default function AdminOrdersPage() {
                                 <Printer className="w-4 h-4" />
                               )}
                             </button>
+                            {canInvoice && (
+                              <button
+                                onClick={() => setInvoiceTarget({
+                                  id: item.id,
+                                  label: item.ticketNumber ? `#${item.ticketNumber}` : `#${item.id.slice(-6).toUpperCase()}`,
+                                  invoice: item.invoice ?? null,
+                                })}
+                                title={item.invoice ? "Factura: ver o reenviar" : "Mandar factura"}
+                                aria-label={item.invoice ? "Ver o reenviar factura" : "Mandar factura"}
+                                className={`p-1.5 rounded-lg hover:bg-brand-muted transition-colors cursor-pointer ${
+                                  item.invoice?.status === "fallido" || item.invoice?.outdated
+                                    ? "text-amber-600"
+                                    : item.invoice ? "text-emerald-600" : "text-brand-dark/40 hover:text-brand-pink"
+                                }`}
+                              >
+                                <Mail className="w-4 h-4" />
+                              </button>
+                            )}
                             <button
                               onClick={() => openSaleEdit(item.id)}
                               title="Editar venta"
@@ -893,6 +927,17 @@ export default function AdminOrdersPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Factura de una venta POS: mandar, reenviar o pasar a otro cliente */}
+      <SaleInvoiceDialog
+        sale={invoiceTarget}
+        onClose={() => setInvoiceTarget(null)}
+        onUpdated={(saleId, invoice, customerName) => {
+          setItems((prev) => prev.map((it) =>
+            it.id === saleId ? { ...it, invoice, customerName: customerName || it.customerName } : it
+          ));
+        }}
+      />
+
       {/* Confirm Delete POS Sale */}
       <Dialog open={!!confirmDeleteSale} onOpenChange={(v) => !v && closeDeleteSale()}>
         <DialogContent className="max-w-sm">
@@ -923,6 +968,11 @@ export default function AdminOrdersPage() {
               {!isToday(confirmDeleteSale.date) && (
                 <p className="text-sm text-orange-600">
                   Esta venta no es de hoy: eliminarla puede afectar un cierre de caja ya realizado.
+                </p>
+              )}
+              {confirmDeleteSale.invoice?.sentAt && (
+                <p className="text-sm text-orange-600">
+                  Ya se le mandó el comprobante a {confirmDeleteSale.invoice.customerName}: eliminar la venta no lo retira de su correo.
                 </p>
               )}
               <div>

@@ -3,6 +3,41 @@
  * (eso está en src/lib/saleReceiptPdf.ts). Sin dependencias, para poder probarlo solo.
  */
 
+export type InvoiceEmailStatus = "" | "pendiente" | "enviado" | "fallido";
+
+/** Lo que el panel necesita saber de la factura de una venta (listado, detalle del cliente). */
+export interface SaleInvoiceSummary {
+  customerName: string;
+  email: string;
+  status: InvoiceEmailStatus;
+  sentAt: string | null;
+  outdated: boolean;
+  error: string;
+}
+
+interface InvoiceLike {
+  kind?: string;
+  customer?: { name?: string; email?: string };
+  emailStatus?: string;
+  emailSentAt?: Date | string | null;
+  outdated?: boolean;
+  emailError?: string;
+}
+
+/** null si la venta no lleva factura. */
+export function summarizeInvoice(inv: InvoiceLike | null | undefined): SaleInvoiceSummary | null {
+  if (!inv?.kind) return null;
+  const status = (["pendiente", "enviado", "fallido"] as const).find((s) => s === inv.emailStatus) ?? "";
+  return {
+    customerName: inv.customer?.name ?? "",
+    email: inv.customer?.email ?? "",
+    status,
+    sentAt: inv.emailSentAt ? new Date(inv.emailSentAt).toISOString() : null,
+    outdated: !!inv.outdated,
+    error: inv.emailError ?? "",
+  };
+}
+
 export interface ReceiptTotalsInput {
   subtotal: number;
   serviceAmount?: number;

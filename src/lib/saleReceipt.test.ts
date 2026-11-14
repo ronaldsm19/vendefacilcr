@@ -1,7 +1,7 @@
 // Prueba sin dependencias: `node --experimental-strip-types src/lib/saleReceipt.test.ts` (Node 22+).
 // Qué dice el comprobante de venta que se le manda por correo al cliente.
 import {
-  crDateTimeLabel, isSimplifiedRegime, pdfAmount, receiptFooterLines, receiptLabel, receiptTotalRows,
+  crDateTimeLabel, isSimplifiedRegime, pdfAmount, receiptFooterLines, receiptLabel, receiptTotalRows, summarizeInvoice,
 } from './saleReceipt.ts';
 
 let failed = 0;
@@ -45,6 +45,14 @@ eq('monto negativo', pdfAmount(-200), '-200,00');
 // 14 nov 2026 18:30 UTC = 12:30 p. m. en Costa Rica (UTC-6).
 const label = crDateTimeLabel('2026-11-14T18:30:00Z');
 eq('fecha en hora de Costa Rica', label.startsWith('14 de noviembre de 2026, 12:30'), true);
+
+eq('venta sin factura', summarizeInvoice(undefined), null);
+eq('factura sin tipo cuenta como sin factura', summarizeInvoice({ kind: '' }), null);
+eq('factura enviada', summarizeInvoice({
+  kind: 'comprobante', customer: { name: 'Purdy', email: 'a@b.cr' }, emailStatus: 'enviado',
+  emailSentAt: '2026-11-14T06:18:24.160Z', outdated: false, emailError: '',
+}), { customerName: 'Purdy', email: 'a@b.cr', status: 'enviado', sentAt: '2026-11-14T06:18:24.160Z', outdated: false, error: '' });
+eq('estado desconocido queda vacío', summarizeInvoice({ kind: 'comprobante', emailStatus: 'raro' })?.status, '');
 
 if (failed) {
   console.log(`\n${failed} prueba(s) fallaron`);

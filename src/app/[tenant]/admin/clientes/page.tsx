@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Loader2, Search, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Search, X, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import CustomerFormDialog from "@/components/admin/CustomerFormDialog";
+import CustomerInvoicesDialog from "@/components/admin/CustomerInvoicesDialog";
 import Pagination from "@/components/admin/Pagination";
 import { ID_TYPE_LABELS, formatIdNumber, type CustomerView } from "@/lib/customerId";
 
@@ -32,6 +33,7 @@ export default function ClientesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CustomerView | null>(null);
   const [toDelete, setToDelete] = useState<CustomerView | null>(null);
+  const [invoicesOf, setInvoicesOf] = useState<CustomerView | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -188,6 +190,12 @@ export default function ClientesPage() {
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <button
+                          title="Comprobantes" aria-label={`Comprobantes de ${c.name}`} onClick={() => setInvoicesOf(c)}
+                          className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer"
+                        >
+                          <Mail className="w-4 h-4" />
+                        </button>
+                        <button
                           title="Editar" aria-label={`Editar ${c.name}`} onClick={() => openEdit(c)}
                           className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-dark transition-colors cursor-pointer"
                         >
@@ -219,6 +227,9 @@ export default function ClientesPage() {
                 <p className="text-sm text-brand-dark/70 break-all">{c.email}</p>
                 <p className="text-xs text-brand-dark/40">Última factura: {lastInvoiceLabel(c)}</p>
                 <div className="flex items-center gap-2 pt-1">
+                  <Button variant="secondary" size="sm" className="flex-1" onClick={() => setInvoicesOf(c)}>
+                    <Mail className="w-3.5 h-3.5 mr-1" /> Comprobantes
+                  </Button>
                   <Button variant="secondary" size="sm" className="flex-1" onClick={() => openEdit(c)}>
                     <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
                   </Button>
@@ -250,6 +261,8 @@ export default function ClientesPage() {
         onClose={() => { setFormOpen(false); setEditing(null); }}
         onSaved={onSaved}
       />
+
+      <CustomerInvoicesDialog customer={invoicesOf} onClose={() => setInvoicesOf(null)} />
 
       {/* Eliminar cliente */}
       <Dialog open={!!toDelete} onOpenChange={(v) => !v && setToDelete(null)}>
