@@ -22,6 +22,10 @@ const categories: { value: ExpenseCategory; label: string }[] = [
   { value: "otros",         label: "Otros" },
 ];
 
+// El escaneo con IA queda apagado hasta que esté listo: se muestra como "Muy pronto" y no se puede
+// tocar, para que nadie suba una foto y reciba un error. Para encenderlo, pasar a true.
+const SCAN_WITH_AI_ENABLED = false;
+
 export default function ExpenseForm({ onSave, onCancel, saving }: ExpenseFormProps) {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("materia_prima");
@@ -145,6 +149,19 @@ export default function ExpenseForm({ onSave, onCancel, saving }: ExpenseFormPro
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* ── Escanear con IA ── */}
+      {!SCAN_WITH_AI_ENABLED ? (
+        <div
+          aria-disabled="true"
+          title="Disponible muy pronto"
+          className="w-full border-2 border-dashed border-brand-dark/15 rounded-xl py-4 px-4 flex flex-wrap items-center justify-center gap-2.5 bg-brand-dark/[0.03] cursor-not-allowed select-none"
+        >
+          <ScanLine className="w-5 h-5 text-brand-dark/30" />
+          <span className="text-sm font-semibold text-brand-dark/40">Escanear factura con IA</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-pink bg-brand-pink/10 rounded-full px-2.5 py-0.5">
+            Muy pronto
+          </span>
+        </div>
+      ) : (
       <div>
         <button
           type="button"
@@ -176,6 +193,7 @@ export default function ExpenseForm({ onSave, onCancel, saving }: ExpenseFormPro
           <p className="mt-1.5 text-xs text-red-500">{scanError}</p>
         )}
       </div>
+      )}
 
       {/* Título */}
       <div>
