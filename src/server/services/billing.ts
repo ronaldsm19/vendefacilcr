@@ -563,6 +563,29 @@ export async function markPaid(
   return { payment: updated, reactivated, approvedProofs };
 }
 
+/**
+ * Convierte en cortesía una factura sin pagar (por ejemplo, un mes viejo de un negocio que nunca
+ * pagó porque siempre fue sin costo). Queda registrado cuánto se regaló: lista = descuento, paga ₡0.
+ */
+export async function markCourtesy(paymentId: string, rawReason?: unknown) {
+  if (!mongoose.isValidObjectId(paymentId)) throw new ServiceError(404, "Factura no encontrada");
+  await connectToDatabase();
+  const payment = await Payment.findById(paymentId).lean() as PaymentLean | null;
+  if (!payment) throw new ServiceError(404, "Factura no encontrada");
+  if (payment.status !== "pending" && payment.status !== "late") {
+    throw new ServiceError(400, "Solo se puede pasar a cortesía una factura sin pagar");
+  }
+  const list = payment.listAmount ?? payment.amount;
+  const label = text(rawReason, 60, "Motivo") || "Cortesía";
+  const updated = await Payment.findOneAndUpdate(
+    { _id: payment._id, status: payment.status },
+    { $set: { status: "cortesia", amount: 0, listAmount: list, discountAmount: list, discountLabel: label } },
+    { returnDocument: "after" },
+  ).lean();
+  if (!updated) throw new ServiceError(409, "La factura cambió mientras tanto. Recargá la página.");
+  return { payment: updated, reactivated: false };
+}
+
 // ── Cobro de un negocio ─────────────────────────────────────────────────────
 
 function parseDay(value: unknown, label: string): Date | null {
@@ -655,27 +678,46 @@ export async function updateTenantBilling(tenantId: string, raw: Record<string, 
       : null,
   };
   await Tenant.updateOne({ _id: tenant._id }, { $set: { billing } });
+  const recalculated = await repriceOpenInvoices({ ...tenant, billing });
+  return { ...(await tenantBillingView(tenantId)), recalculated };
+}
 
-  // Facturas sin pagar de este mes en adelante: al precio nuevo (cortesía si queda en cero).
+/**
+ * Pone al precio de hoy las facturas sin pagar de este mes en adelante (cortesía si quedan en cero),
+ * con el plan actual del negocio. Se llama al cambiar su cobro (descuento, cortesía, fundador) y al
+ * cambiarle el plan: la factura del mes pudo crearse antes, cuando el dueño abrió Mensualidad, con el
+ * precio o el plan viejo. Los meses pasados no se tocan.
+ */
+export async function repriceOpenInvoices(
+  tenant: Pick<TenantLean, "_id" | "plan" | "billing">,
+  now = new Date(),
+): Promise<number> {
+  if (!PLAN_KEYS.includes(tenant.plan as PlanKey)) return 0;
   const settings = await getBillingSettings();
-  const { y, m } = crDay(new Date());
+  const { y, m } = crDay(now);
   const open = await Payment.find({
     tenantId: tenant._id,
     status: { $in: ["pending", "late", "cortesia"] },
     $or: [{ periodYear: { $gt: y } }, { periodYear: y, periodMonth: { $gte: m } }],
   }).lean() as unknown as PaymentLean[];
-  const updatedTenant = { ...tenant, billing };
   let recalculated = 0;
   for (const inv of open) {
-    const price = priceFor(tenant.plan, billingOf(updatedTenant), settings.prices, periodDueDate(inv.periodYear, inv.periodMonth, BILLING_DUE_DAY));
+    const price = priceFor(tenant.plan, billingOf(tenant), settings.prices, periodDueDate(inv.periodYear, inv.periodMonth, BILLING_DUE_DAY));
     const status = isCourtesy(price) ? "cortesia" : inv.status === "cortesia" ? "pending" : inv.status;
-    if (price.amount === inv.amount && status === inv.status && price.discountLabel === (inv.discountLabel ?? "")) continue;
-    await Payment.updateOne({ _id: inv._id }, {
-      $set: { amount: price.amount, listAmount: price.listAmount, discountAmount: price.discountAmount, discountLabel: price.discountLabel, status },
+    if (
+      inv.plan === tenant.plan && price.amount === inv.amount && status === inv.status
+      && price.listAmount === (inv.listAmount ?? inv.amount) && price.discountLabel === (inv.discountLabel ?? "")
+    ) continue;
+    // Condicionado al estado leído: si justo se pagó o se anuló, no se toca.
+    const r = await Payment.updateOne({ _id: inv._id, status: inv.status }, {
+      $set: {
+        plan: tenant.plan, amount: price.amount, listAmount: price.listAmount,
+        discountAmount: price.discountAmount, discountLabel: price.discountLabel, status,
+      },
     });
-    recalculated++;
+    recalculated += r.modifiedCount;
   }
-  return { ...(await tenantBillingView(tenantId)), recalculated };
+  return recalculated;
 }
 
 /** Manda a mano el aviso de la factura sin pagar más antigua de un negocio. */
