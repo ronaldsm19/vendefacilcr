@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { VF_LOGO_BASE64 } from "@/lib/vf-logo";
+import { ENNEA_EMAIL } from "@/lib/contacto";
 
 const LOGO_CID = "vflogo";
 
@@ -11,20 +12,41 @@ export function getBaseUrl(): string {
 // ── Transporter perezoso ──────────────────────────────────────────
 let transporter: nodemailer.Transporter | null = null;
 
+/**
+ * Una variable de entorno sin espacios ni saltos de línea de más: al pegar una clave en Vercel es
+ * fácil arrastrar uno, y con eso el servidor de correo rechaza la contraseña.
+ */
+const env = (name: string) => (process.env[name] ?? "").trim();
+
 function getTransporter(): nodemailer.Transporter | null {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
+  const host = env("SMTP_HOST");
+  const user = env("SMTP_USER");
+  const pass = env("SMTP_PASS");
+  if (!host || !user || !pass) return null;
+  const port = Number(env("SMTP_PORT") || 587);
 
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT ?? 587),
+      host,
+      port,
       // 465 es TLS directo; 587 (y los demás) negocian STARTTLS.
-      secure: Number(SMTP_PORT ?? 587) === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
+      secure: port === 465,
+      auth: { user, pass },
     });
   }
   return transporter;
+}
+
+/**
+ * El remitente: "Ennea <hola@enneacr.com>". SMTP_FROM es la dirección (con un servicio de envío y
+ * dominio propio, como Resend, el usuario SMTP es fijo y no sirve de remitente); sin ella, el usuario
+ * SMTP (Gmail). Si SMTP_FROM ya trae un nombre ("Ennea <...>"), ese es el nombre por defecto.
+ */
+function senderAddress(): { name: string; address: string } | null {
+  const from = env("SMTP_FROM") || env("SMTP_USER");
+  const named = from.match(/^"?([^"<]*?)"?\s*<([^>]+)>$/);
+  if (named) return { name: named[1].trim() || "Ennea", address: named[2].trim() };
+  return from.includes("@") ? { name: "Ennea", address: from } : null;
 }
 
 /**
@@ -44,7 +66,7 @@ export async function sendMail({
   html,
   attachments = [],
   replyTo,
-  fromName = "Ennea",
+  fromName,
 }: {
   to: string;
   cc?: string[];
@@ -54,14 +76,14 @@ export async function sendMail({
   attachments?: MailAttachment[];
   /** A quién le llega la respuesta, por ejemplo el correo del negocio y no el de Ennea. */
   replyTo?: string;
-  /** Nombre visible del remitente; la dirección sigue siendo la de SMTP_FROM. */
+  /** Nombre visible del remitente (por defecto "Ennea"); la dirección sigue siendo la de SMTP_FROM. */
   fromName?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   // Para probar en desarrollo sin mandar correos de verdad (nunca se define en producción).
   if (process.env.EMAIL_DRY_RUN === "1") {
     const files = attachments.map((a) => `${a.filename} (${a.content.length} B)`).join(", ");
     console.log(
-      `[email] (sin envío) de="${fromName}" para=${to}${cc?.length ? ` cc=${cc.join(",")}` : ""}` +
+      `[email] (sin envío) de="${fromName ?? "Ennea"}" para=${to}${cc?.length ? ` cc=${cc.join(",")}` : ""}` +
       `${replyTo ? ` responder-a=${replyTo}` : ""} asunto="${subject}"${files ? ` adjuntos=${files}` : ""}`
     );
     return { ok: true };
@@ -71,16 +93,20 @@ export async function sendMail({
     console.warn("[email] SMTP no configurado (faltan SMTP_HOST/SMTP_USER/SMTP_PASS); correo no enviado:", subject);
     return { ok: false, error: "SMTP no configurado (faltan variables SMTP_*)" };
   }
+  const from = senderAddress();
+  if (!from) {
+    console.warn("[email] Falta SMTP_FROM (el usuario SMTP no es una dirección de correo); correo no enviado:", subject);
+    return { ok: false, error: "Falta SMTP_FROM: la dirección que envía los correos" };
+  }
   try {
-    // SMTP_FROM permite un remitente distinto del usuario SMTP: con un servicio de envío y dominio
-    // propio (el usuario suele ser fijo, tipo "resend") la dirección tiene que ser de ese dominio.
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER!;
     // El nombre visible puede traer comas o comillas (el de un negocio): nodemailer lo cita solo.
     await tx.sendMail({
-      from: { name: fromName, address: from },
+      from: { name: fromName ?? from.name, address: from.address },
+      // enneacr.com no tiene buzón: si alguien responde, la respuesta llega al correo que pidió quien
+      // envía (el del negocio, en una factura) o al de Ennea.
+      replyTo: replyTo || env("SMTP_REPLY_TO") || ENNEA_EMAIL,
       to,
       ...(cc?.length ? { cc } : {}),
-      ...(replyTo ? { replyTo } : {}),
       subject,
       html,
       attachments: [

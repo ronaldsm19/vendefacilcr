@@ -3,7 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Payment } from "@/models/Payment";
 import { getSuperadminSession } from "@/lib/auth";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
-import { markPaid } from "@/server/services/billing";
+import { markCourtesy, markPaid } from "@/server/services/billing";
 import { invoiceForReview, reopenProofs } from "@/server/services/mensualidad";
 
 type Params = { params: Promise<{ id: string }> };
@@ -37,6 +37,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   if (status === "paid") {
     try {
       return NextResponse.json(await markPaid(id, { method, reference, paidAt, notes }, session.email));
+    } catch (err) {
+      return serviceErrorResponse(err);
+    }
+  }
+
+  if (status === "cortesia") {
+    try {
+      return NextResponse.json(await markCourtesy(id, body.reason));
     } catch (err) {
       return serviceErrorResponse(err);
     }

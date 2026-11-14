@@ -173,7 +173,10 @@ export default function TenantDetailPage() {
     });
     setSaving(false);
     if (res.ok) {
-      setSaveMsg("Guardado correctamente");
+      const d = await res.json().catch(() => ({}));
+      setSaveMsg(d.recalculated > 0
+        ? `Guardado. La mensualidad sin pagar quedó con el precio del plan nuevo (${d.recalculated} ${d.recalculated === 1 ? "factura" : "facturas"}).`
+        : "Guardado correctamente");
       load();
       setTimeout(() => setSaveMsg(""), 3000);
     } else {

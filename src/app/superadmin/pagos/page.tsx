@@ -427,6 +427,16 @@ export default function PagosPage() {
                                     Atrasar
                                   </button>
                                 )}
+                                {open && state !== "revision" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { if (!confirm(`¿Pasar a cortesía la factura de ${p.tenantName} (${MONTHS[p.periodMonth - 1]} ${p.periodYear})? Queda en ₡0 y no se cobra. Para que los meses que vienen también sean sin costo, marcá "Sin costo (cortesía)" en la ficha del negocio.`)) return; setRowError(""); void markStatus(p._id, "cortesia").then((e) => { if (e) setRowError(e); }); }}
+                                    disabled={acting === p._id}
+                                    className="sa-btn sa-btn-sm sa-btn-ghost"
+                                  >
+                                    Cortesía
+                                  </button>
+                                )}
                                 {open && (
                                   <button
                                     type="button"
