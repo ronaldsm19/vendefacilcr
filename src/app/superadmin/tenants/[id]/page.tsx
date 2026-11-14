@@ -3,8 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft, Save, ExternalLink, Megaphone, TriangleAlert, Trash2, Check, X, Ban, CircleMinus, Clock, Gift,
-  CircleAlert,
+  ArrowLeft, Save, ExternalLink, Megaphone, TriangleAlert, Trash2, Check, X, Ban, CircleMinus,
 } from "lucide-react";
 import Link from "next/link";
 import TenantErrorsCard from "@/components/superadmin/errores/TenantErrorsCard";
@@ -12,6 +11,9 @@ import TenantBillingCard from "@/components/superadmin/cobros/TenantBillingCard"
 import { SUSPENSION_REASONS, SUSPENSION_MESSAGE_MAX, suspensionReasonLabel } from "@/lib/suspension";
 import { formatCRC, DEFAULT_PLAN_PRICES, PLAN_KEYS, PLAN_LABELS, type PlanKey } from "@/lib/billing";
 import { lockedSections, productLimit } from "@/lib/permissions";
+import { ownerStatusOf, type ReviewStatus } from "@/lib/mensualidad";
+import { PaymentStateChip } from "@/components/superadmin/pagos/paymentStatus";
+import ProofReviewDialog from "@/components/superadmin/pagos/ProofReviewDialog";
 
 interface Tenant {
   _id: string;
@@ -40,6 +42,8 @@ interface Payment {
   dueDate: string;
   paidAt?: string;
   notes?: string;
+  proofs?: { _id: string; status: string }[];
+  review?: { status?: ReviewStatus };
 }
 
 interface AccessLog {
@@ -103,17 +107,6 @@ function StatusChip({ status }: { status: string }) {
   return <span className="sa-chip"><CircleMinus aria-hidden />{status}</span>;
 }
 
-function PaymentChip({ status }: { status: string }) {
-  switch (status) {
-    case "paid":      return <span className="sa-chip sa-chip-ok"><Check aria-hidden />Pagado</span>;
-    case "pending":   return <span className="sa-chip sa-chip-warn"><Clock aria-hidden />Pendiente</span>;
-    case "late":      return <span className="sa-chip sa-chip-danger"><CircleAlert aria-hidden />Atrasado</span>;
-    case "cortesia":  return <span className="sa-chip sa-chip-info"><Gift aria-hidden />Cortesía</span>;
-    case "cancelled": return <span className="sa-chip"><Ban aria-hidden />Cancelado</span>;
-    default:          return <span className="sa-chip"><CircleMinus aria-hidden />{status}</span>;
-  }
-}
-
 export default function TenantDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -128,6 +121,17 @@ export default function TenantDetailPage() {
   const [confirmSlug, setConfirmSlug]   = useState("");
   const [deleting, setDeleting]         = useState(false);
   const [deleteError, setDeleteError]   = useState("");
+
+  const [reviewing, setReviewing]       = useState<string | null>(null);
+  const [paymentNotice, setPaymentNotice] = useState("");
+
+  /** Después de revisar un comprobante: solo se refresca el historial, sin pisar lo que se esté editando. */
+  const reloadPayments = useCallback(() => {
+    fetch(`/api/superadmin/tenants/${id}`)
+      .then((r) => r.json())
+      .then((d) => setData((cur) => (cur ? { ...cur, payments: d.payments ?? cur.payments } : cur)))
+      .catch(() => {});
+  }, [id]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -489,6 +493,9 @@ export default function TenantDetailPage() {
           <div className="sa-card-head">
             <h2 className="sa-h2">Historial de pagos</h2>
           </div>
+          {paymentNotice && (
+            <div className="sa-alert sa-alert-ok mx-5 mb-3" role="status"><Check aria-hidden /><span>{paymentNotice}</span></div>
+          )}
           {payments.length === 0 ? (
             <div className="sa-empty">Sin pagos registrados</div>
           ) : (
@@ -501,30 +508,56 @@ export default function TenantDetailPage() {
                     <th scope="col">Vence</th>
                     <th scope="col">Pagado</th>
                     <th scope="col">Estado</th>
+                    <th scope="col">Comprobante</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {payments.map((p) => (
-                    <tr key={p._id}>
-                      <td className="sa-num whitespace-nowrap">{MONTHS[p.periodMonth - 1]} {p.periodYear}</td>
-                      <td className="sa-right sa-num whitespace-nowrap">{formatCRC(p.amount)}</td>
-                      <td>
-                        <span className="sa-muted sa-num">{new Date(p.dueDate).toLocaleDateString("es-CR")}</span>
-                      </td>
-                      <td>
-                        <span className="sa-muted sa-num">
-                          {p.paidAt ? new Date(p.paidAt).toLocaleDateString("es-CR") : "—"}
-                        </span>
-                      </td>
-                      <td><PaymentChip status={p.status} /></td>
-                    </tr>
-                  ))}
+                  {payments.map((p) => {
+                    const state = ownerStatusOf(p);
+                    const count = p.proofs?.length ?? 0;
+                    return (
+                      <tr key={p._id}>
+                        <td className="sa-num whitespace-nowrap">{MONTHS[p.periodMonth - 1]} {p.periodYear}</td>
+                        <td className="sa-right sa-num whitespace-nowrap">{formatCRC(p.amount)}</td>
+                        <td>
+                          <span className="sa-muted sa-num">{new Date(p.dueDate).toLocaleDateString("es-CR")}</span>
+                        </td>
+                        <td>
+                          <span className="sa-muted sa-num">
+                            {p.paidAt ? new Date(p.paidAt).toLocaleDateString("es-CR") : "—"}
+                          </span>
+                        </td>
+                        <td><PaymentStateChip status={state} /></td>
+                        <td>
+                          {count === 0 ? (
+                            <span className="sa-muted" aria-label="Sin comprobante">—</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => { setPaymentNotice(""); setReviewing(p._id); }}
+                              className={`sa-btn sa-btn-sm ${state === "revision" ? "sa-btn-primary" : "sa-btn-ghost"}`}
+                            >
+                              {state === "revision" ? "Revisar" : count === 1 ? "Ver" : `Ver (${count})`}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </section>
       </div>
+
+      {reviewing && (
+        <ProofReviewDialog
+          paymentId={reviewing}
+          onClose={() => setReviewing(null)}
+          onChanged={(message) => { setReviewing(null); setPaymentNotice(message); reloadPayments(); }}
+        />
+      )}
 
       {/* ── Actividad ── */}
       <div role="tabpanel" id="panel-actividad" aria-labelledby="tab-actividad" hidden={tab !== "actividad"} className="flex flex-col gap-6">

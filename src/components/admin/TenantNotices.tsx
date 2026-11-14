@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Megaphone, MessageCircle, Wallet } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle2, Megaphone, Upload, Wallet, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { usePolling } from "@/hooks/usePolling";
 import { formatCRC, type PriceBreakdown } from "@/lib/billing";
 import { LOGIN_NOTICES_FLAG, type NoticeKind } from "@/lib/notices";
 
+/** Resultado de la revisión de un comprobante que el dueño todavía no vio. */
+interface Review { id: string; period: string; amount: number; status: "approved" | "rejected"; reason: string }
 interface PaymentInfo { sinpeNumber: string; sinpeName: string; iban: string; ibanName: string; whatsapp: string; notes: string }
 interface Plan { planLabel: string; price: PriceBreakdown; payment: PaymentInfo | null }
 interface Billing extends Plan {
@@ -19,7 +22,7 @@ interface Billing extends Plan {
   suspendDate: string | null;
 }
 interface Notice { id: string; kind: NoticeKind; title: string; body: string; showEveryLogin: boolean; seen: boolean }
-interface Data { billing: Billing | null; plan: Plan | null; notices: Notice[] }
+interface Data { billing: Billing | null; plan: Plan | null; review?: Review | null; notices: Notice[] }
 
 type Item = { type: "billing"; billing: Billing } | { type: "notice"; notice: Notice; plan: Plan | null };
 
@@ -109,9 +112,43 @@ export default function TenantNotices() {
   }, [current, close]);
 
   const billing = data?.billing ?? null;
+  const mensualidadHref = `/${session.tenantSlug}/admin/mensualidad`;
+  const [closedReview, setClosedReview] = useState<string | null>(null);
+  const review = data?.review && data.review.id !== closedReview ? data.review : null;
+  const closeReview = () => {
+    if (!review) return;
+    setClosedReview(review.id);
+    void fetch(`/api/admin/mensualidad/${review.id}/visto`, { method: "POST" }).catch(() => {});
+  };
 
   return (
     <>
+      {review && (
+        <div
+          role="status"
+          className={`shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm border-b ${
+            review.status === "approved" ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-amber-50 border-amber-200 text-amber-900"
+          }`}
+        >
+          {review.status === "approved"
+            ? <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden />
+            : <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden />}
+          <p className="min-w-0 flex-1">
+            {review.status === "approved" ? (
+              <><strong>Verificamos tu pago de {review.period} ({formatCRC(review.amount)}).</strong> ¡Gracias!</>
+            ) : (
+              <><strong>Revisá el comprobante de {review.period}:</strong> {review.reason}</>
+            )}
+          </p>
+          <Link href={mensualidadHref} onClick={closeReview} className="shrink-0 font-semibold underline underline-offset-2">
+            {review.status === "approved" ? "Ver mensualidad" : "Subir otro"}
+          </Link>
+          <button type="button" onClick={closeReview} aria-label="Cerrar aviso" className="shrink-0 p-1 -m-1 rounded cursor-pointer hover:bg-black/5">
+            <X className="w-4 h-4" aria-hidden />
+          </button>
+        </div>
+      )}
+
       {billing && (
         <div
           role="status"
@@ -141,8 +178,8 @@ export default function TenantNotices() {
         >
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl p-6 space-y-4">
             {current.type === "billing"
-              ? <BillingNotice billing={current.billing} tenantName={session.tenantName} />
-              : <ManualNotice notice={current.notice} plan={current.plan} tenantName={session.tenantName} />}
+              ? <BillingNotice billing={current.billing} uploadHref={mensualidadHref} onNavigate={close} />
+              : <ManualNotice notice={current.notice} plan={current.plan} uploadHref={mensualidadHref} onNavigate={close} />}
             <div className="flex flex-col gap-2 pt-1">
               <Button onClick={close} autoFocus className="w-full">Entendido</Button>
               {queue.length > 1 && <p className="text-center text-xs text-brand-dark/40">Hay {queue.length - 1} aviso(s) más</p>}
@@ -168,7 +205,9 @@ function Heading({ icon: Icon, tone, label, title }: { icon: React.ElementType; 
   );
 }
 
-function BillingNotice({ billing, tenantName }: { billing: Billing; tenantName: string }) {
+interface UploadLink { uploadHref: string; onNavigate: () => void }
+
+function BillingNotice({ billing, uploadHref, onNavigate }: { billing: Billing } & UploadLink) {
   const late = billing.status === "late";
   const { price } = billing;
   return (
@@ -198,7 +237,7 @@ function BillingNotice({ billing, tenantName }: { billing: Billing; tenantName: 
         {late ? `Venció el ${billing.dueDate}.` : `Vence el ${billing.dueDate}.`}
         {billing.suspendDate && ` Si el pago no se registra, el panel y la tienda en línea se suspenden el ${billing.suspendDate}.`}
       </p>
-      <HowToPay payment={billing.payment} message={`Hola, soy de ${tenantName}. Adjunto el comprobante de la mensualidad de ${billing.period}.`} />
+      <HowToPay payment={billing.payment} uploadHref={uploadHref} onNavigate={onNavigate} />
     </>
   );
 }
@@ -209,7 +248,7 @@ const KIND_STYLE: Record<NoticeKind, { icon: React.ElementType; tone: string }> 
   urgente: { icon: AlertTriangle, tone: "bg-red-100 text-red-700" },
 };
 
-function ManualNotice({ notice, plan, tenantName }: { notice: Notice; plan: Plan | null; tenantName: string }) {
+function ManualNotice({ notice, plan, uploadHref, onNavigate }: { notice: Notice; plan: Plan | null } & UploadLink) {
   const style = KIND_STYLE[notice.kind] ?? KIND_STYLE.info;
   return (
     <>
@@ -223,35 +262,34 @@ function ManualNotice({ notice, plan, tenantName }: { notice: Notice; plan: Plan
               {plan.price.discountAmount > 0 && <span className="text-emerald-700"> ({plan.price.discountLabel})</span>}.
             </p>
           )}
-          <HowToPay payment={plan.payment} message={`Hola, soy de ${tenantName}. Adjunto el comprobante de la mensualidad.`} />
+          <HowToPay payment={plan.payment} uploadHref={uploadHref} onNavigate={onNavigate} />
         </>
       )}
     </>
   );
 }
 
-/** Cómo pagar y el botón para mandar el comprobante por WhatsApp con el mensaje ya escrito. */
-function HowToPay({ payment, message }: { payment: PaymentInfo | null; message: string }) {
-  if (!payment) {
-    return <p className="text-sm text-brand-dark/60">Para coordinar el pago, contactá a Ennea.</p>;
-  }
-  const wa = payment.whatsapp.replace(/\D/g, "");
+/** Cómo pagar y el botón para subir el comprobante en Mensualidad. */
+function HowToPay({ payment, uploadHref, onNavigate }: { payment: PaymentInfo | null } & UploadLink) {
+  const hasData = Boolean(payment && (payment.sinpeNumber || payment.iban || payment.notes));
   return (
     <div className="space-y-3">
-      <div className="rounded-xl bg-brand-muted/40 px-4 py-3 text-sm text-brand-dark/80 space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-wide text-brand-dark/50">Cómo pagar</p>
-        {payment.sinpeNumber && <p>SINPE Móvil: <strong>{payment.sinpeNumber}</strong>{payment.sinpeName && ` (${payment.sinpeName})`}</p>}
-        {payment.iban && <p className="break-all">IBAN: <strong>{payment.iban}</strong>{payment.ibanName && ` (${payment.ibanName})`}</p>}
-        {payment.notes && <p className="whitespace-pre-line">{payment.notes}</p>}
-      </div>
-      {wa && (
-        <a
-          href={`https://wa.me/${wa}?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 w-full rounded-xl border border-emerald-600 px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
-        >
-          <MessageCircle className="w-4 h-4" aria-hidden /> Ya pagué: enviar comprobante por WhatsApp
-        </a>
+      {hasData && payment ? (
+        <div className="rounded-xl bg-brand-muted/40 px-4 py-3 text-sm text-brand-dark/80 space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-dark/50">Cómo pagar</p>
+          {payment.sinpeNumber && <p>SINPE Móvil: <strong>{payment.sinpeNumber}</strong>{payment.sinpeName && ` (${payment.sinpeName})`}</p>}
+          {payment.iban && <p className="break-all">IBAN: <strong>{payment.iban}</strong>{payment.ibanName && ` (${payment.ibanName})`}</p>}
+          {payment.notes && <p className="whitespace-pre-line">{payment.notes}</p>}
+        </div>
+      ) : (
+        <p className="text-sm text-brand-dark/60">Los datos para pagar están en Mensualidad.</p>
       )}
+      <Link
+        href={uploadHref} onClick={onNavigate}
+        className="flex items-center justify-center gap-2 w-full rounded-xl border border-emerald-600 px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+      >
+        <Upload className="w-4 h-4" aria-hidden /> Ya pagué: subir el comprobante
+      </Link>
     </div>
   );
 }

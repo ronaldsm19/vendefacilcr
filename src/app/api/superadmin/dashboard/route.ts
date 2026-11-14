@@ -10,7 +10,7 @@ import { AccessLog } from "@/models/AccessLog";
 import { BILLING_DUE_DAY } from "@/models/BillingSettings";
 import { getBillingSettings, moneySummary } from "@/server/services/billing";
 import {
-  PLAN_LABELS, billingOf, priceFor, crDay, nextPeriod, periodDueDate, formatCrDate, formatCRC, daysBetween,
+  PLAN_LABELS, billingOf, priceFor, crDay, nextPeriod, periodDueDate, periodLabel, formatCrDate, formatCRC, daysBetween,
   type PlanKey, type TenantBilling,
 } from "@/lib/billing";
 
@@ -20,7 +20,7 @@ import {
  */
 
 type BillingState = "suspendido" | "gratis" | "atrasado" | "vence" | "aldia";
-type TodayKind = "late" | "dueSoon" | "suspended" | "request" | "errors";
+type TodayKind = "proof" | "late" | "dueSoon" | "suspended" | "request" | "errors";
 
 interface TodayItem { kind: TodayKind; title: string; detail: string; href: string }
 /** Un pendiente con su orden dentro de su grupo (menor = más urgente). */
@@ -36,7 +36,15 @@ interface TenantDoc {
   suspendedAt?: Date | null;
   billing?: Partial<TenantBilling> | null;
 }
-interface InvoiceDoc { tenantId: Types.ObjectId; amount: number; status: "pending" | "late"; dueDate: Date }
+interface InvoiceDoc {
+  tenantId: Types.ObjectId;
+  amount: number;
+  status: "pending" | "late";
+  dueDate: Date;
+  periodYear: number;
+  periodMonth: number;
+  review?: { status?: string; submittedAt?: Date | null };
+}
 interface RequestDoc { businessName: string; plan: string; createdAt: Date }
 
 const TODAY_MAX = 8;
@@ -65,7 +73,7 @@ export async function GET(request: NextRequest) {
     settingsQuery.then(() => moneySummary(y, m)),
     Tenant.find().select("_id slug name plan status suspendedReason suspendedAt billing").lean() as unknown as Promise<TenantDoc[]>,
     // Todas las facturas sin pagar, de la que venció primero a la que vence último.
-    Payment.find({ status: { $in: ["pending", "late"] } }).select("tenantId amount status dueDate").sort({ dueDate: 1 }).lean() as unknown as Promise<InvoiceDoc[]>,
+    Payment.find({ status: { $in: ["pending", "late"] } }).select("tenantId amount status dueDate periodYear periodMonth review.status review.submittedAt").sort({ dueDate: 1 }).lean() as unknown as Promise<InvoiceDoc[]>,
     TenantRequest.find({ status: "pending" }).select("businessName plan createdAt").sort({ createdAt: 1 }).limit(TODAY_MAX).lean() as unknown as Promise<RequestDoc[]>,
     TenantRequest.countDocuments({ status: "pending" }) as unknown as Promise<number>,
     ErrorEvent.aggregate([
@@ -81,8 +89,12 @@ export async function GET(request: NextRequest) {
     ]) as unknown as Promise<{ _id: Types.ObjectId; lastAt: Date }[]>,
   ]);
 
+  // Un mes con el comprobante esperando revisión no cuenta como atrasado ni por vencer: el negocio
+  // ya pagó y lo que falta es revisarlo. Va aparte, primero en "Qué atender hoy".
+  const inReview = openInvoices.filter((inv) => inv.review?.status === "submitted");
   const invoicesOf = new Map<string, InvoiceDoc[]>();
   for (const inv of openInvoices) {
+    if (inv.review?.status === "submitted") continue;
     const key = String(inv.tenantId);
     const list = invoicesOf.get(key);
     if (list) list.push(inv);
@@ -175,9 +187,23 @@ export async function GET(request: NextRequest) {
   const errors24h = errorTotals[0]?.total ?? 0;
   const errorTenants = (errorTotals[0]?.tenants ?? []).filter(Boolean).length;
 
-  // Lo más urgente primero: plata atrasada, cobros por vencer, solicitudes y errores sin revisar y,
+  // Lo más urgente primero: comprobantes por revisar (el negocio ya pagó y espera), plata atrasada, cobros por vencer, solicitudes y errores sin revisar y,
   // al final, los suspendidos por falta de pago (ya están frenados; solo falta que paguen).
+  const nameOf = new Map(tenants.map((t) => [String(t._id), t]));
+  const todayProofs: TodayItem[] = [...inReview]
+    .sort((a, b) => new Date(a.review?.submittedAt ?? 0).getTime() - new Date(b.review?.submittedAt ?? 0).getTime())
+    .flatMap((inv) => {
+      const t = nameOf.get(String(inv.tenantId));
+      return t ? [{
+        kind: "proof" as const,
+        title: t.name,
+        detail: `Subió el comprobante de ${periodLabel(inv.periodYear, inv.periodMonth)}: ${formatCRC(inv.amount)}`,
+        href: "/superadmin/pagos?tab=revisar",
+      }] : [];
+    });
+
   const today: TodayItem[] = [
+    ...todayProofs,
     ...byOrder(todayLate),
     ...byOrder(todayDueSoon),
     ...requests.map((r): TodayItem => ({
@@ -206,6 +232,7 @@ export async function GET(request: NextRequest) {
       withoutInvoiceExpected: summary.withoutInvoice.expected,
     },
     attention: {
+      proofs: inReview.length,
       dueSoon: inState("vence"),
       late: inState("atrasado"),
       suspended: inState("suspendido"),

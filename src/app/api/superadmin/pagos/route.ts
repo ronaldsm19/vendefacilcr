@@ -5,6 +5,7 @@ import { Payment } from "@/models/Payment";
 import { Tenant } from "@/models/Tenant";
 import { getSuperadminSession } from "@/lib/auth";
 import { ensureInvoice, generateMonth, getBillingSettings } from "@/server/services/billing";
+import { REVIEW_QUEUE_FILTER, reviewQueueCount } from "@/server/services/mensualidad";
 import { crDay } from "@/lib/billing";
 
 export async function GET(request: NextRequest) {
@@ -18,18 +19,32 @@ export async function GET(request: NextRequest) {
   const month  = searchParams.get("month") ? Number(searchParams.get("month")) : undefined;
   const page   = Math.max(1, Number(searchParams.get("page") ?? 1));
   const limit  = Math.min(100, Number(searchParams.get("limit") ?? 30));
+  // review=submitted: la fila "Por revisar" (comprobantes esperando, de cualquier mes).
+  const toReview = searchParams.get("review") === "submitted";
+  const q = (searchParams.get("q") ?? "").trim().slice(0, 60);
 
-  const query: Record<string, unknown> = {};
-  if (status) query.status = status;
-  if (year)   query.periodYear  = year;
-  if (month)  query.periodMonth = month;
+  const query: Record<string, unknown> = toReview ? { ...REVIEW_QUEUE_FILTER } : {};
+  if (!toReview) {
+    if (status) query.status = status;
+    if (year)   query.periodYear  = year;
+    if (month)  query.periodMonth = month;
+  }
+  if (q) {
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    query.$or = [{ tenantName: re }, { tenantSlug: re }];
+  }
 
-  const [payments, total] = await Promise.all([
-    Payment.find(query).sort({ periodYear: -1, periodMonth: -1, tenantSlug: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+  const sort: Record<string, 1 | -1> = toReview
+    ? { "review.submittedAt": 1 }
+    : { periodYear: -1, periodMonth: -1, tenantSlug: 1 };
+  const [payments, total, reviewCount] = await Promise.all([
+    // La ruta del archivo no hace falta en la lista: el comprobante se abre desde la revisión.
+    Payment.find(query).select("-proofs.path").sort(sort).skip((page - 1) * limit).limit(limit).lean(),
     Payment.countDocuments(query),
+    reviewQueueCount(),
   ]);
 
-  return NextResponse.json({ payments, total, page, limit });
+  return NextResponse.json({ payments, total, page, limit, reviewCount });
 }
 
 /**

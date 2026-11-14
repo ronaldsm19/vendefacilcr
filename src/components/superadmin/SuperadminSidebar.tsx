@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { EnneaMark, ENNEA_COLORS } from "@/components/brand/EnneaMark";
+import { REVIEW_CHANGED_EVENT } from "@/components/superadmin/pagos/paymentStatus";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -43,6 +45,22 @@ export function SuperadminBrand() {
 export default function SuperadminSidebar({ onClose, onSearch }: { onClose?: () => void; onSearch?: () => void }) {
   const pathname = usePathname();
   const router   = useRouter();
+  /** Comprobantes que esperan revisión: el número junto a "Pagos". Se vuelve a pedir al cambiar de pantalla. */
+  const [toReview, setToReview] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      fetch("/api/superadmin/pagos/por-revisar")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (alive && d) setToReview(d.count ?? 0); })
+        .catch(() => {});
+    };
+    refresh();
+    // La revisión de un comprobante avisa con este evento para que el número baje sin cambiar de pantalla.
+    window.addEventListener(REVIEW_CHANGED_EVENT, refresh);
+    return () => { alive = false; window.removeEventListener(REVIEW_CHANGED_EVENT, refresh); };
+  }, [pathname]);
 
   async function handleLogout() {
     await fetch("/api/superadmin/auth/logout", { method: "POST" });
@@ -81,6 +99,9 @@ export default function SuperadminSidebar({ onClose, onSearch }: { onClose?: () 
             <Link key={item.href} href={item.href} onClick={onClose} className="sa-nav-link" aria-current={isActive ? "page" : undefined}>
               <Icon aria-hidden />
               {item.label}
+              {item.href === "/superadmin/pagos" && toReview > 0 && (
+                <span className="sa-nav-count" aria-label={`${toReview} por revisar`}>{toReview}</span>
+              )}
             </Link>
           );
         })}

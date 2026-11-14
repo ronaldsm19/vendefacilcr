@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Eye, EyeOff, Lock, Store, Loader2, Check } from "lucide-react";
+import { Eye, EyeOff, Lock, Store, Loader2, Check, CreditCard, ChevronRight } from "lucide-react";
 import { siteHost } from "@/lib/site";
-import MiPlanCard from "@/components/admin/MiPlanCard";
 
 interface Profile {
   email: string;
@@ -115,7 +115,18 @@ export default function PerfilPage() {
         </dl>
       </div>
 
-      <MiPlanCard />
+      {/* El plan, lo que se paga y los comprobantes viven en Mensualidad. */}
+      <Link
+        href={`/${slug}/admin/mensualidad`}
+        className="flex items-center gap-3 bg-white rounded-2xl card-shadow p-6 hover:ring-1 hover:ring-brand-pink/30 transition"
+      >
+        <CreditCard className="w-4 h-4 text-brand-pink shrink-0" aria-hidden />
+        <span className="flex-1 min-w-0">
+          <span className="block font-semibold text-brand-dark">Mi plan y mensualidad</span>
+          <span className="block text-sm text-brand-dark/55">Cuánto pagás, cómo pagar, comprobantes e historial</span>
+        </span>
+        <ChevronRight className="w-4 h-4 text-brand-dark/40 shrink-0" aria-hidden />
+      </Link>
 
       {/* Cambiar contraseña */}
       <div className="bg-white rounded-2xl card-shadow p-6">
