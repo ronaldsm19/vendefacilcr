@@ -31,18 +31,39 @@ function getTransporter(): nodemailer.Transporter | null {
  * Envía un correo. NUNCA lanza: si SMTP no está configurado o falla, se
  * registra el error y se retorna { ok: false } sin romper la operación principal.
  */
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+}
+
 export async function sendMail({
   to,
+  cc,
   subject,
   html,
+  attachments = [],
+  replyTo,
+  fromName = "Ennea",
 }: {
   to: string;
+  cc?: string[];
   subject: string;
   html: string;
+  /** Archivos adjuntos (por ejemplo el PDF de un comprobante). El logo va siempre aparte. */
+  attachments?: MailAttachment[];
+  /** A quién le llega la respuesta, por ejemplo el correo del negocio y no el de Ennea. */
+  replyTo?: string;
+  /** Nombre visible del remitente; la dirección sigue siendo la de SMTP_FROM. */
+  fromName?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   // Para probar en desarrollo sin mandar correos de verdad (nunca se define en producción).
   if (process.env.EMAIL_DRY_RUN === "1") {
-    console.log(`[email] (sin envío) para=${to} asunto="${subject}"`);
+    const files = attachments.map((a) => `${a.filename} (${a.content.length} B)`).join(", ");
+    console.log(
+      `[email] (sin envío) de="${fromName}" para=${to}${cc?.length ? ` cc=${cc.join(",")}` : ""}` +
+      `${replyTo ? ` responder-a=${replyTo}` : ""} asunto="${subject}"${files ? ` adjuntos=${files}` : ""}`
+    );
     return { ok: true };
   }
   const tx = getTransporter();
@@ -54,19 +75,23 @@ export async function sendMail({
     // SMTP_FROM permite un remitente distinto del usuario SMTP: con un servicio de envío y dominio
     // propio (el usuario suele ser fijo, tipo "resend") la dirección tiene que ser de ese dominio.
     const from = process.env.SMTP_FROM || process.env.SMTP_USER!;
+    // El nombre visible puede traer comas o comillas (el de un negocio): nodemailer lo cita solo.
     await tx.sendMail({
-      from: `Ennea <${from}>`,
+      from: { name: fromName, address: from },
       to,
+      ...(cc?.length ? { cc } : {}),
+      ...(replyTo ? { replyTo } : {}),
       subject,
       html,
-      // Logo embebido inline (CID) — no depende de un host externo
       attachments: [
+        // Logo embebido inline (CID) — no depende de un host externo
         {
           filename: "ennea.png",
           content: Buffer.from(VF_LOGO_BASE64, "base64"),
           cid: LOGO_CID,
           contentType: "image/png",
         },
+        ...attachments,
       ],
     });
     return { ok: true };
@@ -316,4 +341,46 @@ export function passwordChangedEmailHtml({ name }: { name: string }): string {
       Si no realizaste este cambio, contactá de inmediato a Ennea.
     </p>`;
   return layout("Contraseña actualizada", body);
+}
+
+/**
+ * Correo al cliente con el comprobante de venta en PDF. Lo firma el negocio (el correo sale a su
+ * nombre "vía Ennea" y las respuestas le llegan a él); el pie lo deja claro: no es factura electrónica.
+ */
+export function saleReceiptEmailHtml({
+  businessName,
+  customerName,
+  receiptLabel,
+  dateLabel,
+  totalLabel,
+  businessContact,
+}: {
+  businessName: string;
+  customerName: string;
+  receiptLabel: string;
+  dateLabel: string;
+  totalLabel: string;
+  /** Teléfono o correo del negocio, ya armado en una línea. Puede ir vacío. */
+  businessContact: string;
+}): string {
+  const rows = [
+    { label: "Comprobante", value: receiptLabel },
+    { label: "Fecha", value: dateLabel },
+    { label: "Total", value: totalLabel },
+  ]
+    .map((r) => `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #E3E6EC;font-size:14px;color:#15223B99;">${escapeHtml(r.label)}</td>
+        <td style="padding:8px 0 8px 12px;border-bottom:1px solid #E3E6EC;font-size:14px;font-weight:600;color:#15223B;text-align:right;">${escapeHtml(r.value)}</td>
+      </tr>`)
+    .join("");
+  const body = `
+    <p style="margin:0 0 16px;">Hola <strong>${escapeHtml(customerName)}</strong>,</p>
+    <p style="margin:0 0 20px;">Gracias por tu compra en <strong>${escapeHtml(businessName)}</strong>. Te adjuntamos el comprobante en PDF.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${rows}</table>
+    ${businessContact
+      ? `<p style="margin:24px 0 0;font-size:13px;color:#15223B99;">¿Alguna duda? Respondé este correo o escribí a ${escapeHtml(businessName)}: ${escapeHtml(businessContact)}.</p>`
+      : `<p style="margin:24px 0 0;font-size:13px;color:#15223B99;">¿Alguna duda? Respondé este correo.</p>`}
+    <p style="margin:16px 0 0;font-size:12px;color:#15223B80;">Este documento no es un comprobante electrónico de Hacienda.</p>`;
+  return layout(`Tu comprobante de ${escapeHtml(businessName)}`, body);
 }

@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
   Loader2, Plus, Minus, X, Check, ShoppingCart, Printer, UserCircle,
-  Utensils, ChevronLeft, RefreshCw, AlertCircle,
+  Utensils, ChevronLeft, RefreshCw, AlertCircle, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
@@ -14,6 +14,9 @@ import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import AddToComandaPanel from "@/components/admin/AddToComandaPanel";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import PendingComandasBanner from "@/components/admin/PendingComandasBanner";
+import InvoiceCustomerPicker from "@/components/admin/InvoiceCustomerPicker";
+import { can, planAllows } from "@/lib/permissions";
+import type { CustomerView } from "@/lib/customerId";
 import PaymentMethodPicker, { PaymentMethodChip, PAYMENT_METHOD_ICONS } from "@/components/admin/PaymentMethodPicker";
 import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_STYLE, SPLIT_METHODS, type PaymentMethod } from "@/lib/payments";
 import { notifyComandasUpdated } from "@/components/admin/PendingComandasContext";
@@ -322,6 +325,7 @@ function PosPageInner() {
   const DRAFT_KEY = `pos_cart_${tenantSlug}`;
   const session = useAdminSession();
   const { isPremium } = session;
+  const canInvoice = can(session, "clientes") && planAllows(session, "clientes");
 
   // ── Data state ──────────────────────────────────────────────────
   const [products, setProducts]       = useState<ProductRow[]>([]);
@@ -341,6 +345,10 @@ function PosPageInner() {
   const [cart, setCart]             = useState<CartLine[]>([]);
   const [tipAmount, setTipAmount]   = useState(0);
   const [customerName, setCustomerName] = useState("");
+  // Cliente del registro a cuyo nombre sale la factura (comprobante por correo). No va en el
+  // borrador del carrito: se elige al cobrar.
+  const [invoiceCustomer, setInvoiceCustomer] = useState<CustomerView | null>(null);
+  const [invoiceSentTo, setInvoiceSentTo] = useState<string | null>(null);
   const [tableNumber, setTableNumber]   = useState("");
   const [observaciones, setObservaciones] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
@@ -825,15 +833,20 @@ function PosPageInner() {
           deliveryPhone:  orderType === "EXPRESS" ? deliveryPhone  : undefined,
           deliveryFee:    orderType === "EXPRESS" ? totals.deliveryFee : undefined,
           tableId: tableId || undefined,
+          invoiceCustomerId: invoiceCustomer?._id,
           comandaSelections: comandaSelections.map(({ comandaId, version, items: selItems }) => ({ comandaId, version, items: selItems })),
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         setSaleError({ message: data.error ?? "No se pudo registrar la venta", code: data.code });
+        // Lo borraron del registro mientras se cobraba: se suelta para que lo elijan de nuevo.
+        if (data.code === "INVOICE_CUSTOMER_NOT_FOUND") setInvoiceCustomer(null);
         return;
       }
       const s = data.sale;
+      setInvoiceSentTo(s.invoice?.customer?.email ?? null);
+      setInvoiceCustomer(null);
       const prevTableNumber = tableNumber;
       const cameFromComandas = comandaSelections.length > 0;
       const chargedTableId = tableId;
@@ -1247,6 +1260,12 @@ function PosPageInner() {
                 ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>{lastTableNote ? ` · ${lastTableNote}` : ""}
               </div>
             )}
+            {showSuccess && invoiceSentTo && (
+              <div className="flex items-start gap-2 bg-brand-pink/5 border border-brand-pink/20 rounded-xl px-3 py-2 text-xs text-brand-dark/70">
+                <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-pink" />
+                <span>El comprobante sale por correo a <span className="font-semibold break-all">{invoiceSentTo}</span>.</span>
+              </div>
+            )}
             {showSuccess && autoPrintError && (
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -1523,6 +1542,12 @@ function PosPageInner() {
                 ¡Venta registrada! <span className="font-mono font-bold">#{lastSaleNum}</span>{lastTableNote ? ` · ${lastTableNote}` : ""}
               </div>
             )}
+            {showSuccess && invoiceSentTo && (
+              <div className="flex items-start gap-2 bg-brand-pink/5 border border-brand-pink/20 rounded-xl px-3 py-2 text-xs text-brand-dark/70">
+                <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-pink" />
+                <span>El comprobante sale por correo a <span className="font-semibold break-all">{invoiceSentTo}</span>.</span>
+              </div>
+            )}
             {showSuccess && autoPrintError && (
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -1637,6 +1662,11 @@ function PosPageInner() {
                 <p className="text-sm font-semibold text-gray-600">Pago exacto</p>
                 <p className="text-xs text-gray-400 mt-1">No se requiere vuelto</p>
               </div>
+            )}
+
+            {/* Factura: el comprobante le llega por correo al cliente registrado */}
+            {canInvoice && (
+              <InvoiceCustomerPicker value={invoiceCustomer} onChange={setInvoiceCustomer} disabled={saving} />
             )}
 
             {/* Acciones */}
