@@ -44,6 +44,8 @@ export interface ICashClose {
   expensesTotal: number;
   profit: number;
   productsSummary: IProductSummary[];
+  /** Ventas por sección del negocio (líneas sin cargos). Vacío si el negocio no tenía secciones. */
+  sectionsSummary: { sectionId: string; name: string; revenue: number; units: number }[];
   arqueo?: IArqueo;
   /** Cuadre del datáfono. Solo existe en cierres de días que tuvieron ventas con tarjeta. */
   cardReconciliation?: CardReconciliation;
@@ -82,6 +84,16 @@ const CashCloseSchema = new Schema(
     expensesTotal:   { type: Number, default: 0 },
     profit:          { type: Number, default: 0 },
     productsSummary: { type: [ProductSummarySchema], default: [] },
+    sectionsSummary: {
+      type: [{
+        sectionId: { type: String, required: true },
+        name:      { type: String, required: true },
+        revenue:   { type: Number, required: true },
+        units:     { type: Number, required: true },
+        _id: false,
+      }],
+      default: [],
+    },
     arqueo: {
       type: {
         denominaciones: [{

@@ -9,6 +9,11 @@ import { Product } from "@/models/Product";
 import { Tenant } from "@/models/Tenant";
 import { AccessLog } from "@/models/AccessLog";
 import StoreUnavailable from "@/components/StoreUnavailable";
+import { getCategoryOrder } from "@/server/services/categories";
+import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
+import {
+  categorySectionMap, readSections, sectionOfCategory, visibleSections, type BusinessSection,
+} from "@/lib/sections";
 
 async function getTenantWithMenu(slug: string) {
   try {
@@ -21,6 +26,7 @@ async function getTenantWithMenu(slug: string) {
       name: string;
       status: string;
       logoUrl: string;
+      sections?: unknown;
       theme: {
         primaryColor: string;
         secondaryColor: string;
@@ -59,6 +65,7 @@ async function getAvailableProducts(tenantId: string) {
       price: number;
       image?: string;
       menuSection?: string;
+      category?: string;
     }>;
   } catch {
     return [];
@@ -271,6 +278,27 @@ export default async function MenuPage({
 
   const currentProducts = activeTab === "bebidas" ? bebidasProducts : panaderiaProducts;
 
+  // Secciones del negocio (Configuración → Productos). Si el negocio tiene, reemplazan las pestañas
+  // fijas Panadería/Bebidas: una pestaña por sección y, adentro, los productos agrupados por
+  // categoría en el orden configurado. Sin secciones, el menú queda exactamente como antes.
+  const sections = readSections(tenant.sections);
+  const sectionMode = sections.length > 0;
+  let sectionTabs: BusinessSection[] = [];
+  let activeSectionId = "";
+  let sectionGroups: { label: string; products: typeof allProducts }[] = [];
+  if (sectionMode) {
+    const catOrder: CategoryOrderEntry[] = await getCategoryOrder(tenant._id).catch(() => []);
+    const catMap = categorySectionMap(sections, catOrder);
+    const withSection = allProducts.map((p) => ({ p, s: sectionOfCategory(catMap, p.category) }));
+    sectionTabs = visibleSections(sections, withSection.map((x) => x.s));
+    activeSectionId = sectionTabs.find((s) => s.id === tabParam)?.id ?? sectionTabs[0]?.id ?? "";
+    const inSection = withSection.filter((x) => x.s === activeSectionId).map((x) => x.p);
+    sectionGroups = orderCategories(catOrder, inSection.map((p) => p.category)).map((label) => ({
+      label,
+      products: inSection.filter((p) => p.category === label),
+    }));
+  }
+
   // Colores y apariencia
   const primary   = tenant.menuConfig?.primaryColor   || tenant.theme.primaryColor;
   const secondary = tenant.menuConfig?.secondaryColor || tenant.theme.secondaryColor;
@@ -366,8 +394,36 @@ export default async function MenuPage({
           </div>
         )}
 
+        {/* ── Tabs por sección del negocio ── */}
+        {sectionMode && sectionTabs.length >= 2 && (
+          <div className="max-w-5xl mx-auto px-4 pt-6 pb-0">
+            <div
+              className="inline-flex flex-wrap rounded-2xl p-1 gap-1"
+              style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)" }}
+            >
+              {sectionTabs.map((s) => {
+                const isActive = activeSectionId === s.id;
+                return (
+                  <Link
+                    key={s.id}
+                    href={`?tab=${s.id}`}
+                    className="px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
+                    style={
+                      isActive
+                        ? { background: `linear-gradient(135deg, ${primary}, ${secondary})`, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }
+                        : { color: colorText, opacity: 0.6 }
+                    }
+                  >
+                    {s.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── Tabs ── */}
-        {showTabs && (
+        {!sectionMode && showTabs && (
           <div className="max-w-5xl mx-auto px-4 pt-6 pb-0">
             <div
               className="inline-flex rounded-2xl p-1 gap-1"
@@ -396,7 +452,56 @@ export default async function MenuPage({
 
         {/* ── Contenido ── */}
         <main className="max-w-5xl mx-auto px-4 py-6">
-          {currentProducts.length === 0 ? (
+          {sectionMode ? (
+            sectionGroups.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-4 opacity-40">
+                <span className="text-6xl">🛒</span>
+                <p className="text-base font-medium">No hay productos disponibles</p>
+              </div>
+            ) : (
+              <div className="space-y-10">
+                {sectionGroups.map((group, gi) => (
+                  <section key={group.label}>
+                    <h3 className="text-xl font-bold tracking-tight mb-4" style={{ color: primary }}>
+                      {group.label}
+                    </h3>
+                    {columns === 1 ? (
+                      <div
+                        className="rounded-2xl px-4 sm:px-6"
+                        style={{ backgroundColor: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.02)" }}
+                      >
+                        {group.products.map((product, idx) => (
+                          <ListRow
+                            key={product._id}
+                            product={product}
+                            primary={primary}
+                            secondary={secondary}
+                            showImage={showImage}
+                            showPrice={showPrice}
+                            isFirst={gi === 0 && idx === 0}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className={`grid gap-5 ${COLS_GRID[columns as 2 | 3]}`}>
+                        {group.products.map((product, idx) => (
+                          <PremiumCard
+                            key={product._id}
+                            product={product}
+                            primary={primary}
+                            secondary={secondary}
+                            showImage={showImage}
+                            showPrice={showPrice}
+                            isFirst={gi === 0 && idx === 0}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                ))}
+              </div>
+            )
+          ) : currentProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 gap-4 opacity-40">
               <span className="text-6xl">🛒</span>
               <p className="text-base font-medium">No hay productos disponibles</p>

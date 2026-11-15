@@ -7,6 +7,7 @@ import { getSession, requireFeature } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
 import { dayRangeCR } from "@/lib/crDate";
 import { splitPayments } from "@/lib/payments";
+import { sectionsSummaryFromSales } from "@/server/services/sections";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -70,6 +71,9 @@ export async function GET(request: NextRequest) {
     .filter((p) => !soldIds.has(String(p._id)))
     .map((p) => ({ productId: String(p._id), productName: p.name as string, unitsSold: 0 }));
 
+  // Ventas por sección del negocio (null si no tiene secciones)
+  const sectionsSummary = await sectionsSummaryFromSales(session.tenantId, sales);
+
   const productsSummary = [...Object.values(soldMap).sort((a, b) => b.unitsSold - a.unitsSold), ...notSold];
 
   return NextResponse.json({
@@ -79,6 +83,7 @@ export async function GET(request: NextRequest) {
     expensesTotal,
     profit: salesTotal - expensesTotal,
     productsSummary,
+    sectionsSummary,
     date: startOfDay.toISOString(),
   });
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, requireFeature, requireRole } from "@/lib/auth";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { listCategories, createCategory } from "@/server/services/categories";
+import { listSections } from "@/server/services/sections";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -13,7 +14,13 @@ export async function GET(request: NextRequest) {
   const denied = requireRole(session, "admin", "cajero", "mesero");
   if (denied) return denied;
 
-  return NextResponse.json({ categories: await listCategories(session.tenantId) });
+  // Las secciones viajan junto con las categorías: todas las pantallas que ordenan por categoría
+  // (caja, mesero, configuración) también filtran por sección.
+  const [categories, sections] = await Promise.all([
+    listCategories(session.tenantId),
+    listSections(session.tenantId),
+  ]);
+  return NextResponse.json({ categories, sections });
 }
 
 export async function POST(request: NextRequest) {

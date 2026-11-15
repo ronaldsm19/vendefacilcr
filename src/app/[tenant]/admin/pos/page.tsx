@@ -24,6 +24,9 @@ import { DEFAULT_COMANDA_CONFIG, readComandaConfig, type ComandaConfigData } fro
 import { badgeLevel, type BadgeLevel } from "@/lib/comandaTime";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
+  categorySectionMap, readSections, sectionOfCategory, visibleSections, type BusinessSection,
+} from "@/lib/sections";
+import {
   computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty, appliesService,
   DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra, type AppliedCharges,
 } from "@/lib/pricing";
@@ -330,6 +333,7 @@ function PosPageInner() {
   // ── Data state ──────────────────────────────────────────────────
   const [products, setProducts]       = useState<ProductRow[]>([]);
   const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
+  const [sections, setSections]       = useState<BusinessSection[]>([]);
   const [tableGroups, setTableGroups] = useState<TableGroup[]>([]);
   const [businessName, setBusinessName] = useState("");
   const [ticketConfig, setTicketConfig] = useState<TicketConfigData>(DEFAULT_TICKET_CONFIG);
@@ -337,6 +341,9 @@ function PosPageInner() {
 
   // ── Catalog state ────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState("todos");
+  // Sección del negocio que se está mostrando ("todas" = sin filtro). Se recuerda por equipo: la
+  // caja del mostrador de la tienda puede quedarse siempre en su sección.
+  const [activeSection, setActiveSection]   = useState("todas");
   const [qtyModal, setQtyModal]             = useState<ProductRow | null>(null);
   const [qtyInput, setQtyInput]             = useState(1);
   const [qtyExtras, setQtyExtras]           = useState<string[]>([]);   // extras elegidos en el modal
@@ -451,6 +458,11 @@ function PosPageInner() {
       ]);
       setProducts((productsRes.products ?? []).filter((p: ProductRow) => p.available));
       setCategoryOrder(categoriesRes.categories ?? []);
+      setSections(readSections(categoriesRes.sections));
+      try {
+        const savedSection = localStorage.getItem("pos_section");
+        if (savedSection) setActiveSection(savedSection);
+      } catch {}
       // `||` (no `??`): si tenantName viene como cadena vacía, igual caemos al
       // slug del tenant, para que el nombre del negocio nunca vaya vacío (el
       // agente de impresión lo exige como obligatorio).
@@ -537,11 +549,28 @@ function PosPageInner() {
   }, [draftLoaded, isPremium]);
 
   // ── Derived ──────────────────────────────────────────────────────
-  const categories = ["todos", ...orderCategories(categoryOrder, products.map((p) => p.category))];
+  // Secciones del negocio: con dos o más que tengan productos aparece un filtro arriba de las
+  // familias. Una sección guardada que ya no existe cae a "todas".
+  const catSection = categorySectionMap(sections, categoryOrder);
+  const sectionTabs = sections.length > 0
+    ? visibleSections(sections, products.map((p) => sectionOfCategory(catSection, p.category)))
+    : [];
+  const showSectionTabs = sectionTabs.length >= 2;
+  const currentSection = showSectionTabs && sectionTabs.some((s) => s.id === activeSection) ? activeSection : "todas";
+  const sectionProducts = currentSection === "todas"
+    ? products
+    : products.filter((p) => sectionOfCategory(catSection, p.category) === currentSection);
+  function selectSection(id: string) {
+    setActiveSection(id);
+    setActiveCategory("todos");
+    try { localStorage.setItem("pos_section", id); } catch {}
+  }
+
+  const categories = ["todos", ...orderCategories(categoryOrder, sectionProducts.map((p) => p.category))];
   // Igual que la pantalla de comandas: agrupados en el orden de las familias (Configuración →
   // Productos) y, dentro de cada familia, por nombre.
   const categoryRank = new Map(categories.map((c, i) => [c, i]));
-  const visibleProducts = products
+  const visibleProducts = sectionProducts
     .filter((p) => activeCategory === "todos" || p.category === activeCategory)
     .sort((a, b) =>
       ((categoryRank.get(a.category) ?? categories.length) - (categoryRank.get(b.category) ?? categories.length)) ||
@@ -996,6 +1025,28 @@ function PosPageInner() {
 
         {/* ── Columna izquierda: Catálogo ── */}
         <div className="flex-1 flex flex-col overflow-hidden border-r border-brand-muted pb-20 lg:pb-0">
+          {/* Section filter */}
+          {showSectionTabs && (
+            <div className="flex overflow-x-auto gap-1.5 shrink-0 scrollbar-hide px-3 pt-3" role="tablist" aria-label="Secciones">
+              {[{ id: "todas", name: "Todas" }, ...sectionTabs].map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={currentSection === s.id}
+                  onClick={() => selectSection(s.id)}
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap shrink-0 border transition-colors cursor-pointer ${
+                    currentSection === s.id
+                      ? "gradient-bg text-white border-transparent"
+                      : "bg-white text-brand-dark/60 border-brand-muted hover:text-brand-dark"
+                  }`}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Category tabs */}
           <div className="flex overflow-x-auto gap-0 border-b border-brand-muted shrink-0 scrollbar-hide px-2 pt-2">
             {categories.map((cat) => (

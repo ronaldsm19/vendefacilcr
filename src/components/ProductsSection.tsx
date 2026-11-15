@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import ProductCard from "@/components/ProductCard";
 import { SeedProduct } from "@/data/seed";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
+import { categorySectionMap, sectionOfCategory, visibleSections, type BusinessSection } from "@/lib/sections";
 import { PRODUCTS_SECTION_FALLBACK, type ProductsSectionText } from "@/lib/storeTexts";
 
 interface ProductsSectionProps {
@@ -12,6 +13,8 @@ interface ProductsSectionProps {
   whatsappNumber?: string;
   businessName?: string;
   categories?: CategoryOrderEntry[];
+  /** Secciones del negocio (Configuración → Productos). Con dos o más con productos, se muestran como pestañas. */
+  sections?: BusinessSection[];
   /** Textos del encabezado, ya resueltos con productsSectionForDisplay (Configuración → Productos). */
   texts?: ProductsSectionText;
 }
@@ -23,8 +26,23 @@ const legacyLabels: Record<string, string> = {
   especial: "Edición Especial",
 };
 
-function ProductsGrid({ products, whatsappNumber, businessName, categories: categoryOrder }: ProductsSectionProps) {
+function ProductsGrid({ products: allProducts, whatsappNumber, businessName, categories: categoryOrder, sections = [] }: ProductsSectionProps) {
   const [activeCategory, setActiveCategory] = useState("all");
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+
+  // Secciones del negocio: si hay dos o más con productos, primero se escoge la sección y las
+  // categorías de abajo son solo las de esa sección. Sin secciones, todo queda como siempre.
+  const catSection = categorySectionMap(sections, categoryOrder ?? []);
+  const shownSections = sections.length > 0
+    ? visibleSections(sections, allProducts.map((p) => sectionOfCategory(catSection, p.category)))
+    : [];
+  const showSectionTabs = shownSections.length >= 2;
+  const currentSection = showSectionTabs
+    ? (shownSections.find((s) => s.id === activeSection) ?? shownSections[0]).id
+    : null;
+  const products = currentSection
+    ? allProducts.filter((p) => sectionOfCategory(catSection, p.category) === currentSection)
+    : allProducts;
 
   // Derive tabs from actual product categories (handles both old slugs and new labels),
   // en el orden que configuró el admin — las que no están configuradas (o vienen de un slug
@@ -42,6 +60,30 @@ function ProductsGrid({ products, whatsappNumber, businessName, categories: cate
 
   return (
     <>
+      {/* ── Section tabs ── */}
+      {showSectionTabs && (
+        <div className="flex justify-center mb-6">
+          <div role="tablist" aria-label="Secciones" className="inline-flex flex-wrap justify-center gap-1 rounded-2xl bg-surface p-1 border border-brand-dark/10 shadow-sm">
+            {shownSections.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                role="tab"
+                aria-selected={currentSection === s.id}
+                onClick={() => { setActiveSection(s.id); setActiveCategory("all"); }}
+                className={`px-5 sm:px-6 py-2.5 rounded-xl text-sm sm:text-base font-bold transition-all duration-200 cursor-pointer ${
+                  currentSection === s.id
+                    ? "gradient-bg text-white shadow-md"
+                    : "text-brand-dark/60 hover:text-brand-pink"
+                }`}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Category tabs ── */}
       <div className="flex flex-wrap justify-center gap-3 mb-10">
         {categories.map((cat) => (
@@ -72,7 +114,7 @@ function ProductsGrid({ products, whatsappNumber, businessName, categories: cate
 
       {/* ── Grid ── */}
       <motion.div
-        key={activeCategory}
+        key={`${currentSection ?? ""}:${activeCategory}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
@@ -93,7 +135,7 @@ function ProductsGrid({ products, whatsappNumber, businessName, categories: cate
   );
 }
 
-export default function ProductsSection({ products, whatsappNumber, businessName, categories, texts = PRODUCTS_SECTION_FALLBACK }: ProductsSectionProps) {
+export default function ProductsSection({ products, whatsappNumber, businessName, categories, sections, texts = PRODUCTS_SECTION_FALLBACK }: ProductsSectionProps) {
   return (
     <section id="productos" className="py-24 px-6 bg-surface-alt">
       <div className="max-w-6xl mx-auto">
@@ -149,7 +191,7 @@ export default function ProductsSection({ products, whatsappNumber, businessName
           </motion.p>
         </div>
 
-        <ProductsGrid products={products} whatsappNumber={whatsappNumber} businessName={businessName} categories={categories} />
+        <ProductsGrid products={products} whatsappNumber={whatsappNumber} businessName={businessName} categories={categories} sections={sections} />
       </div>
     </section>
   );

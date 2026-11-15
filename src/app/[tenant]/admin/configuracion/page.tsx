@@ -9,6 +9,8 @@ import {
 import { Button } from "@/components/ui/button";
 import TicketPreview from "@/components/admin/TicketPreview";
 import PrintQueueSection from "@/components/admin/PrintQueueSection";
+import SectionsManager from "@/components/admin/SectionsManager";
+import { readSections, type BusinessSection } from "@/lib/sections";
 import {
   buildSaleRows, buildCashCloseRows, DEFAULT_TICKET_CONFIG,
   type TicketConfigData, type SaleTicketData, type CashCloseTicketData,
@@ -34,6 +36,7 @@ interface Category {
   _id: string;
   label: string;
   order: number;
+  sectionId?: string;
 }
 
 function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -52,9 +55,11 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 }
 
 function SortableCategoryRow({
-  category, onDelete, onMoveUp, onMoveDown, isFirst, isLast, deleting,
+  category, onDelete, onMoveUp, onMoveDown, isFirst, isLast, deleting, sections, onSectionChange,
 }: {
   category: Category;
+  sections: BusinessSection[];
+  onSectionChange: (id: string, sectionId: string) => void;
   onDelete: (id: string) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
@@ -85,6 +90,19 @@ function SortableCategoryRow({
         <GripVertical className="w-4 h-4" />
       </button>
       <span className="flex-1 min-w-0 text-sm text-brand-dark truncate">{category.label}</span>
+      {sections.length > 0 && (
+        <select
+          value={sections.some((s) => s.id === category.sectionId) ? category.sectionId : ""}
+          onChange={(e) => onSectionChange(category._id, e.target.value)}
+          aria-label={`Sección de ${category.label}`}
+          className="max-w-[9rem] sm:max-w-[11rem] shrink-0 border border-brand-muted rounded-lg bg-white px-2 py-1 text-xs text-brand-dark focus:outline-none focus:border-brand-pink cursor-pointer"
+        >
+          <option value="">Sin sección</option>
+          {sections.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+      )}
       <div className="flex items-center gap-0.5 shrink-0">
         <button
           type="button"
@@ -404,6 +422,8 @@ export default function ConfiguracionPage() {
   const [savingCatOrder, setSavingCatOrder] = useState(false);
   const [catOrderError, setCatOrderError] = useState<string | null>(null);
   const [failedCatOrder, setFailedCatOrder] = useState<Category[] | null>(null);
+  const [sections, setSections] = useState<BusinessSection[]>([]);
+  const [catSectionError, setCatSectionError] = useState<string | null>(null);
   const catSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const fileRefs = [
@@ -453,7 +473,7 @@ export default function ConfiguracionPage() {
     // Categories
     fetch("/api/admin/categories")
       .then((r) => r.json())
-      .then((d) => setCategories(d.categories ?? []))
+      .then((d) => { setCategories(d.categories ?? []); setSections(readSections(d.sections)); })
       .finally(() => setCatsLoading(false));
 
     // Ticket config
@@ -873,6 +893,41 @@ export default function ConfiguracionPage() {
       setDeletingCatId(null);
     }
   }
+
+  // ── Handlers: sección de cada categoría ──────────────────────────
+  async function handleCategorySection(id: string, sectionId: string) {
+    const previous = categories;
+    setCategories((prev) => prev.map((c) => (c._id === id ? { ...c, sectionId } : c)));
+    setCatSectionError(null);
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sectionId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCategories(previous);
+        setCatSectionError(data.error ?? "No se pudo cambiar la sección");
+      }
+    } catch {
+      setCategories(previous);
+      setCatSectionError("No se pudo cambiar la sección — revisá tu conexión");
+    }
+  }
+
+  function handleSectionsSaved(next: BusinessSection[]) {
+    setSections(next);
+    // Las categorías de una sección que se quitó quedan sin sección (lo hace el servidor).
+    const valid = new Set(next.map((s) => s.id));
+    setCategories((prev) => prev.map((c) => (c.sectionId && !valid.has(c.sectionId) ? { ...c, sectionId: "" } : c)));
+  }
+
+  const categoryCountBySection = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of categories) if (c.sectionId) counts[c.sectionId] = (counts[c.sectionId] ?? 0) + 1;
+    return counts;
+  }, [categories]);
 
   // ── Handlers: orden de categorías ─────────────────────────────────
   async function saveCategoryOrder(newList: Category[]) {
@@ -1660,6 +1715,13 @@ export default function ConfiguracionPage() {
         </section>
       </form>
 
+      <div className="space-y-6">
+      <SectionsManager
+        sections={sections}
+        categoryCountBySection={categoryCountBySection}
+        onSaved={handleSectionsSaved}
+      />
+
       {/* ── Familias de productos (categorías) ────────────────────────── */}
       <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1676,6 +1738,12 @@ export default function ConfiguracionPage() {
             </span>
           )}
         </div>
+
+        {catSectionError && (
+          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {catSectionError}
+          </div>
+        )}
 
         {catOrderError && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
@@ -1707,6 +1775,8 @@ export default function ConfiguracionPage() {
                     isFirst={index === 0}
                     isLast={index === categories.length - 1}
                     deleting={deletingCatId === cat._id}
+                    sections={sections}
+                    onSectionChange={handleCategorySection}
                   />
                 ))}
               </SortableContext>
@@ -1727,6 +1797,7 @@ export default function ConfiguracionPage() {
           </Button>
         </form>
       </section>
+      </div>
 
       </div>}
 
