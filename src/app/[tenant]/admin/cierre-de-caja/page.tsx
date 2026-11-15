@@ -14,6 +14,8 @@ import { useAdminSession } from "@/components/admin/SessionContext";
 import CorrectOpeningDialog from "@/components/admin/caja/CorrectOpeningDialog";
 import EditCashCloseDialog from "@/components/admin/caja/EditCashCloseDialog";
 import ConfirmOpeningDialog from "@/components/admin/caja/ConfirmOpeningDialog";
+import SectionSalesCard from "@/components/admin/SectionSalesCard";
+import type { SectionTotal } from "@/lib/sections";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +42,8 @@ interface TodayData {
   expensesTotal: number;
   profit: number;
   productsSummary: ProductSummary[];
+  /** null si el negocio no tiene secciones. */
+  sectionsSummary?: SectionTotal[] | null;
   date: string;
 }
 
@@ -81,6 +85,7 @@ interface CashCloseRow {
   withdrawalsTotal?: number;
   cashLeft?: number;
   salesList?: { ticketNumber: number; total: number }[];
+  sectionsSummary?: SectionTotal[];
   notes?: string;
 }
 
@@ -391,6 +396,7 @@ export default function CierreDeCajaPage() {
       expensesTotal: today.expensesTotal,
       profit: today.profit,
       productsSummary: today.productsSummary,
+      sectionsSummary: todayClose?.sectionsSummary?.length ? todayClose.sectionsSummary : (today.sectionsSummary ?? undefined),
       arqueo: todayClose?.arqueo
         ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
       cardReconciliation: todayClose?.cardReconciliation,
@@ -421,6 +427,7 @@ export default function CierreDeCajaPage() {
       withdrawalsTotal: c.withdrawalsTotal,
       cashLeft: c.cashLeft,
       salesList: c.salesList,
+      sectionsSummary: c.sectionsSummary,
       notes: c.notes,
     }, ticketConfig);
   }
@@ -984,6 +991,11 @@ export default function CierreDeCajaPage() {
               </section>
             )}
 
+            {/* Ventas por sección del negocio */}
+            {today?.sectionsSummary && today.sectionsSummary.length > 0 && (
+              <SectionSalesCard totals={today.sectionsSummary} compact />
+            )}
+
             {/* Productos vendidos */}
             {(today?.productsSummary.filter((p) => p.unitsSold > 0).length ?? 0) > 0 && (
               <section className="bg-white rounded-2xl border border-brand-muted p-4 space-y-3">
@@ -1075,6 +1087,9 @@ export default function CierreDeCajaPage() {
                     <div className="text-right">
                       <p className="font-bold text-emerald-600 text-sm">{fmt(c.salesTotal)}</p>
                       <p className="text-xs text-brand-dark/40">Ganancia: {fmt(c.profit)}</p>
+                      {(c.sectionsSummary ?? []).filter((s) => s.revenue !== 0).map((s) => (
+                        <p key={s.sectionId} className="text-xs text-brand-dark/40">{s.name}: {fmt(s.revenue)}</p>
+                      ))}
                       {c.arqueo && (
                         <p className={`text-xs mt-0.5 ${
                           c.arqueo.diferencia === 0 ? "text-emerald-600" :

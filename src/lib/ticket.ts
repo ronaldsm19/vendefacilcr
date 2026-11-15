@@ -357,6 +357,8 @@ export interface CashCloseTicketData {
   arqueo?: { totalContado: number; totalEsperado: number; diferencia: number };
   cardReconciliation?: { expected: number; reported: number; difference: number; note?: string };
   productsSummary?: { productName: string; unitsSold: number }[];
+  /** Ventas por sección del negocio; solo si el negocio usa secciones. */
+  sectionsSummary?: { name: string; revenue: number }[];
   openingAmount?: number;
   withdrawals?: { amount: number; leftAmount: number; note?: string; date: Date | string }[];
   withdrawalsTotal?: number;
@@ -454,6 +456,15 @@ export function buildCashCloseRows(d: CashCloseTicketData, cfg: TicketConfigData
   rows.push({ t: "divider" });
 
   rows.push({ t: "lr", left: "GANANCIA NETA", right: money(d.profit), bold: true });
+
+  if (d.sectionsSummary && d.sectionsSummary.length > 0) {
+    rows.push({ t: "divider" });
+    rows.push({ t: "left", text: "VENTAS POR SECCION", bold: true });
+    for (const s of d.sectionsSummary) {
+      rows.push({ t: "lr", left: clip(`  ${s.name}`, 22), right: money(s.revenue) });
+    }
+    rows.push({ t: "left", text: "  Sin IVA, servicio ni propina", size: 7 });
+  }
 
   const sold = (d.productsSummary ?? []).filter((p) => p.unitsSold > 0);
   if (sold.length) {

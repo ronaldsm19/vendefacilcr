@@ -19,6 +19,9 @@ import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
 import ServeAllDialog from "@/components/admin/ServeAllDialog";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
+  categorySectionMap, readSections, sectionOfCategory, visibleSections, type BusinessSection,
+} from "@/lib/sections";
+import {
   extraLabel, extraQty, extrasKey, extrasTotal, lineTotal, subtotalOf, MAX_EXTRA_QTY, type LineExtra,
 } from "@/lib/pricing";
 
@@ -86,6 +89,7 @@ export default function TomarComandaPage() {
   const [comandaConfig, setComandaConfig] = useState<ComandaConfigData>(DEFAULT_COMANDA_CONFIG);
   const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
   const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
+  const [sections, setSections] = useState<BusinessSection[]>([]);
   const [nextNumber, setNextNumber] = useState(1);
   const [openComandas, setOpenComandas] = useState<ComandaRow[]>([]);
 
@@ -95,6 +99,7 @@ export default function TomarComandaPage() {
   const [lines, setLines] = useState<ComandaLine[]>([]);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("Todas");
+  const [activeSection, setActiveSection] = useState("todas"); // sección del negocio; se recuerda por equipo
 
   const [editVersion, setEditVersion] = useState<number | null>(null);
   const [editNumber, setEditNumber] = useState<number | null>(null);
@@ -135,6 +140,11 @@ export default function TomarComandaPage() {
     setComandaConfig(liveRes.comandaConfig ?? DEFAULT_COMANDA_CONFIG);
     setCatalog(catalogRes.products ?? []);
     setCategoryOrder(categoriesRes.categories ?? []);
+    setSections(readSections(categoriesRes.sections));
+    try {
+      const savedSection = localStorage.getItem("comanda_section");
+      if (savedSection) setActiveSection(savedSection);
+    } catch {}
     setNextNumber(nextRes.nextNumber ?? 1);
     const open = openRes.comandas ?? [];
     setOpenComandas(open);
@@ -423,11 +433,26 @@ export default function TomarComandaPage() {
   const plateTotal = (p: PlateDraft) => (sheetBase?.unitPrice ?? 0) + extrasTotal(p.extras);
   const sheetTotal = plates.reduce((s, p) => s + plateTotal(p), 0);
   const pendingToServe = openComandas.filter((c) => c.status === "enviada");
-  const categories = ["Todas", ...orderCategories(categoryOrder, catalog.map((p) => p.category))];
+  // Secciones del negocio: con dos o más que tengan productos aparece un filtro arriba de las familias.
+  const catSection = categorySectionMap(sections, categoryOrder);
+  const sectionTabs = sections.length > 0
+    ? visibleSections(sections, catalog.map((p) => sectionOfCategory(catSection, p.category)))
+    : [];
+  const showSectionTabs = sectionTabs.length >= 2;
+  const currentSection = showSectionTabs && sectionTabs.some((s) => s.id === activeSection) ? activeSection : "todas";
+  const sectionCatalog = currentSection === "todas"
+    ? catalog
+    : catalog.filter((p) => sectionOfCategory(catSection, p.category) === currentSection);
+  function selectSection(id: string) {
+    setActiveSection(id);
+    setActiveCategory("Todas");
+    try { localStorage.setItem("comanda_section", id); } catch {}
+  }
+  const categories = ["Todas", ...orderCategories(categoryOrder, sectionCatalog.map((p) => p.category))];
   // Con "Todas" se agrupan en el orden de las familias (Configuración → Productos); dentro de cada
   // familia queda el orden del catálogo, que ya viene por nombre (el sort es estable).
   const categoryRank = new Map(categories.map((c, i) => [c, i]));
-  const visibleProducts = catalog
+  const visibleProducts = sectionCatalog
     .filter((p) =>
       (activeCategory === "Todas" || p.category === activeCategory) &&
       (!search.trim() || p.name.toLowerCase().includes(search.toLowerCase()))
@@ -600,6 +625,19 @@ export default function TomarComandaPage() {
                       className="w-full pl-8 pr-3 py-2 border border-brand-muted rounded-xl text-sm focus:outline-none focus:border-brand-pink"
                     />
                   </div>
+                  {showSectionTabs && (
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-4 px-4" role="tablist" aria-label="Secciones">
+                      {[{ id: "todas", name: "Todas" }, ...sectionTabs].map((s) => (
+                        <button key={s.id} type="button" role="tab" onClick={() => selectSection(s.id)}
+                          aria-selected={currentSection === s.id}
+                          className={`px-3.5 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap shrink-0 border transition-colors ${
+                            currentSection === s.id ? "gradient-bg text-white border-transparent" : "bg-white text-brand-dark/60 border-brand-muted"
+                          }`}>
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
                     {categories.map((c) => (
                       <button key={c} type="button" onClick={() => setActiveCategory(c)}

@@ -10,6 +10,7 @@ interface CategoryLean {
   _id: { toString(): string };
   label: string;
   order: number;
+  sectionId?: string;
 }
 
 function escapeRegex(s: string): string {
@@ -45,8 +46,8 @@ export async function listCategories(tenantId: string) {
 /** Solo lectura, sin sembrar ni migrar: el orden que usa la tienda pública. */
 export async function getCategoryOrder(tenantId: string): Promise<CategoryOrderEntry[]> {
   await connectToDatabase();
-  const cats = await Category.find({ tenantId }).select("label order").lean<CategoryLean[]>();
-  return cats.map((c) => ({ label: c.label, order: c.order ?? 0 }));
+  const cats = await Category.find({ tenantId }).select("label order sectionId").lean<CategoryLean[]>();
+  return cats.map((c) => ({ label: c.label, order: c.order ?? 0, sectionId: c.sectionId ?? "" }));
 }
 
 /** Crea la categoría al final del orden; si ya existe una con el mismo nombre (sin importar mayúsculas), devuelve esa. */

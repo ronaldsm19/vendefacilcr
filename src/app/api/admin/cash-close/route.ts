@@ -8,6 +8,7 @@ import { requirePlan } from "@/lib/plan";
 import { dayRangeCR } from "@/lib/crDate";
 import { splitPayments } from "@/lib/payments";
 import { checkCardReconciliation } from "@/lib/cardReconciliation";
+import { sectionsSummaryFromSales } from "@/server/services/sections";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
   const todaySales = await Sale.find({
     tenantId: session.tenantId,
     saleDate: { $gte: from, $lt: to },
-  }).select("total paymentMethod mixedPayment").lean();
+  }).select("total paymentMethod mixedPayment items.productId items.lineTotal items.quantity").lean();
   const cardExpected = splitPayments(todaySales).tarjeta;
 
   let cardCheck: ReturnType<typeof checkCardReconciliation> | null = null;
@@ -76,6 +77,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Ventas por sección: se calculan aquí con las ventas del día (no de la pantalla) y quedan
+  // guardadas en el cierre, así el historial no cambia si después se mueve una categoría.
+  const sectionsSummary = await sectionsSummaryFromSales(session.tenantId, todaySales);
+
   const closeNumber = (await CashClose.countDocuments({ tenantId: session.tenantId })) + 1;
 
   const cashClose = await CashClose.create({
@@ -88,6 +93,7 @@ export async function POST(request: NextRequest) {
     expensesTotal:    expensesTotal    ?? 0,
     profit:           profit           ?? 0,
     productsSummary:  productsSummary  ?? [],
+    sectionsSummary:  sectionsSummary  ?? [],
     ...(arqueo ? { arqueo } : {}),
     ...(cardCheck?.ok ? { cardReconciliation: cardCheck.value } : {}),
     openingAmount:    open ? open.openingAmount : (openingAmount ?? 0),

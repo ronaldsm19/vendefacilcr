@@ -7,6 +7,8 @@ import {
 } from "recharts";
 import StatsCard from "@/components/admin/StatsCard";
 import ServiceReportSection from "@/components/admin/ServiceReportSection";
+import SectionSalesCard from "@/components/admin/SectionSalesCard";
+import type { SectionTotal } from "@/lib/sections";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { planAllows } from "@/lib/permissions";
 import { TrendingUp, TrendingDown, DollarSign, Percent } from "lucide-react";
@@ -17,6 +19,8 @@ interface FinanceData {
   expensesByPeriod: { _id: string; expenses: number }[];
   revenueByProduct: { _id: string; revenue: number; orders: number }[];
   expensesByCategory: { _id: string; total: number; count: number }[];
+  /** null si el negocio no tiene secciones. */
+  revenueBySection?: SectionTotal[] | null;
 }
 
 const EXTRA_COLORS = ["#6B8CFF", "#7ED4AD"];
@@ -151,6 +155,10 @@ export default function AdminFinancesPage() {
               sub={`${(data?.summary.totalTransactions ?? data?.summary.totalOrders ?? 0)} transacciones`}
             />
           </div>
+
+          {data?.revenueBySection && data.revenueBySection.length > 0 && (
+            <SectionSalesCard totals={data.revenueBySection} />
+          )}
 
           {/* Main bar chart */}
           <div className="bg-white rounded-2xl card-shadow p-6">
