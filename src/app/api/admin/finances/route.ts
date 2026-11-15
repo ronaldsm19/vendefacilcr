@@ -6,6 +6,8 @@ import { Sale } from "@/models/Sale";
 import { Expense } from "@/models/Expense";
 import { getSession, requireFeature } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
+import { productSectionResolver } from "@/server/services/sections";
+import { totalsBySection, type SectionTotal } from "@/lib/sections";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -147,6 +149,40 @@ export async function GET(request: NextRequest) {
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
+  // ── Ventas por sección del negocio (solo si el negocio tiene secciones) ──────
+  // Suma las líneas vendidas (sin IVA, servicio, propina ni envío) agrupadas por producto, y cada
+  // producto cae en la sección de su categoría actual.
+  let revenueBySection: SectionTotal[] | null = null;
+  const resolver = await productSectionResolver(session.tenantId);
+  if (resolver) {
+    type Line = { _id: string | null; revenue: number; units: number };
+    const [saleLines, orderLines, legacyOrderLines] = await Promise.all([
+      Sale.aggregate<Line>([
+        { $match: { tenantId: tenantOid, saleDate: { $gte: startDate } } },
+        { $unwind: "$items" },
+        { $group: { _id: "$items.productId", revenue: { $sum: "$items.lineTotal" }, units: { $sum: "$items.quantity" } } },
+      ]),
+      Order.aggregate<Line>([
+        { $match: { tenantId: tenantOid, paid: true, orderedAt: { $gte: startDate } } },
+        { $unwind: "$items" },
+        { $group: { _id: "$items.productId", revenue: { $sum: "$items.subtotal" }, units: { $sum: "$items.quantity" } } },
+      ]),
+      // Pedidos viejos de un solo producto (sin items)
+      Order.aggregate<Line>([
+        { $match: { tenantId: tenantOid, paid: true, orderedAt: { $gte: startDate }, "items.0": { $exists: false } } },
+        { $group: { _id: "$productId", revenue: { $sum: "$total" }, units: { $sum: { $ifNull: ["$quantity", 1] } } } },
+      ]),
+    ]);
+    revenueBySection = totalsBySection(
+      resolver.sections,
+      [...saleLines, ...orderLines, ...legacyOrderLines].map((l) => ({
+        sectionId: resolver.ofProduct(l._id),
+        revenue: l.revenue ?? 0,
+        units: l.units ?? 0,
+      }))
+    );
+  }
+
   // ── Totales combinados ────────────────────────────────────────────────────
   const revenue  = (ordersTotals[0]?.total ?? 0) + (salesTotals[0]?.total ?? 0);
   const expenses = totalExpenses[0]?.total ?? 0;
@@ -164,5 +200,6 @@ export async function GET(request: NextRequest) {
     expensesByPeriod,
     revenueByProduct,
     expensesByCategory,
+    revenueBySection,
   });
 }

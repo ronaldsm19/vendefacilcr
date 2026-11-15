@@ -5,6 +5,8 @@ export interface ICategory {
   tenantId: string;
   label: string;
   order: number;
+  /** Sección del negocio a la que pertenece (id de Tenant.sections). "" = sin sección. */
+  sectionId: string;
   createdAt: Date;
 }
 
@@ -13,6 +15,7 @@ const CategorySchema = new Schema(
     tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
     label:    { type: String, required: true, trim: true },
     order:    { type: Number, default: 0 },
+    sectionId: { type: String, default: "" },
   },
   { timestamps: true }
 );

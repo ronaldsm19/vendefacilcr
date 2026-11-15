@@ -12,6 +12,8 @@
 export interface CategoryOrderEntry {
   label: string;
   order: number;
+  /** Sección del negocio (src/lib/sections.ts); "" o ausente = sin sección. */
+  sectionId?: string;
 }
 
 export function orderCategories(

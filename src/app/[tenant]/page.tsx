@@ -21,6 +21,7 @@ import { getCategoryOrder } from "@/server/services/categories";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
 import { normalizeExtras } from "@/lib/pricing";
 import { productsSectionForDisplay } from "@/lib/storeTexts";
+import { readSections } from "@/lib/sections";
 
 async function getTenant(slug: string) {
   try {
@@ -38,6 +39,7 @@ async function getTenant(slug: string) {
       facebook: string;
       tiktok: string;
       youtube: string;
+      sections?: unknown;
       theme: {
         primaryColor: string;
         secondaryColor: string;
@@ -170,6 +172,7 @@ export default async function TenantStorefront({
         whatsappNumber={tenant.whatsappNumber}
         businessName={tenant.name}
         categories={categories}
+        sections={readSections(tenant.sections)}
         texts={productsSectionForDisplay(settings?.productsSection)}
       />
       <TrustSection />

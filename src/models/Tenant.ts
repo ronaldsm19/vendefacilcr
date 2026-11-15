@@ -84,6 +84,8 @@ export interface ITenant {
   };
   theme: ITenantTheme;
   menuConfig: IMenuConfig;
+  /** Secciones del negocio (ver src/lib/sections.ts). Vacío = sin secciones, todo como siempre. */
+  sections: { _id: string; name: string }[];
   posConfig: { ivaEnabled: boolean; ivaRate: number; serviceEnabled: boolean; serviceRate: number; tipEnabled: boolean };
   ticketConfig: ITicketConfig;
   comandaConfig: IComandaConfig;
@@ -149,6 +151,12 @@ const TenantSchema = new Schema(
       title:          { type: String, default: "" },
       description:    { type: String, default: "" },
       fontFamily:     { type: String, enum: ["default", "playfair", "montserrat", "nunito", "lato"], default: "default" },
+    },
+    // Secciones del negocio (Configuración → Productos). El orden del arreglo es el orden en que se
+    // muestran. Las categorías apuntan a una con Category.sectionId.
+    sections: {
+      type: [{ name: { type: String, required: true, trim: true, maxlength: 30 } }],
+      default: [],
     },
     // Cobros del punto de venta: los fija el dueño en Configuración → Caja y valen para todos los
     // roles; el punto de venta solo los lee (ver src/lib/pricing.ts).
