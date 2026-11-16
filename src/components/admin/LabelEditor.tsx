@@ -451,7 +451,7 @@ export default function LabelEditor({
           </Button>
         )}
         {printMsg && (
-          <p className={`flex items-start gap-1.5 text-sm rounded-xl px-3 py-2 ${printMsg.tone === "ok" ? "text-emerald-700 bg-emerald-50" : "text-amber-800 bg-amber-50"}`}>
+          <p className={`flex items-start gap-1.5 text-sm rounded-xl px-3 py-2 min-w-0 [overflow-wrap:anywhere] ${printMsg.tone === "ok" ? "text-emerald-700 bg-emerald-50" : "text-amber-800 bg-amber-50"}`}>
             {printMsg.tone === "ok" ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />} {printMsg.text}
           </p>
         )}
