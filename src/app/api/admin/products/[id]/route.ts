@@ -52,6 +52,9 @@ export async function PUT(
   delete body.tenantId;
   delete body._id;
   delete body.toppings;
+  // La etiqueta se guarda solo desde su editor (PUT .../label): así una ficha abierta desde antes
+  // no pisa el formato que se acaba de armar.
+  delete body.label;
 
   // Sin permiso completo solo sobreviven estos tres. Se descarta el resto en vez de rechazar la
   // petición: la pantalla ya manda el producto entero y lo que importa es que un campo que la

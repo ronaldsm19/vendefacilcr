@@ -12,6 +12,8 @@ import { IProduct } from "@/models/Product";
 import { Plus, Pencil, Trash2, Search, Upload, UtensilsCrossed, Loader2, Barcode, AlertCircle } from "lucide-react";
 import ImportProductsModal from "@/components/admin/ImportProductsModal";
 import BarcodeAssignDialog from "@/components/admin/BarcodeAssignDialog";
+import LabelEditor from "@/components/admin/LabelEditor";
+import type { ProductLabelFormat } from "@/lib/productLabel";
 import { nextInternalCode } from "@/lib/barcode";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { can, productLimit } from "@/lib/permissions";
@@ -53,6 +55,7 @@ export default function AdminProductsPage() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [showBarcodes, setShowBarcodes] = useState(false);
+  const [labelProduct, setLabelProduct] = useState<ProductRow | null>(null);
   const [showStationDialog, setShowStationDialog] = useState(false);
   const [stationCategory, setStationCategory] = useState("");
   const [stationValue, setStationValue] = useState<ProductStation>("cocina");
@@ -103,6 +106,11 @@ export default function AdminProductsPage() {
 
   function handleBarcodeAssigned(productId: string, barcode: string) {
     setProducts((prev) => prev.map((p) => (p._id === productId ? { ...p, barcode } : p)));
+  }
+
+  function handleLabelSaved(productId: string, changes: { label?: ProductLabelFormat; barcode?: string }) {
+    setProducts((prev) => prev.map((p) => (p._id === productId ? { ...p, ...changes } : p)));
+    setLabelProduct((prev) => (prev && prev._id === productId ? { ...prev, ...changes } : prev));
   }
 
   async function handleDelete(id: string) {
@@ -317,6 +325,14 @@ export default function AdminProductsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
                         <button
+                          onClick={() => setLabelProduct(p)}
+                          title="Imprimir etiqueta"
+                          aria-label={`Imprimir etiqueta de ${p.name}`}
+                          className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-pink transition-colors cursor-pointer"
+                        >
+                          <Barcode className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => openEdit(p)}
                           title={canEdit ? "Editar producto" : "Ajustar precio, extras y disponibilidad"}
                           aria-label={canEdit ? "Editar producto" : "Ajustar precio, extras y disponibilidad"}
@@ -468,6 +484,26 @@ export default function AdminProductsPage() {
           </DialogHeader>
           <div className="px-6 pb-6 pt-2">
             {showBarcodes && <BarcodeAssignDialog products={products} onAssigned={handleBarcodeAssigned} />}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Etiqueta adhesiva de un producto */}
+      <Dialog open={!!labelProduct} onOpenChange={(v) => { if (!v) setLabelProduct(null); }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Etiqueta · {labelProduct?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6 pt-2">
+            {labelProduct && (
+              <LabelEditor
+                key={labelProduct._id}
+                product={labelProduct}
+                canSave={canEdit}
+                suggestedCode={suggestedBarcode}
+                onSaved={handleLabelSaved}
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>

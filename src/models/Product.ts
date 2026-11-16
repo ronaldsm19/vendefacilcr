@@ -1,6 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 import { MAX_EXTRA_NAME, type LineExtra } from "@/lib/pricing";
 import { MAX_BARCODE } from "@/lib/barcode";
+import { LABEL_LINE_SIZES, MAX_LABEL_LINE, type ProductLabelFormat } from "@/lib/productLabel";
 
 export type ProductExtra = LineExtra;
 
@@ -30,6 +31,8 @@ export interface IProduct {
   sold: number;            // unidades vendidas acumuladas
   /** Código de barras o SKU del negocio ("" = sin código). En mayúsculas; ver src/lib/barcode.ts. */
   barcode?: string;
+  /** Formato de la etiqueta adhesiva; sin guardar = se arma con el nombre y la descripción. */
+  label?: ProductLabelFormat;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -128,6 +131,25 @@ const ProductSchema = new Schema(
       default: "",
       trim: true,
       maxlength: [MAX_BARCODE, `El código puede tener hasta ${MAX_BARCODE} caracteres`],
+    },
+    label: {
+      type: new Schema(
+        {
+          lines: {
+            type: [{
+              text: { type: String, required: true, trim: true, maxlength: MAX_LABEL_LINE },
+              size: { type: String, enum: LABEL_LINE_SIZES, default: "md" },
+              bold: { type: Boolean, default: false },
+              _id: false,
+            }],
+            default: [],
+          },
+          showCode: { type: Boolean, default: true },
+          weightRow: { type: Boolean, default: false },
+        },
+        { _id: false }
+      ),
+      default: undefined,
     },
   },
   { timestamps: true }

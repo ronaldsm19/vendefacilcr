@@ -62,7 +62,7 @@ async function getProducts(tenantId: string): Promise<(SeedProduct & { _id?: str
     await ensureExtrasMigrated(tenantId);
     const products = await Product.find({ tenantId, available: true })
       // El código de barras es interno del negocio: no viaja a la tienda pública.
-      .select("-toppings -cost -barcode")
+      .select("-toppings -cost -barcode -label")
       .sort({ createdAt: -1 })
       .lean() as Array<Record<string, unknown>>;
     const withExtras = products.map((p) => ({ ...p, extras: normalizeExtras(p.extras) ?? [] }));
