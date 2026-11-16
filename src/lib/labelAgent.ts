@@ -26,8 +26,23 @@ export function labelRejectReason(r: Extract<AgentLabelResult, { ok: false }>): 
     case "NO_AUTORIZADO":
       return "El agente de impresión pide un código de acceso que esta página no tiene.";
     default:
-      return r.mensaje || "La impresora de etiquetas no respondió";
+      return cleanAgentMessage(r.mensaje) || "La impresora de etiquetas no respondió";
   }
+}
+
+const MAX_MESSAGE = 200;
+
+/**
+ * El mensaje del agente sin la basura técnica que a veces arrastra de PowerShell: el comando en
+ * base64 y la salida "#< CLIXML" (pasa cuando PowerShell se cuelga y el agente lo corta).
+ */
+export function cleanAgentMessage(raw: string | undefined): string {
+  if (!raw) return "";
+  const hadJunk = /#<\s*CLIXML|[A-Za-z0-9+/=]{40,}/.test(raw);
+  let text = raw.split(/#<\s*CLIXML/)[0].replace(/\S*[A-Za-z0-9+/=]{40,}\S*/g, " ");
+  text = text.replace(/Command failed:[\s\S]*$/, "").replace(/\s+/g, " ").replace(/[\s:;,-]+$/, "").trim();
+  if (hadJunk) text = `${text || "La impresora de etiquetas falló"}: el agente no pudo terminar de imprimir (el driver de la impresora no respondió)`;
+  return text.length > MAX_MESSAGE ? `${text.slice(0, MAX_MESSAGE - 1)}…` : text;
 }
 
 export type AgentLabelOutcome =
