@@ -1,50 +1,33 @@
 /**
  * Imprimir etiquetas directo en la impresora de etiquetas del agente de esta compu, sin ventana de
- * impresión. Si el agente no está, no tiene impresora de etiquetas o falla, quien llama imprime por
- * la ventana del navegador y muestra el motivo. Solo para componentes "use client".
+ * impresión. Si el agente no está, no tiene impresora de etiquetas o rechaza la etiqueta, quien
+ * llama imprime por la ventana del navegador y muestra el motivo. Solo para componentes "use client".
+ *
+ * No se pregunta antes a /health: en compus lentas tarda más de 10 s (lanza PowerShell tres veces
+ * para revisar impresoras). Se manda directo a POST /etiqueta y la respuesta del agente dice si se
+ * pudo: sin agente la llamada falla al instante, y un agente sin etiquetadora contesta con el error.
  */
 import { renderLabelPngBase64 } from "@/lib/labelPng";
-import {
-  AGENT_MAX_LABEL_COPIES, checkAgentDetailed, localNetworkPermission, printLabelPng, type AgentHealth,
-} from "@/lib/printBridge";
+import { AGENT_MAX_LABEL_COPIES, localNetworkPermission, printLabelPng, type AgentLabelResult } from "@/lib/printBridge";
 import type { LabelRowValues, ProductLabelFormat } from "@/lib/productLabel";
 
-/** /health tarda unos segundos (enumera impresoras): cuando la impresora está lista se recuerda un rato. */
-const READY_TTL_MS = 60_000;
-let readyAt = 0;
-
 const PERMISSION_HINT =
-  "Chrome no deja que esta página hable con el agente de impresión de la compu. Tocá el ícono a la izquierda de la dirección → Acceso a la red local → Permitir, y volvé a imprimir.";
+  "Chrome no deja que esta página hable con el agente de impresión de la compu. Tocá el ícono a la izquierda de la dirección → Aplicaciones en el dispositivo (o Acceso a la red local) → Permitir, y volvé a imprimir.";
 
-/** Por qué el agente que sí contestó no puede imprimir etiquetas (null = puede). */
-export function labelPrinterProblem(health: AgentHealth): string | null {
-  const label = health.etiqueta;
-  if (!label) return `El agente de esta compu (versión ${health.version}) todavía no imprime etiquetas: hay que actualizarlo a la 1.4.0.`;
-  if (!label.configurada) return "El agente de impresión no tiene configurada una impresora de etiquetas.";
-  if (!label.disponible) return `La impresora de etiquetas "${label.configurada}" no está lista${label.estado ? ` (${label.estado})` : ""}.`;
-  return null;
-}
-
-/** Si la impresora de etiquetas del agente está lista o, si no, por qué. */
-async function labelPrinterStatus(): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (Date.now() - readyAt < READY_TTL_MS) return { ok: true };
-  if ((await localNetworkPermission()) === "denied") return { ok: false, reason: PERMISSION_HINT };
-  const r = await checkAgentDetailed();
-  if ("failure" in r) {
-    // Sin respuesta: o el agente no está abierto, o Chrome está esperando (o negó) el permiso de red local.
-    const permission = await localNetworkPermission();
-    if (permission === "denied" || permission === "prompt") return { ok: false, reason: PERMISSION_HINT };
-    return {
-      ok: false,
-      reason: r.failure === "timeout"
-        ? "El agente de impresión no contestó a tiempo. Si Chrome preguntó por acceso a la red local, tocá Permitir."
-        : "No se encontró el agente de impresión en esta compu. Revisá que esté abierto.",
-    };
+/** Por qué el agente rechazó la etiqueta, en palabras del usuario. */
+export function labelRejectReason(r: Extract<AgentLabelResult, { ok: false }>): string {
+  switch (r.codigo) {
+    case "NO_ENCONTRADO":
+      return "El agente de impresión de esta compu todavía no imprime etiquetas: hay que actualizarlo a la 1.4.0.";
+    case "ETIQUETA_IMPRESORA_NO_CONFIGURADA":
+      return "El agente de impresión no tiene configurada una impresora de etiquetas.";
+    case "ORIGEN_NO_PERMITIDO":
+      return "El agente de impresión no acepta pedidos de esta página: hay que agregar este dominio en su configuración.";
+    case "NO_AUTORIZADO":
+      return "El agente de impresión pide un código de acceso que esta página no tiene.";
+    default:
+      return r.mensaje || "La impresora de etiquetas no respondió";
   }
-  const problem = labelPrinterProblem(r.health);
-  if (problem) return { ok: false, reason: problem };
-  readyAt = Date.now();
-  return { ok: true };
 }
 
 export type AgentLabelOutcome =
@@ -53,7 +36,12 @@ export type AgentLabelOutcome =
   /** No se imprimió ninguna por el agente: imprimir por la ventana del navegador. */
   | { status: "fallback"; reason: string }
   /** Se cortó a medias (más de 100 van en varias tandas): no se reintenta para no duplicar. */
-  | { status: "partial"; printed: number; reason: string };
+  | { status: "partial"; printed: number; reason: string }
+  /**
+   * El agente recibió la etiqueta pero no confirmó a tiempo: puede que salga igual, así que no se
+   * abre la ventana de impresión (saldría doble).
+   */
+  | { status: "unconfirmed"; printed: number };
 
 export async function printLabelsWithAgent(
   format: ProductLabelFormat,
@@ -61,8 +49,7 @@ export async function printLabelsWithAgent(
   values: LabelRowValues | undefined,
   copies: number,
 ): Promise<AgentLabelOutcome> {
-  const status = await labelPrinterStatus();
-  if (!status.ok) return { status: "fallback", reason: status.reason };
+  if ((await localNetworkPermission()) === "denied") return { status: "fallback", reason: PERMISSION_HINT };
   let png: string;
   try {
     png = renderLabelPngBase64(format, code, values);
@@ -81,12 +68,17 @@ export async function printLabelsWithAgent(
         test ||= !!r.modoPrueba;
         continue;
       }
-      reason = r.mensaje || "La impresora de etiquetas no respondió";
-    } catch {
-      reason = "El agente de impresión no respondió";
+      reason = labelRejectReason(r);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "TimeoutError") return { status: "unconfirmed", printed };
+      // Sin respuesta (no hay agente) o respuesta que no es JSON (no es el agente).
+      if (printed > 0) return { status: "partial", printed, reason: "El agente de impresión dejó de responder" };
+      const permission = await localNetworkPermission();
+      return {
+        status: "fallback",
+        reason: permission === "prompt" ? PERMISSION_HINT : "No se encontró el agente de impresión en esta compu",
+      };
     }
-    // Que la próxima vez se vuelva a preguntar al agente en vez de dar por buena la impresora.
-    readyAt = 0;
     return printed === 0 ? { status: "fallback", reason } : { status: "partial", printed, reason };
   }
   return { status: "printed", printed, test };

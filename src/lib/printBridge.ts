@@ -253,7 +253,7 @@ export async function printLabelPng(pngBase64: string, copias: number): Promise<
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ copias, pngBase64 }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(45000),
   });
   return res.json() as Promise<AgentLabelResult>;
 }

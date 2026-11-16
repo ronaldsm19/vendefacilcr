@@ -185,6 +185,8 @@ export default function LabelEditor({
         setPrintMsg({ tone: "ok", text: `Se mandaron ${many(sent.printed)} a la impresora de etiquetas${sent.test ? " (el agente está en modo prueba: no imprime de verdad)" : ""}.` });
       } else if (sent.status === "partial") {
         setPrintMsg({ tone: "warn", text: `Se imprimieron ${many(sent.printed)} de ${copiesNum} y la impresora se detuvo: ${sent.reason.replace(/\.$/, "")}. Revisala e imprimí las que faltan.` });
+      } else if (sent.status === "unconfirmed") {
+        setPrintMsg({ tone: "warn", text: `El agente no confirmó a tiempo si imprimió${sent.printed ? ` (antes ya habían salido ${many(sent.printed)})` : ""}. Revisá si salió antes de volver a imprimir, para no sacarla doble.` });
       } else {
         setPrintMsg({ tone: "warn", text: `${sent.reason.replace(/\.$/, "")}. Se abrió la ventana de impresión.` });
         printLabels(face, copiesNum);
