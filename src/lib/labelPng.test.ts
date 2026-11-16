@@ -73,5 +73,22 @@ eq('marca 0', (await readScaleKg()).tone, 'warn');
 globalThis.fetch = (async () => { throw new Error('ECONNREFUSED'); }) as never;
 eq('sin agente', (await readScaleKg()).tone, 'error');
 
+// ── Por qué no se imprime directo (aviso en el editor) ──────────────
+const { labelPrinterProblem } = await import('./labelAgent.ts');
+const { checkAgentDetailed } = await import('./printBridge.ts');
+const canaan = { ok: true, version: '1.4.0', etiqueta: { configurada: 'Etiquetas GP-3120TUC', disponible: true, estado: 'Lista' } };
+eq('health real de Canaán: se imprime directo', labelPrinterProblem(canaan as never), null);
+eq('agente viejo sin etiquetas', labelPrinterProblem({ ok: true, version: '1.2.1' } as never), 'El agente de esta compu (versión 1.2.1) todavía no imprime etiquetas: hay que actualizarlo a la 1.4.0.');
+eq('sin etiquetadora configurada', labelPrinterProblem({ ...canaan, etiqueta: { configurada: null, disponible: false } } as never), 'El agente de impresión no tiene configurada una impresora de etiquetas.');
+eq('etiquetadora no lista', labelPrinterProblem({ ...canaan, etiqueta: { configurada: 'GP', disponible: false, estado: 'Sin papel' } } as never), 'La impresora de etiquetas "GP" no está lista (Sin papel).');
+let lastInit: Record<string, unknown> = {};
+globalThis.fetch = (async (_u: string, init: Record<string, unknown>) => { lastInit = init; return { ok: true, json: async () => canaan }; }) as never;
+eq('health con respuesta', 'health' in (await checkAgentDetailed()), true);
+eq('le dice a Chrome que el agente es esta misma compu', lastInit.targetAddressSpace, 'loopback');
+globalThis.fetch = (async () => { throw new DOMException('t', 'TimeoutError'); }) as never;
+eq('health que no contesta a tiempo', await checkAgentDetailed(), { failure: 'timeout' });
+globalThis.fetch = (async () => { throw new TypeError('Failed to fetch'); }) as never;
+eq('health bloqueado o sin agente', await checkAgentDetailed(), { failure: 'network' });
+
 if (failed) { console.log(`\n${failed} fallaron`); process.exit(1); }
 console.log('\nTodo bien');
