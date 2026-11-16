@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import { MAX_EXTRA_NAME, type LineExtra } from "@/lib/pricing";
+import { MAX_BARCODE } from "@/lib/barcode";
 
 export type ProductExtra = LineExtra;
 
@@ -27,6 +28,8 @@ export interface IProduct {
   station: "cocina" | "bebidas" | "ninguna";
   stock: number;
   sold: number;            // unidades vendidas acumuladas
+  /** Código de barras o SKU del negocio ("" = sin código). En mayúsculas; ver src/lib/barcode.ts. */
+  barcode?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -120,8 +123,20 @@ const ProductSchema = new Schema(
       default: 0,
       min: [0, "Las unidades vendidas no pueden ser negativas"],
     },
+    barcode: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [MAX_BARCODE, `El código puede tener hasta ${MAX_BARCODE} caracteres`],
+    },
   },
   { timestamps: true }
+);
+
+// Un código identifica un solo producto dentro del negocio. Los productos sin código no cuentan.
+ProductSchema.index(
+  { tenantId: 1, barcode: 1 },
+  { unique: true, partialFilterExpression: { barcode: { $gt: "" } } }
 );
 
 export const Product =

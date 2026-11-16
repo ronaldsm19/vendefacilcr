@@ -5,8 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
   Loader2, Plus, Minus, X, Check, ShoppingCart, Printer, UserCircle,
-  Utensils, ChevronLeft, RefreshCw, AlertCircle, FileText,
+  Utensils, ChevronLeft, RefreshCw, AlertCircle, FileText, Search, ScanBarcode,
 } from "lucide-react";
+import { sameBarcode } from "@/lib/barcode";
+import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { buildSalePayload, checkAgent, printReceipt } from "@/lib/printBridge";
@@ -47,6 +49,7 @@ interface ProductRow {
   category: string;
   available: boolean;
   extras?: LineExtra[];
+  barcode?: string;
 }
 
 interface CartLine {
@@ -347,6 +350,11 @@ function PosPageInner() {
   const [qtyModal, setQtyModal]             = useState<ProductRow | null>(null);
   const [qtyInput, setQtyInput]             = useState(1);
   const [qtyExtras, setQtyExtras]           = useState<string[]>([]);   // extras elegidos en el modal
+  // Buscador del catálogo: por nombre o por código (también recibe lo que manda el lector).
+  const [productSearch, setProductSearch]   = useState("");
+  // Aviso corto de lo que pasó al escanear ("Agregado: …" o "No hay ningún producto con …").
+  const [scanNotice, setScanNotice]         = useState<{ ok: boolean; text: string } | null>(null);
+  const scanNoticeTimer                     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Cart state ───────────────────────────────────────────────────
   const [cart, setCart]             = useState<CartLine[]>([]);
@@ -570,8 +578,11 @@ function PosPageInner() {
   // Igual que la pantalla de comandas: agrupados en el orden de las familias (Configuración →
   // Productos) y, dentro de cada familia, por nombre.
   const categoryRank = new Map(categories.map((c, i) => [c, i]));
-  const visibleProducts = sectionProducts
-    .filter((p) => activeCategory === "todos" || p.category === activeCategory)
+  // Con algo escrito en el buscador se busca en todo el catálogo, sin importar sección ni familia.
+  const searchQuery = productSearch.trim().toLowerCase();
+  const visibleProducts = (searchQuery
+    ? products.filter((p) => p.name.toLowerCase().includes(searchQuery) || (p.barcode ?? "").toLowerCase().includes(searchQuery))
+    : sectionProducts.filter((p) => activeCategory === "todos" || p.category === activeCategory))
     .sort((a, b) =>
       ((categoryRank.get(a.category) ?? categories.length) - (categoryRank.get(b.category) ?? categories.length)) ||
       a.name.localeCompare(b.name, "es")
@@ -632,6 +643,60 @@ function PosPageInner() {
       return [...prev, newLine];
     });
     setQtyModal(null);
+  }
+
+  function showScanNotice(ok: boolean, text: string) {
+    setScanNotice({ ok, text });
+    if (scanNoticeTimer.current) clearTimeout(scanNoticeTimer.current);
+    scanNoticeTimer.current = setTimeout(() => setScanNotice(null), ok ? 2000 : 4000);
+  }
+
+  /**
+   * Lo que manda el lector de códigos: agrega una unidad del producto, sin extras (los extras se
+   * eligen tocando la tarjeta). Devuelve si encontró el producto.
+   */
+  function addScannedProduct(code: string): boolean {
+    const product = products.find((p) => sameBarcode(p.barcode, code.trim()));
+    if (!product) {
+      showScanNotice(false, `No hay ningún producto disponible con el código ${code.trim()}`);
+      return false;
+    }
+    const newLine: CartLine = {
+      productId: product._id, productName: product.name, unitPrice: product.price, quantity: 1, extras: [],
+    };
+    const key = lineKey(newLine);
+    setCart((prev) =>
+      prev.some((l) => !l.comandaId && lineKey(l) === key)
+        ? prev.map((l) => (!l.comandaId && lineKey(l) === key ? { ...l, quantity: l.quantity + 1 } : l))
+        : [...prev, newLine]
+    );
+    showScanNotice(true, `Agregado: ${product.name}`);
+    return true;
+  }
+
+  // Con una ventana abierta (cobro, cantidad, comandas…) el lector no agrega nada por detrás.
+  useBarcodeScanner((code) => {
+    if (document.querySelector('[role="dialog"]')) return;
+    addScannedProduct(code);
+  }, { enabled: !loading });
+
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Escape") { setProductSearch(""); return; }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const code = productSearch.trim();
+    if (!code) return;
+    // Un código exacto (escaneado o escrito) va directo a la venta; si no, con un solo resultado
+    // se abre ese producto como si se hubiera tocado su tarjeta.
+    if (products.some((p) => sameBarcode(p.barcode, code))) {
+      addScannedProduct(code);
+      setProductSearch("");
+    } else if (visibleProducts.length === 1) {
+      openQtyModal(visibleProducts[0]);
+      setProductSearch("");
+    } else if (visibleProducts.length === 0) {
+      showScanNotice(false, `No hay ningún producto disponible con "${code}"`);
+    }
   }
 
   function updateQty(key: string, delta: number) {
@@ -1025,6 +1090,48 @@ function PosPageInner() {
 
         {/* ── Columna izquierda: Catálogo ── */}
         <div className="flex-1 flex flex-col overflow-hidden border-r border-brand-muted pb-20 lg:pb-0">
+          {/* Buscador: por nombre o código. El lector de códigos funciona igual sin tocarlo. */}
+          <div className="px-3 pt-3 shrink-0">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/30" aria-hidden />
+              <input
+                type="text"
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Buscar producto o escribir código"
+                aria-label="Buscar producto o código"
+                autoComplete="off"
+                className="w-full pl-9 pr-9 py-2 border border-brand-muted rounded-xl text-sm bg-white focus:outline-none focus:border-brand-pink"
+              />
+              {productSearch ? (
+                <button
+                  type="button"
+                  onClick={() => setProductSearch("")}
+                  aria-label="Limpiar búsqueda"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-brand-dark/40 hover:text-brand-dark cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              ) : (
+                <ScanBarcode className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/25" aria-hidden />
+              )}
+            </div>
+          </div>
+
+          {/* Aviso de lo escaneado */}
+          {scanNotice && (
+            <div
+              role="status"
+              className={`fixed left-1/2 -translate-x-1/2 bottom-24 lg:bottom-6 z-50 flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium shadow-lg max-w-[90vw] ${
+                scanNotice.ok ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
+              }`}
+            >
+              {scanNotice.ok ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span className="truncate">{scanNotice.text}</span>
+            </div>
+          )}
+
           {/* Section filter */}
           {showSectionTabs && (
             <div className="flex overflow-x-auto gap-1.5 shrink-0 scrollbar-hide px-3 pt-3" role="tablist" aria-label="Secciones">
@@ -1070,7 +1177,7 @@ function PosPageInner() {
             {visibleProducts.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 gap-2 opacity-40">
                 <span className="text-4xl">📦</span>
-                <p className="text-sm">Sin productos en esta categoría</p>
+                <p className="text-sm">{searchQuery ? "Ningún producto coincide con la búsqueda" : "Sin productos en esta categoría"}</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">

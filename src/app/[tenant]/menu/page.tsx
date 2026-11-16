@@ -57,6 +57,7 @@ async function getTenantWithMenu(slug: string) {
 async function getAvailableProducts(tenantId: string) {
   try {
     const products = await Product.find({ tenantId, available: true })
+      .select("-cost -barcode")
       .sort({ createdAt: -1 })
       .lean();
     return JSON.parse(JSON.stringify(products)) as Array<{

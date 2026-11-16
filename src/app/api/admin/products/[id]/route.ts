@@ -6,6 +6,8 @@ import { can } from "@/lib/permissions";
 import { isStation } from "@/lib/station";
 import { normalizeExtras } from "@/lib/pricing";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
+import { barcodeConflict, resolveBarcode } from "@/server/services/productBarcodes";
+import { serviceErrorResponse } from "@/lib/serviceResponse";
 
 export async function GET(
   request: NextRequest,
@@ -68,15 +70,30 @@ export async function PUT(
     }
     body.extras = extras;
   }
+  // El código de barras no está entre los AJUSTABLES: sin permiso completo ya se descartó arriba.
+  if (body.barcode !== undefined) {
+    try {
+      body.barcode = await resolveBarcode(session.tenantId, body.barcode, id);
+    } catch (err) {
+      return serviceErrorResponse(err);
+    }
+  }
 
-  const product = await Product.findOneAndUpdate(
-    { _id: id, tenantId: session.tenantId },
-    { ...body, price: body.price ? Number(body.price) : undefined },
-    { returnDocument: "after", runValidators: true }
-  )
-    // Igual que al leer: sin permiso completo el costo tampoco vuelve en la respuesta.
-    .select(fullEdit ? "-toppings" : "-toppings -cost")
-    .lean();
+  let product;
+  try {
+    product = await Product.findOneAndUpdate(
+      { _id: id, tenantId: session.tenantId },
+      { ...body, price: body.price ? Number(body.price) : undefined },
+      { returnDocument: "after", runValidators: true }
+    )
+      // Igual que al leer: sin permiso completo el costo tampoco vuelve en la respuesta.
+      .select(fullEdit ? "-toppings" : "-toppings -cost")
+      .lean();
+  } catch (err) {
+    const conflict = barcodeConflict(err);
+    if (conflict) return serviceErrorResponse(conflict);
+    throw err;
+  }
 
   if (!product) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json({ product });

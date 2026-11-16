@@ -4,7 +4,8 @@ import { useState, useRef } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import type { IProduct, ProductExtra } from "@/models/Product";
-import { X, Plus, Upload, ImageIcon, Loader2, Images } from "lucide-react";
+import { X, Plus, Upload, ImageIcon, Loader2, Images, Wand2 } from "lucide-react";
+import { MAX_BARCODE } from "@/lib/barcode";
 import CategoryCombobox from "@/components/admin/CategoryCombobox";
 import { STATIONS, effectiveStation } from "@/lib/station";
 
@@ -23,9 +24,11 @@ interface ProductFormProps {
    * mostrarlos editables y después no guardarlos sería peor que no mostrarlos.
    */
   scope?: "full" | "ajustes";
+  /** Siguiente código interno libre del negocio, para el botón "Generar". */
+  suggestedBarcode?: string;
 }
 
-export default function ProductForm({ initial, onSave, onCancel, saving, showStation, scope = "full" }: ProductFormProps) {
+export default function ProductForm({ initial, onSave, onCancel, saving, showStation, scope = "full", suggestedBarcode }: ProductFormProps) {
   const full = scope === "full";
   const [form, setForm] = useState({
     name:         initial?.name         ?? "",
@@ -41,6 +44,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
     featured:     initial?.featured     ?? false,
     delivery:     initial?.delivery     ?? false,
     deliveryNote: initial?.deliveryNote ?? "",
+    barcode:      initial?.barcode      ?? "",
   });
   const [extras, setExtras]               = useState<{ name: string; price: string }[]>(
     initial?.extras?.map(e => ({ name: e.name, price: String(e.price) })) ?? []
@@ -329,6 +333,33 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
           onChange={(e) => setForm({ ...form, stock: e.target.value })}
           className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
         />
+      </div>
+
+      {/* Código de barras */}
+      <div>
+        <label htmlFor="product-barcode" className="block text-sm font-medium text-brand-dark mb-1">Código de barras</label>
+        <div className="flex gap-2">
+          <input
+            id="product-barcode"
+            type="text"
+            value={form.barcode}
+            maxLength={MAX_BARCODE}
+            autoComplete="off"
+            placeholder="Escaneá el del empaque o escribí el tuyo"
+            onChange={(e) => setForm({ ...form, barcode: e.target.value.replace(/\s/g, "").toUpperCase() })}
+            // El lector termina cada código con Enter: acá no debe guardar el formulario a medias.
+            onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+            className="flex-1 min-w-0 border border-brand-muted rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand-pink"
+          />
+          {suggestedBarcode && !form.barcode && (
+            <Button type="button" variant="secondary" size="sm" onClick={() => setForm({ ...form, barcode: suggestedBarcode })} className="shrink-0">
+              <Wand2 className="w-4 h-4" /> Generar
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-brand-dark/50 mt-1">
+          Opcional. Con código, en la caja basta escanearlo para agregarlo a la venta. &quot;Generar&quot; le pone el siguiente número libre.
+        </p>
       </div>
 
       {/* Disponible */}
