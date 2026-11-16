@@ -2,7 +2,7 @@
  * Lectura de la báscula desde el navegador, a través del agente de impresión de esta compu
  * (GET /peso). Solo para componentes "use client".
  */
-import { readScale } from "@/lib/printBridge";
+import { localNetworkPermission, readScale } from "@/lib/printBridge";
 
 export interface ScaleResult {
   /** Peso leído en kilos, si se pudo leer algo mayor que cero. */
@@ -45,6 +45,11 @@ export async function readScaleKg(): Promise<ScaleResult> {
       ? { kg, tone: "warn", text: "La báscula todavía se movía: revisá el peso" }
       : { kg, tone: "ok", text: "Peso leído de la báscula" };
   } catch {
+    // Desde Chrome 142 la página necesita el permiso "Acceso a la red local" para hablarle al agente.
+    const permission = await localNetworkPermission();
+    if (permission === "denied" || permission === "prompt") {
+      return { tone: "error", text: "Chrome no deja que esta página lea la báscula. Tocá el ícono a la izquierda de la dirección → Acceso a la red local → Permitir." };
+    }
     return { tone: "error", text: "No se pudo hablar con el agente de impresión. ¿Está abierto en esta compu?" };
   }
 }
