@@ -8,6 +8,7 @@ import { AccessLog } from "@/models/AccessLog";
 import { getSession, requireFeature } from "@/lib/auth";
 import { syncTableWithComandas } from "@/lib/tableSync";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { stockUnits } from "@/lib/soldBy";
 import { verifyAuthorizationPassword } from "@/server/services/authorizationPassword";
 import { uncountInvoiceForCustomer } from "@/server/services/saleInvoice";
 
@@ -57,7 +58,7 @@ export async function POST(
         update: [
           {
             $set: {
-              stock: { $add: ["$stock", i.quantity] },
+              stock: { $round: [{ $add: ["$stock", stockUnits(i)] }, 3] },
               sold:  { $max: [0, { $subtract: ["$sold", i.quantity] }] },
             },
           },
@@ -145,7 +146,7 @@ export async function POST(
             update: [
               {
                 $set: {
-                  stock: { $max: [0, { $subtract: ["$stock", i.quantity] }] },
+                  stock: { $round: [{ $max: [0, { $subtract: ["$stock", stockUnits(i)] }] }, 3] },
                   sold:  { $add: ["$sold", i.quantity] },
                 },
               },

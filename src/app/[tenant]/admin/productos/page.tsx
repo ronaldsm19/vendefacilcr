@@ -9,8 +9,13 @@ import {
 import ProductForm from "@/components/admin/ProductForm";
 import Pagination from "@/components/admin/Pagination";
 import { IProduct } from "@/models/Product";
-import { Plus, Pencil, Trash2, Search, Upload, UtensilsCrossed, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Upload, UtensilsCrossed, Loader2, Barcode, AlertCircle } from "lucide-react";
 import ImportProductsModal from "@/components/admin/ImportProductsModal";
+import BarcodeAssignDialog from "@/components/admin/BarcodeAssignDialog";
+import LabelEditor from "@/components/admin/LabelEditor";
+import type { ProductLabelFormat } from "@/lib/productLabel";
+import { priceSuffix } from "@/lib/soldBy";
+import { nextInternalCode } from "@/lib/barcode";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { can, productLimit } from "@/lib/permissions";
 import { STATIONS, STATION_LABELS, effectiveStation, type ProductStation } from "@/lib/station";
@@ -50,6 +55,8 @@ export default function AdminProductsPage() {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [showBarcodes, setShowBarcodes] = useState(false);
+  const [labelProduct, setLabelProduct] = useState<ProductRow | null>(null);
   const [showStationDialog, setShowStationDialog] = useState(false);
   const [stationCategory, setStationCategory] = useState("");
   const [stationValue, setStationValue] = useState<ProductStation>("cocina");
@@ -78,23 +85,17 @@ export default function AdminProductsPage() {
     setSaving(true);
     setSaveError("");
     try {
-      if (editing) {
-        await fetch(`/api/admin/products/${editing._id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
-      } else {
-        const res = await fetch("/api/admin/products", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
-        // El tope del plan se revisa en el servidor; acá solo se cuenta por qué no se guardó.
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          setSaveError(body.error ?? "No se pudo crear el producto");
-        }
+      const res = await fetch(editing ? `/api/admin/products/${editing._id}` : "/api/admin/products", {
+        method: editing ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      // El tope del plan y el código repetido se revisan en el servidor. El formulario queda
+      // abierto con el motivo, para corregirlo sin volver a llenar todo.
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setSaveError(body.error ?? (editing ? "No se pudo guardar el producto" : "No se pudo crear el producto"));
+        return;
       }
       setShowForm(false);
       setEditing(null);
@@ -104,14 +105,24 @@ export default function AdminProductsPage() {
     }
   }
 
+  function handleBarcodeAssigned(productId: string, barcode: string) {
+    setProducts((prev) => prev.map((p) => (p._id === productId ? { ...p, barcode } : p)));
+  }
+
+  function handleLabelSaved(productId: string, changes: { label?: ProductLabelFormat; barcode?: string }) {
+    setProducts((prev) => prev.map((p) => (p._id === productId ? { ...p, ...changes } : p)));
+    setLabelProduct((prev) => (prev && prev._id === productId ? { ...prev, ...changes } : prev));
+  }
+
   async function handleDelete(id: string) {
     await fetch(`/api/admin/products/${id}`, { method: "DELETE" });
     setConfirmDelete(null);
     await load();
   }
 
-  function openCreate() { setEditing(null); setShowForm(true); }
-  function openEdit(p: ProductRow) { setEditing(p); setShowForm(true); }
+  function openCreate() { setEditing(null); setSaveError(""); setShowForm(true); }
+  function openEdit(p: ProductRow) { setEditing(p); setSaveError(""); setShowForm(true); }
+  const suggestedBarcode = nextInternalCode(products.map((p) => p.barcode));
 
   const atLimit = limit !== null && products.length >= limit;
   const categories = orderCategories(categoryOrder, products.map((p) => p.category));
@@ -183,6 +194,9 @@ export default function AdminProductsPage() {
           )}
           {canEdit && (
             <>
+              <Button variant="secondary" size="sm" onClick={() => setShowBarcodes(true)} disabled={products.length === 0} className="shrink-0">
+                <Barcode className="w-4 h-4" /> Códigos
+              </Button>
               <Button variant="secondary" size="sm" onClick={() => setShowImport(true)} disabled={atLimit} className="shrink-0">
                 <Upload className="w-4 h-4" /> Importar
               </Button>
@@ -220,7 +234,8 @@ export default function AdminProductsPage() {
           const filtered = products.filter(p =>
             !search.trim() ||
             p.name.toLowerCase().includes(search.toLowerCase()) ||
-            p.category.toLowerCase().includes(search.toLowerCase())
+            p.category.toLowerCase().includes(search.toLowerCase()) ||
+            (p.barcode ?? "").toLowerCase().includes(search.trim().toLowerCase())
           );
           const totalPagesP = Math.max(1, Math.ceil(filtered.length / pageSize));
           const safePg      = Math.min(page, totalPagesP);
@@ -267,6 +282,11 @@ export default function AdminProductsPage() {
                             </span>
                           )}
                         </div>
+                        {p.barcode && (
+                          <p className="flex items-center gap-1 text-xs text-brand-dark/50 font-mono">
+                            <Barcode className="w-3 h-3 shrink-0" aria-hidden /> {p.barcode}
+                          </p>
+                        )}
                         <p className="text-xs text-brand-dark/40 line-clamp-1">{p.description}</p>
                       </div>
                     </div>
@@ -284,7 +304,7 @@ export default function AdminProductsPage() {
                     </td>
                   )}
                   <td className="px-4 py-3 font-semibold text-brand-dark">
-                    ₡{p.price.toLocaleString("es-CR")}
+                    ₡{p.price.toLocaleString("es-CR")}{priceSuffix(p.soldBy)}
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
@@ -305,6 +325,14 @@ export default function AdminProductsPage() {
                   {(canEdit || canAdjust) && (
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setLabelProduct(p)}
+                          title="Imprimir etiqueta"
+                          aria-label={`Imprimir etiqueta de ${p.name}`}
+                          className="p-1.5 rounded-lg hover:bg-brand-muted text-brand-dark/50 hover:text-brand-pink transition-colors cursor-pointer"
+                        >
+                          <Barcode className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => openEdit(p)}
                           title={canEdit ? "Editar producto" : "Ajustar precio, extras y disponibilidad"}
@@ -358,14 +386,25 @@ export default function AdminProductsPage() {
           <DialogHeader className="pb-4">
             <DialogTitle>{!editing ? "Nuevo producto" : canEdit ? "Editar producto" : "Ajustar producto"}</DialogTitle>
           </DialogHeader>
-          <div className="px-6 pb-6">
+          <div className="px-6 pb-6 space-y-4">
+            {saveError && (
+              <div
+                // El motivo queda arriba del formulario y quien guardó suele estar abajo: se trae a la vista.
+                ref={(el) => el?.scrollIntoView({ block: "nearest", behavior: "smooth" })}
+                className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+                role="alert"
+              >
+                <AlertCircle className="w-4 h-4 shrink-0" /> {saveError}
+              </div>
+            )}
             <ProductForm
               initial={editing ?? undefined}
               onSave={handleSave}
-              onCancel={() => { setShowForm(false); setEditing(null); }}
+              onCancel={() => { setShowForm(false); setEditing(null); setSaveError(""); }}
               saving={saving}
               showStation={isPremium}
               scope={canEdit ? "full" : "ajustes"}
+              suggestedBarcode={suggestedBarcode}
             />
           </div>
         </DialogContent>
@@ -434,6 +473,38 @@ export default function AdminProductsPage() {
             <Button className="w-full" disabled={!stationCategory || applyingStation} onClick={applyStationByCategory}>
               {applyingStation ? <Loader2 className="w-4 h-4 animate-spin" /> : "Aplicar"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Asignar códigos de barras */}
+      <Dialog open={showBarcodes} onOpenChange={(v) => { if (!v) setShowBarcodes(false); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Códigos de barras</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6 pt-2">
+            {showBarcodes && <BarcodeAssignDialog products={products} onAssigned={handleBarcodeAssigned} />}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Etiqueta adhesiva de un producto */}
+      <Dialog open={!!labelProduct} onOpenChange={(v) => { if (!v) setLabelProduct(null); }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Etiqueta · {labelProduct?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6 pt-2">
+            {labelProduct && (
+              <LabelEditor
+                key={labelProduct._id}
+                product={labelProduct}
+                canSave={canEdit}
+                suggestedCode={suggestedBarcode}
+                onSaved={handleLabelSaved}
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>

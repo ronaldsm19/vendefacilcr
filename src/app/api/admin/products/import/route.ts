@@ -7,6 +7,7 @@ import { getSession, requireFeature } from "@/lib/auth";
 import { requireProductRoom } from "@/lib/plan";
 import { isStation } from "@/lib/station";
 import { MAX_EXTRA_NAME, normalizeExtras, type LineExtra } from "@/lib/pricing";
+import { normalizeBarcode } from "@/lib/barcode";
 
 function parseBool(val: unknown, fallback: boolean): boolean {
   if (typeof val === "boolean") return val;
@@ -70,6 +71,8 @@ export async function POST(request: NextRequest) {
 
   const docs: Record<string, unknown>[] = [];
   const errors: string[] = [];
+  /** Código de barras → fila del archivo donde apareció primero. */
+  const seenCodes = new Map<string, number>();
 
   rows.forEach((row, i) => {
     const rowNum = i + 2; // +2: header row is 1, data starts at 2
@@ -114,8 +117,14 @@ export async function POST(request: NextRequest) {
       extras.push({ name: extraName, price: extraPrice });
     }
 
+    const barcode = normalizeBarcode(get(row, "codigo", "codigo_barras", "código", "barcode", "sku"));
+    if (barcode === null) { errors.push(`Fila ${rowNum}: código de barras inválido (solo letras sin tilde, números y - . / + % $)`); return; }
+    if (barcode && seenCodes.has(barcode)) { errors.push(`Fila ${rowNum}: el código ${barcode} está repetido en el archivo`); return; }
+    if (barcode) seenCodes.set(barcode, rowNum);
+
     docs.push({
       tenantId:     new mongoose.Types.ObjectId(session.tenantId),
+      barcode,
       name,
       description,
       price,
@@ -135,6 +144,20 @@ export async function POST(request: NextRequest) {
       sold:         0,
     });
   });
+
+  // Un código que ya tiene un producto del negocio no se duplica: esa fila no entra y se dice por qué.
+  if (seenCodes.size > 0) {
+    const taken = await Product.find({ tenantId: session.tenantId, barcode: { $in: [...seenCodes.keys()] } })
+      .select("barcode name").lean<{ barcode: string; name: string }[]>();
+    const takenBy = new Map(taken.map((p) => [p.barcode, p.name]));
+    for (let i = docs.length - 1; i >= 0; i--) {
+      const code = docs[i].barcode as string;
+      if (code && takenBy.has(code)) {
+        errors.push(`Fila ${seenCodes.get(code)}: el código ${code} ya lo tiene "${takenBy.get(code)}"`);
+        docs.splice(i, 1);
+      }
+    }
+  }
 
   // Si no caben todos, no entra ninguno: importar a medias deja un catálogo que nadie eligió.
   if (docs.length > 0) {

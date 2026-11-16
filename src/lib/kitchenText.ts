@@ -1,15 +1,18 @@
 import { extraQty, type LineExtra } from "@/lib/pricing";
+import { formatKg } from "@/lib/soldBy";
 
 interface KitchenLine {
   quantity: number;
   note?: string;
   extras?: LineExtra[];
+  weightKg?: number;
 }
 
 /**
  * Texto que ve cocina o bebidas debajo de un producto: los extras con su cantidad total en esa
  * línea (porciones por unidad × unidades; nunca el precio) y después la nota del mesero.
- * Ej.: "+ Queso extra x2, + Tocineta x2 — sin cebolla".
+ * Ej.: "+ Queso extra x2, + Tocineta x2 — sin cebolla". Si la pieza es de un producto por kilo, el
+ * peso va primero ("0,350 kg — sin corteza"), así quien despacha sabe qué pieza es.
  *
  * Viaja en el campo `nota` del ítem del ticket de comanda, así el contrato con el agente de
  * impresión ({ cantidad, nombre, nota }) no cambia.
@@ -17,7 +20,8 @@ interface KitchenLine {
 export function kitchenNote(line: KitchenLine): string {
   const extras = (line.extras ?? []).map((e) => `+ ${e.name} x${extraQty(e) * line.quantity}`).join(", ");
   const note = (line.note ?? "").trim();
-  return [extras, note].filter(Boolean).join(" — ");
+  const weight = line.weightKg ? formatKg(line.weightKg) : "";
+  return [weight, extras, note].filter(Boolean).join(" — ");
 }
 
 /**

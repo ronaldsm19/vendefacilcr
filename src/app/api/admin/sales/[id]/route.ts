@@ -7,6 +7,7 @@ import { getSession, requireFeature } from "@/lib/auth";
 import { computeSaleTotals, isOrderType, normalizeExtras, subtotalOf } from "@/lib/pricing";
 import { checkCatalogPrices, parseSaleItems, saleLineKey, type SaleItemRecord } from "@/server/services/saleItems";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { stockUnits } from "@/lib/soldBy";
 
 export async function GET(
   request: NextRequest,
@@ -59,7 +60,7 @@ export async function PUT(
     .select("items orderType ivaEnabled ivaRate serviceEnabled serviceRate tipEnabled tipAmount deliveryFee invoice.kind invoice.sendCount")
     .lean() as {
       invoice?: { kind?: string; sendCount?: number };
-      items?: { productId: string; unitPrice: number; quantity: number; extras?: unknown }[];
+      items?: { productId: string; unitPrice: number; quantity: number; extras?: unknown; weightKg?: number }[];
       orderType?: string;
       ivaEnabled?: boolean; ivaRate?: number;
       serviceEnabled?: boolean; serviceRate?: number;
@@ -72,7 +73,7 @@ export async function PUT(
   // se cobró en su momento, aunque cambie la cantidad; lo que se agregue nuevo va al precio actual
   // del catálogo. Así no se puede reescribir un precio desde el cuerpo de la petición.
   const keep = new Set((existing.items ?? []).map((i) =>
-    saleLineKey({ productId: i.productId ?? "", unitPrice: i.unitPrice, extras: normalizeExtras(i.extras) ?? [] })
+    saleLineKey({ productId: i.productId ?? "", unitPrice: i.unitPrice, extras: normalizeExtras(i.extras) ?? [], weightKg: i.weightKg || undefined })
   ));
   let saleItems: SaleItemRecord[];
   try {
@@ -123,26 +124,31 @@ export async function PUT(
   // Ajustar stock/sold por la diferencia entre los items anteriores y los nuevos
   // (mismo patrón de bulkWrite que POST /api/admin/sales, stock nunca bajo cero).
   try {
-    const diffByProduct = new Map<string, number>();
+    // El stock de un producto por kilo va en kilos (peso de cada pieza); "vendidos" siempre cuenta piezas.
+    const diffByProduct = new Map<string, { stock: number; sold: number }>();
+    const add = (productId: string, line: { quantity: number; weightKg?: number }, sign: 1 | -1) => {
+      const d = diffByProduct.get(productId) ?? { stock: 0, sold: 0 };
+      d.stock += sign * stockUnits(line);
+      d.sold += sign * line.quantity;
+      diffByProduct.set(productId, d);
+    };
     for (const i of existing.items ?? []) {
-      if (!i.productId) continue;
-      diffByProduct.set(i.productId, (diffByProduct.get(i.productId) ?? 0) - i.quantity);
+      if (i.productId) add(i.productId, i, -1);
     }
     for (const i of saleItems) {
-      if (!i.productId) continue;
-      diffByProduct.set(i.productId, (diffByProduct.get(i.productId) ?? 0) + i.quantity);
+      if (i.productId) add(i.productId, i, 1);
     }
 
     const bulkOps = Array.from(diffByProduct.entries())
-      .filter(([, diff]) => diff !== 0)
-      .map(([productId, diff]) => ({
+      .filter(([, d]) => Math.abs(d.stock) > 1e-9 || d.sold !== 0)
+      .map(([productId, d]) => ({
         updateOne: {
           filter: { _id: new mongoose.Types.ObjectId(productId), tenantId: session.tenantId },
           update: [
             {
               $set: {
-                stock: { $max: [0, { $subtract: ["$stock", diff] }] },
-                sold:  { $max: [0, { $add: ["$sold", diff] }] },
+                stock: { $round: [{ $max: [0, { $subtract: ["$stock", d.stock] }] }, 3] },
+                sold:  { $max: [0, { $add: ["$sold", d.sold] }] },
               },
             },
           ],

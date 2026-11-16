@@ -6,6 +6,9 @@ import { can } from "@/lib/permissions";
 import { isStation } from "@/lib/station";
 import { normalizeExtras } from "@/lib/pricing";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
+import { barcodeConflict, resolveBarcode } from "@/server/services/productBarcodes";
+import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { isSoldBy } from "@/lib/soldBy";
 
 export async function GET(
   request: NextRequest,
@@ -50,6 +53,12 @@ export async function PUT(
   delete body.tenantId;
   delete body._id;
   delete body.toppings;
+  // La etiqueta se guarda solo desde su editor (PUT .../label): así una ficha abierta desde antes
+  // no pisa el formato que se acaba de armar.
+  delete body.label;
+  if (body.soldBy !== undefined && !isSoldBy(body.soldBy)) {
+    return NextResponse.json({ error: "El producto se vende por unidad o por kilo" }, { status: 400 });
+  }
 
   // Sin permiso completo solo sobreviven estos tres. Se descarta el resto en vez de rechazar la
   // petición: la pantalla ya manda el producto entero y lo que importa es que un campo que la
@@ -68,15 +77,30 @@ export async function PUT(
     }
     body.extras = extras;
   }
+  // El código de barras no está entre los AJUSTABLES: sin permiso completo ya se descartó arriba.
+  if (body.barcode !== undefined) {
+    try {
+      body.barcode = await resolveBarcode(session.tenantId, body.barcode, id);
+    } catch (err) {
+      return serviceErrorResponse(err);
+    }
+  }
 
-  const product = await Product.findOneAndUpdate(
-    { _id: id, tenantId: session.tenantId },
-    { ...body, price: body.price ? Number(body.price) : undefined },
-    { returnDocument: "after", runValidators: true }
-  )
-    // Igual que al leer: sin permiso completo el costo tampoco vuelve en la respuesta.
-    .select(fullEdit ? "-toppings" : "-toppings -cost")
-    .lean();
+  let product;
+  try {
+    product = await Product.findOneAndUpdate(
+      { _id: id, tenantId: session.tenantId },
+      { ...body, price: body.price ? Number(body.price) : undefined },
+      { returnDocument: "after", runValidators: true }
+    )
+      // Igual que al leer: sin permiso completo el costo tampoco vuelve en la respuesta.
+      .select(fullEdit ? "-toppings" : "-toppings -cost")
+      .lean();
+  } catch (err) {
+    const conflict = barcodeConflict(err);
+    if (conflict) return serviceErrorResponse(conflict);
+    throw err;
+  }
 
   if (!product) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json({ product });

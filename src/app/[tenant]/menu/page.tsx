@@ -57,6 +57,7 @@ async function getTenantWithMenu(slug: string) {
 async function getAvailableProducts(tenantId: string) {
   try {
     const products = await Product.find({ tenantId, available: true })
+      .select("-cost -barcode -label")
       .sort({ createdAt: -1 })
       .lean();
     return JSON.parse(JSON.stringify(products)) as Array<{
@@ -66,6 +67,7 @@ async function getAvailableProducts(tenantId: string) {
       image?: string;
       menuSection?: string;
       category?: string;
+      soldBy?: string;
     }>;
   } catch {
     return [];
@@ -89,7 +91,7 @@ function ElegantPlaceholder({ primary, secondary }: { primary: string; secondary
 function PremiumCard({
   product, primary, secondary, showImage, showPrice, isFirst,
 }: {
-  product: { _id: string; name: string; price: number; image?: string };
+  product: { _id: string; name: string; price: number; image?: string; soldBy?: string };
   primary: string;
   secondary: string;
   showImage: boolean;
@@ -125,7 +127,7 @@ function PremiumCard({
             className="text-sm font-bold whitespace-nowrap px-3 py-1 rounded-full flex-shrink-0 shadow-sm"
             style={{ background: `linear-gradient(135deg, ${primary}, ${secondary})`, color: "#fff" }}
           >
-            ₡{product.price.toLocaleString("es-CR")}
+            ₡{product.price.toLocaleString("es-CR")}{product.soldBy === "kg" ? "/kg" : ""}
           </span>
         )}
       </div>
@@ -137,7 +139,7 @@ function PremiumCard({
 function ListRow({
   product, primary, secondary, showImage, showPrice, isFirst,
 }: {
-  product: { _id: string; name: string; price: number; image?: string };
+  product: { _id: string; name: string; price: number; image?: string; soldBy?: string };
   primary: string;
   secondary: string;
   showImage: boolean;
@@ -175,7 +177,7 @@ function ListRow({
           className="text-sm font-bold whitespace-nowrap px-2.5 py-0.5 rounded-full flex-shrink-0"
           style={{ background: `linear-gradient(135deg, ${primary}, ${secondary})`, color: "#fff" }}
         >
-          ₡{product.price.toLocaleString("es-CR")}
+          ₡{product.price.toLocaleString("es-CR")}{product.soldBy === "kg" ? "/kg" : ""}
         </span>
       )}
     </div>
@@ -186,7 +188,7 @@ function ListRow({
 function DrinkRow({
   product, primary, secondary, showImage, showPrice, isFirst,
 }: {
-  product: { _id: string; name: string; price: number; image?: string };
+  product: { _id: string; name: string; price: number; image?: string; soldBy?: string };
   primary: string;
   secondary: string;
   showImage: boolean;
@@ -221,7 +223,7 @@ function DrinkRow({
       <span className="flex-1 border-b border-dotted border-white/20 self-center hidden sm:block" />
       {showPrice && (
         <span className="text-sm font-bold whitespace-nowrap text-slate-200 flex-shrink-0">
-          ₡{product.price.toLocaleString("es-CR")}
+          ₡{product.price.toLocaleString("es-CR")}{product.soldBy === "kg" ? "/kg" : ""}
         </span>
       )}
     </div>

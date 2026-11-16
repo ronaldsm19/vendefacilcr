@@ -7,6 +7,9 @@ import { can } from "@/lib/permissions";
 import { effectiveStation, isStation } from "@/lib/station";
 import { normalizeExtras } from "@/lib/pricing";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
+import { barcodeConflict, resolveBarcode } from "@/server/services/productBarcodes";
+import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { isSoldBy } from "@/lib/soldBy";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -44,7 +47,10 @@ export async function POST(request: NextRequest) {
   await connectToDatabase();
   const body = await request.json();
 
-  const { name, description, price, cost, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock } = body;
+  const { name, description, price, cost, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock, soldBy } = body;
+  if (soldBy !== undefined && !isSoldBy(soldBy)) {
+    return NextResponse.json({ error: "El producto se vende por unidad o por kilo" }, { status: 400 });
+  }
   if (!name || !price || !category) {
     return NextResponse.json({ error: "Faltan campos requeridos (nombre, precio, categoría)" }, { status: 400 });
   }
@@ -55,10 +61,17 @@ export async function POST(request: NextRequest) {
   if (!extras) {
     return NextResponse.json({ error: "Extras inválidos: cada uno necesita nombre y un precio de 0 o más" }, { status: 400 });
   }
+  let barcode: string;
+  try {
+    barcode = await resolveBarcode(session.tenantId, body.barcode);
+  } catch (err) {
+    return serviceErrorResponse(err);
+  }
 
   const product = await Product.create({
     tenantId: session.tenantId,
     name, description,
+    soldBy: soldBy ?? "unidad",
     price: Number(price),
     cost:  cost !== undefined ? Number(cost) : 0,
     extras,
@@ -72,7 +85,13 @@ export async function POST(request: NextRequest) {
     delivery: delivery ?? false,
     deliveryNote: deliveryNote ?? "",
     stock: typeof stock === "number" ? stock : 0,
+    barcode,
+  }).catch((err: unknown) => {
+    const conflict = barcodeConflict(err);
+    if (conflict) return conflict;
+    throw err;
   });
+  if (product instanceof Error) return serviceErrorResponse(product);
 
   return NextResponse.json({ product }, { status: 201 });
 }

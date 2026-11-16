@@ -88,7 +88,8 @@ export default function OrderForm({ initial, onSave, onCancel, saving }: OrderFo
     fetch("/api/admin/products")
       .then(r => r.json())
       .then(d => {
-        const list: IProduct[] = d.products ?? [];
+        // Los productos por kilo no van en pedidos manuales: aquí no se pesa la pieza (se cobran en la caja).
+        const list: IProduct[] = (d.products ?? []).filter((p: IProduct) => p.soldBy !== "kg");
         setProducts(list);
         setCatalogLoaded(Array.isArray(d.products));
         // Pedidos anteriores a los extras: sus toppings (por unidad) pasan a ser extras de la línea.

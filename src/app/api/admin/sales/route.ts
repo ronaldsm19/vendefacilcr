@@ -11,6 +11,7 @@ import { syncTableWithComandas } from "@/lib/tableSync";
 import { computeSaleTotals, isOrderType, readAppliedCharges, readPosCharges, subtotalOf } from "@/lib/pricing";
 import { checkCatalogPrices, checkComandaLines, parseSaleItems, type SaleItemRecord } from "@/server/services/saleItems";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { stockUnits } from "@/lib/soldBy";
 import { countInvoiceForCustomer, invoiceSnapshotFor, sendSaleInvoice, type InvoiceSnapshot } from "@/server/services/saleInvoice";
 import mongoose from "mongoose";
 
@@ -303,7 +304,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No se pudo registrar la venta" }, { status: 500 });
   }
 
-  // Actualizar stock y sold en los productos vendidos (igual que en Orders)
+  // Actualizar stock y sold en los productos vendidos (igual que en Orders). En los productos por
+  // kilo el stock va en kilos: se descuenta el peso; "vendidos" siempre cuenta piezas.
   const bulkOps = saleItems
     .filter((item) => mongoose.isValidObjectId(item.productId))
     .map((item) => ({
@@ -312,7 +314,7 @@ export async function POST(request: NextRequest) {
         update: [
           {
             $set: {
-              stock: { $max: [0, { $subtract: ["$stock", item.quantity] }] },
+              stock: { $round: [{ $max: [0, { $subtract: ["$stock", stockUnits(item)] }] }, 3] },
               sold:  { $add: ["$sold", item.quantity] },
             },
           },

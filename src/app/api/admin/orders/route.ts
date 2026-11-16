@@ -43,6 +43,14 @@ export async function POST(request: NextRequest) {
   if (!items) {
     return NextResponse.json({ error: "Extras inválidos en algún producto" }, { status: 400 });
   }
+  // Un pedido manual no tiene peso: un producto por kilo se cobraría como si fuera un kilo entero.
+  const itemIds = items.map((i) => i.productId).filter((id) => mongoose.isValidObjectId(id));
+  if (itemIds.length > 0) {
+    const byKg = await Product.findOne({ _id: { $in: itemIds }, tenantId: session.tenantId, soldBy: "kg" }).select("name").lean<{ name: string } | null>();
+    if (byKg) {
+      return NextResponse.json({ error: `"${byKg.name}" se vende por kilo: cobralo en la caja, donde se pesa.` }, { status: 400 });
+    }
+  }
 
   const order = await Order.create({
     tenantId: session.tenantId,

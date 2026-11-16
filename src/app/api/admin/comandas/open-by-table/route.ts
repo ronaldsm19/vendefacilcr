@@ -91,10 +91,11 @@ export async function GET(request: NextRequest) {
           note: it.note ?? "",
           station: it.station,
           extras: it.extras ?? [],
+          ...(it.weightKg ? { weightKg: it.weightKg } : {}),
         };
       });
       // Lo pendiente de cada línea lleva sus extras: la parte que falta cobrar se cobra completa.
-      const pendingTotal = subtotalOf(items.map((it) => ({ unitPrice: it.unitPrice, extras: it.extras, quantity: it.pendingQty })));
+      const pendingTotal = subtotalOf(items.map((it) => ({ unitPrice: it.unitPrice, extras: it.extras, weightKg: it.weightKg, quantity: it.pendingQty })));
       return {
         _id: String(c._id),
         number: c.number,
