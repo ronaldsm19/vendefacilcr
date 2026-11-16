@@ -46,6 +46,10 @@ export interface AgentHealth {
   autenticacion: boolean;
   impresoras: string[];
   hora: string;
+  /** Impresora de etiquetas (desde la 1.4.0). */
+  etiqueta?: { disponible: boolean };
+  /** Báscula serial (desde la 1.4.0). */
+  bascula?: { conectado: boolean };
 }
 
 export interface AgentError {
@@ -176,7 +180,7 @@ export async function printCajon(): Promise<AgentPrintResult> {
 
 /** Lectura de la báscula serial que hace el agente (GET /peso, desde la 1.4.0). */
 export type AgentScaleReading =
-  | { ok: true; disponible: true; pesoKg: number; estable: boolean; edadMs?: number }
+  | { ok: true; disponible: true; pesoKg: number; estable: boolean | null; edadMs?: number }
   | { ok: true; disponible: false; motivo?: string }
   | AgentError;
 
@@ -187,6 +191,27 @@ export async function readScale(): Promise<AgentScaleReading> {
     signal: AbortSignal.timeout(3000),
   });
   return res.json() as Promise<AgentScaleReading>;
+}
+
+/** Copias que acepta el agente en un solo POST /etiqueta. */
+export const AGENT_MAX_LABEL_COPIES = 100;
+
+export type AgentLabelResult =
+  | { ok: true; mensaje: string; copias: number; modo?: string; transporte?: string; modoPrueba?: boolean }
+  | AgentError;
+
+/**
+ * Imprime una etiqueta ya dibujada (PNG blanco y negro de 480 × 320 px, 60 × 40 mm a 203 dpi) en
+ * la impresora de etiquetas del agente, sin ventana de impresión (POST /etiqueta, desde la 1.4.0).
+ */
+export async function printLabelPng(pngBase64: string, copias: number): Promise<AgentLabelResult> {
+  const res = await fetch(`${AGENT_URL}/etiqueta`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ copias, pngBase64 }),
+    signal: AbortSignal.timeout(15000),
+  });
+  return res.json() as Promise<AgentLabelResult>;
 }
 
 /** Alias retro-compatible: abre el cajón (ahora via el endpoint real /cajon). */
