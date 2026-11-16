@@ -165,6 +165,11 @@ export default function ProductModal({ product, isOpen, onClose, whatsappNumber,
                 <p className="text-3xl font-bold gradient-text font-brand">
                   {colones(finalPrice)}
                 </p>
+                {product.soldBy === "kg" && (
+                  <p className="text-xs text-brand-dark/50 mt-0.5">
+                    {colones(product.price)}/kg · aprox.: se cobra según el peso exacto
+                  </p>
+                )}
                 {activeOffer && savings > 0 && (
                   <p className="text-xs text-emerald-600 font-medium mt-0.5">
                     Oferta {activeOffer.qty}×{colones(activeOffer.price)}
@@ -186,7 +191,7 @@ export default function ProductModal({ product, isOpen, onClose, whatsappNumber,
                 >
                   −
                 </button>
-                <span className="w-6 text-center font-bold text-brand-dark">{quantity}</span>
+                <span className="min-w-6 text-center font-bold text-brand-dark">{quantity}{product.soldBy === "kg" ? " kg" : ""}</span>
                 <button
                   type="button"
                   onClick={() => setQty(quantity + 1)}

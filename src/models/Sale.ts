@@ -9,6 +9,7 @@ export interface ISaleItem {
   quantity: number;
   lineTotal: number;      // (unitPrice + extras) × quantity
   extras?: LineExtra[];   // copia congelada; ventas viejas no lo tienen
+  weightKg?: number;      // producto por kilo: peso de la pieza (unitPrice = precio del kilo)
 }
 
 export interface ISaleComandaClaim {
@@ -100,6 +101,7 @@ const SaleItemSchema = new Schema(
     quantity:    { type: Number, required: true, min: 1 },
     lineTotal:   { type: Number, required: true },
     extras:      { type: [LineExtraSchema], default: [] },
+    weightKg:    { type: Number, min: 0 },
   },
   { _id: false }
 );

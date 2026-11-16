@@ -4,6 +4,7 @@ import { effectiveStation } from "@/lib/station";
 import type { IComandaItem } from "@/models/Comanda";
 import type { LineExtra } from "@/lib/pricing";
 import { ServiceError } from "@/server/errors";
+import { formatKg, normalizeWeightKg } from "@/lib/soldBy";
 import { ensureExtrasMigrated, resolveChosenExtras } from "@/server/services/productExtras";
 
 export interface ComandaItemInput {
@@ -12,6 +13,8 @@ export interface ComandaItemInput {
   note?: unknown;
   /** Nombres de los extras elegidos (o {name}); el precio sale siempre del catálogo. */
   extras?: unknown;
+  /** Peso de la pieza en kilos: obligatorio en los productos por kilo, prohibido en los demás. */
+  weightKg?: unknown;
 }
 
 /** Forma de los ítems que manda el celular al crear o editar una comanda. Lanza ServiceError (400). */
@@ -27,6 +30,9 @@ export function validateComandaItemsInput(items: unknown): asserts items is Coma
     }
     if (item.note !== undefined && (typeof item.note !== "string" || item.note.length > 200)) {
       throw new ServiceError(400, "La nota del ítem es muy larga (máx. 200)");
+    }
+    if (normalizeWeightKg(item.weightKg) === null) {
+      throw new ServiceError(400, "Peso inválido: va en kilos, mayor que cero (p. ej. 0.350)");
     }
   }
 }
@@ -53,6 +59,14 @@ export async function snapshotComandaItems(
     const p = productMap.get(String(i.productId))!;
     const extras = resolveChosenExtras(p.extras, i.extras);
     if (!extras) throw new ServiceError(400, `Un extra de "${p.name}" ya no existe. Recargá el catálogo.`);
+    // Un producto por kilo se comanda con el peso de la pieza; el precio sale del kilo × peso.
+    const weightKg = normalizeWeightKg(i.weightKg) ?? undefined;
+    if (p.soldBy === "kg" && !weightKg) {
+      throw new ServiceError(400, `"${p.name}" se vende por kilo: indicá cuánto pesa.`);
+    }
+    if (p.soldBy !== "kg" && weightKg) {
+      throw new ServiceError(400, `"${p.name}" no se vende por kilo (${formatKg(weightKg)}). Recargá el catálogo.`);
+    }
     return {
       productId: String(i.productId),
       productName: p.name as string,
@@ -62,6 +76,7 @@ export async function snapshotComandaItems(
       note: typeof i.note === "string" ? i.note.trim() : "",
       paidQty: 0,
       extras,
+      ...(weightKg ? { weightKg } : {}),
     };
   });
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { weighedName } from "@/lib/soldBy";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ComandaRow } from "@/components/admin/ComandaCard";
@@ -50,7 +51,7 @@ export default function ServeAllDialog({ tableId, pending, onClose, onDone }: Se
               <div key={c._id} className="rounded-xl border border-brand-muted px-3 py-2">
                 <p className="text-sm font-semibold text-brand-dark">#{c.number} · {c.waiterName}</p>
                 <p className="text-xs text-brand-dark/50">
-                  {c.items.map((i) => `${i.quantity}x ${i.productName}`).join(", ")}
+                  {c.items.map((i) => `${i.quantity}x ${weighedName(i.productName, i.weightKg)}`).join(", ")}
                 </p>
               </div>
             ))}

@@ -12,6 +12,8 @@ import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { buildSalePayload, checkAgent, printReceipt } from "@/lib/printBridge";
+import WeighDialog from "@/components/admin/WeighDialog";
+import { weightDetail } from "@/lib/soldBy";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import AddToComandaPanel from "@/components/admin/AddToComandaPanel";
 import { useAdminSession } from "@/components/admin/SessionContext";
@@ -59,6 +61,8 @@ interface CartLine {
   unitPrice: number;      // precio base; los extras van aparte y el total sale de lineTotal()
   quantity: number;
   extras?: LineExtra[];
+  /** Pieza de un producto por kilo: su peso (unitPrice es el precio del kilo). */
+  weightKg?: number;
   // Solo en líneas que vienen de una comanda (bloqueadas)
   comandaId?: string;
   comandaNumber?: number;
@@ -66,9 +70,9 @@ interface CartLine {
   note?: string;
 }
 
-/** Mismo producto con extras distintos = líneas distintas. */
+/** Mismo producto con extras distintos (o piezas de distinto peso) = líneas distintas. */
 function lineKey(l: CartLine) {
-  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : `${l.productId}|${extrasKey(l.extras)}`;
+  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : `${l.productId}|${l.weightKg ?? ""}|${extrasKey(l.extras)}`;
 }
 
 /** Extras de una línea, cada uno con su precio, debajo del nombre del producto. */
@@ -95,6 +99,7 @@ interface OpenComandaItem {
   index: number; productId: string; productName: string; unitPrice: number;
   quantity: number; paidQty: number; pendingQty: number; note: string; station: string;
   extras?: LineExtra[];
+  weightKg?: number;
 }
 interface OpenComanda {
   _id: string; number: number; status: "enviada" | "servida"; version: number;
@@ -349,6 +354,8 @@ function PosPageInner() {
   // caja del mostrador de la tienda puede quedarse siempre en su sección.
   const [activeSection, setActiveSection]   = useState("todas");
   const [qtyModal, setQtyModal]             = useState<ProductRow | null>(null);
+  // Producto por kilo que se está pesando antes de agregarlo.
+  const [weighing, setWeighing]             = useState<ProductRow | null>(null);
   const [qtyInput, setQtyInput]             = useState(1);
   const [qtyExtras, setQtyExtras]           = useState<string[]>([]);   // extras elegidos en el modal
   // Buscador del catálogo: por nombre o por código (también recibe lo que manda el lector).
@@ -616,6 +623,8 @@ function PosPageInner() {
   }
 
   function openQtyModal(product: ProductRow) {
+    // Un producto por kilo no lleva cantidad: se pesa la pieza.
+    if (product.soldBy === "kg") { setWeighing(product); return; }
     setQtyModal(product);
     setQtyInput(1);
     setQtyExtras([]);
@@ -646,6 +655,21 @@ function PosPageInner() {
     setQtyModal(null);
   }
 
+  /** La pieza pesada entra como 1 unidad con su peso; dos piezas del mismo peso se juntan. */
+  function addWeighed(weightKg: number) {
+    if (!weighing) return;
+    const newLine: CartLine = {
+      productId: weighing._id, productName: weighing.name, unitPrice: weighing.price, quantity: 1, extras: [], weightKg,
+    };
+    const key = lineKey(newLine);
+    setCart((prev) =>
+      prev.some((l) => !l.comandaId && lineKey(l) === key)
+        ? prev.map((l) => (!l.comandaId && lineKey(l) === key ? { ...l, quantity: l.quantity + 1 } : l))
+        : [...prev, newLine]
+    );
+    setWeighing(null);
+  }
+
   function showScanNotice(ok: boolean, text: string) {
     setScanNotice({ ok, text });
     if (scanNoticeTimer.current) clearTimeout(scanNoticeTimer.current);
@@ -661,6 +685,11 @@ function PosPageInner() {
     if (!product) {
       showScanNotice(false, `No hay ningún producto disponible con el código ${code.trim()}`);
       return false;
+    }
+    // Escanear un producto por kilo abre la báscula: falta saber cuánto pesa la pieza.
+    if (product.soldBy === "kg") {
+      setWeighing(product);
+      return true;
     }
     const newLine: CartLine = {
       productId: product._id, productName: product.name, unitPrice: product.price, quantity: 1, extras: [],
@@ -737,7 +766,8 @@ function PosPageInner() {
       let next: CartLine | null = l;
       if (!l.comandaId) {
         const p = byId.get(l.productId);
-        if (!p) {
+        if (!p || (p.soldBy === "kg") !== !!l.weightKg) {
+          // Ya no existe, o cambió entre precio fijo y por kilo: hay que volver a agregarlo.
           next = null;
         } else {
           const extras = (l.extras ?? []).flatMap((e) => {
@@ -788,6 +818,7 @@ function PosPageInner() {
         const line: CartLine = {
           productId: src.productId, productName: src.productName, unitPrice: src.unitPrice,
           quantity: it.qty, extras: src.extras ?? [],
+          ...(src.weightKg ? { weightKg: src.weightKg } : {}),
           comandaId: c._id, comandaNumber: c.number, itemIndex: it.index, note: src.note,
         };
         selectedTotal += lineTotal(line);
@@ -902,6 +933,7 @@ function PosPageInner() {
         unitPrice:   l.unitPrice,
         quantity:    l.quantity,
         extras:      l.extras ?? [],
+        ...(l.weightKg ? { weightKg: l.weightKg } : {}),
         lineTotal:   lineTotal(l),
         ...(l.comandaId ? { comandaId: l.comandaId, comandaIndex: l.itemIndex } : {}),
       }));
@@ -1304,6 +1336,7 @@ function PosPageInner() {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 leading-tight">{line.productName}</p>
+                      {line.weightKg ? <p className="text-xs text-gray-500">{weightDetail(line.weightKg, line.unitPrice)}</p> : null}
                       <LineExtras extras={line.extras} className="mt-0.5" />
                       {line.comandaId && (
                         <span className="inline-block mt-1 text-[10px] font-semibold text-brand-pink bg-brand-pink/10 rounded-full px-1.5 py-0.5">
@@ -1620,6 +1653,7 @@ function PosPageInner() {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 leading-tight">{line.productName}</p>
+                      {line.weightKg ? <p className="text-xs text-gray-500">{weightDetail(line.weightKg, line.unitPrice)}</p> : null}
                       <LineExtras extras={line.extras} className="mt-0.5" />
                       {line.comandaId && (
                         <span className="inline-block mt-1 text-[10px] font-semibold text-brand-pink bg-brand-pink/10 rounded-full px-1.5 py-0.5">
@@ -1902,6 +1936,8 @@ function PosPageInner() {
       </Dialog>
 
       {/* ── Modal de cantidad ── */}
+      <WeighDialog product={weighing} onClose={() => setWeighing(null)} onConfirm={addWeighed} />
+
       <Dialog open={!!qtyModal} onOpenChange={(open) => !open && setQtyModal(null)}>
         <DialogContent className={qtyModal?.extras?.length ? "max-w-sm" : "max-w-xs"}>
           <DialogHeader>
@@ -2148,6 +2184,7 @@ function PosPageInner() {
                                       />
                                       <span className="min-w-0">
                                         <span className="block">{it.productName}</span>
+                                        {it.weightKg ? <span className="block text-xs text-gray-500">{weightDetail(it.weightKg, it.unitPrice)}</span> : null}
                                         <LineExtras extras={it.extras} />
                                         {it.note && <span className="block text-xs text-gray-400 italic">{it.note}</span>}
                                         <span className="block text-xs text-brand-dark/40">pendiente {it.pendingQty} de {it.quantity}</span>

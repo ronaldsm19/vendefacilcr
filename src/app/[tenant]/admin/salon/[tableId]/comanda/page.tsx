@@ -17,6 +17,8 @@ import type { ProductStation } from "@/lib/station";
 import ComandaCard, { type ComandaRow } from "@/components/admin/ComandaCard";
 import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
 import ServeAllDialog from "@/components/admin/ServeAllDialog";
+import WeighDialog from "@/components/admin/WeighDialog";
+import { weightDetail } from "@/lib/soldBy";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
   categorySectionMap, readSections, sectionOfCategory, visibleSections, type BusinessSection,
@@ -33,6 +35,8 @@ interface CatalogProduct {
   station: ProductStation;
   image?: string;
   extras?: LineExtra[];
+  /** "kg": precio por kilo; cada pieza se pesa al comandarla. */
+  soldBy?: "unidad" | "kg";
 }
 
 interface LiveTable {
@@ -53,6 +57,8 @@ interface ComandaLine {
   quantity: number;
   note: string;
   extras: LineExtra[];   // aplican a toda la línea; platos con otros extras u otra nota van en otra línea
+  /** Pieza de un producto por kilo: su peso. Cada pieza va en su propia línea. */
+  weightKg?: number;
 }
 
 /** Un plato en la hoja inferior: sus extras (con porciones) y su nota. */
@@ -118,6 +124,8 @@ export default function TomarComandaPage() {
   const [linesOpen, setLinesOpen] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
   const [sheetProductId, setSheetProductId] = useState<string | null>(null);
+  // Producto por kilo que se está pesando antes de agregarlo.
+  const [weighing, setWeighing] = useState<CatalogProduct | null>(null);
   const [plates, setPlates] = useState<PlateDraft[]>([]);
   const [openPlateId, setOpenPlateId] = useState<string | null>(null);
   // Quitar algo con extras o notas pide confirmación mostrando qué se pierde.
@@ -232,6 +240,7 @@ export default function TomarComandaPage() {
           quantity: i.quantity,
           note: i.note ?? "",
           extras: i.extras ?? [],
+          ...(i.weightKg ? { weightKg: i.weightKg } : {}),
         })));
         setTab("new");
       })
@@ -239,10 +248,12 @@ export default function TomarComandaPage() {
   }, [editId, isPremium]);
 
   /** Línea "simple" de un producto: sin extras ni nota. Ahí van los + y − de la tarjeta. */
-  const isPlainLine = (l: ComandaLine) => l.extras.length === 0 && !l.note.trim();
+  const isPlainLine = (l: ComandaLine) => l.extras.length === 0 && !l.note.trim() && !l.weightKg;
 
   // Sumar desde el catálogo va a la línea simple del producto; las personalizadas no se tocan.
   function incrementCatalog(p: CatalogProduct) {
+    // Un producto por kilo no suma unidades: cada pieza se pesa y va en su propia línea.
+    if (p.soldBy === "kg") { setWeighing(p); return; }
     setLines((prev) => {
       const idx = prev.findIndex((l) => l.productId === p._id && isPlainLine(l));
       if (idx === -1) {
@@ -250,6 +261,16 @@ export default function TomarComandaPage() {
       }
       return prev.map((l, i) => (i === idx ? { ...l, quantity: l.quantity + 1 } : l));
     });
+  }
+  /** Agrega la pieza que se acaba de pesar. */
+  function addWeighed(weightKg: number) {
+    const p = weighing;
+    if (!p) return;
+    setLines((prev) => [...prev, {
+      key: crypto.randomUUID(), productId: p._id, productName: p.name, unitPrice: p.price, station: p.station,
+      quantity: 1, note: "", extras: [], weightKg,
+    }]);
+    setWeighing(null);
   }
   /** Resta una unidad de una línea; si era la última, la saca. */
   function decrementLine(key: string) {
@@ -284,6 +305,8 @@ export default function TomarComandaPage() {
   // ── Hoja inferior: un producto, plato por plato ───────────────────
   /** Abre la hoja con un plato por cada unidad de ese producto en la comanda. */
   function openSheet(productId: string) {
+    // Las piezas pesadas no se editan plato por plato (cada una tiene su peso): se quitan y se vuelven a pesar.
+    if (lines.some((l) => l.productId === productId && l.weightKg)) return;
     const drafts = lines
       .filter((l) => l.productId === productId)
       .flatMap((l) => Array.from({ length: l.quantity }, () => ({
@@ -359,6 +382,7 @@ export default function TomarComandaPage() {
         items: lines.map((l) => ({
           productId: l.productId, quantity: l.quantity, note: l.note,
           extras: l.extras.map((e) => ({ name: e.name, qty: extraQty(e) })),
+          ...(l.weightKg ? { weightKg: l.weightKg } : {}),
         })),
         notes: notesText.trim(),
       };
@@ -411,6 +435,7 @@ export default function TomarComandaPage() {
         quantity: i.quantity,
         note: i.note ?? "",
         extras: i.extras ?? [],
+        ...(i.weightKg ? { weightKg: i.weightKg } : {}),
       })));
     }
   }
@@ -563,6 +588,7 @@ export default function TomarComandaPage() {
                             <span className="text-sm font-bold text-brand-dark w-7 shrink-0">{l.quantity}×</span>
                             <span className="flex-1 min-w-0">
                               <span className="block text-sm font-medium text-brand-dark truncate">{l.productName}</span>
+                              {l.weightKg ? <span className="block text-xs text-brand-dark/60">{weightDetail(l.weightKg, l.unitPrice)}</span> : null}
                               {l.extras.length > 0 && (
                                 <span className="block text-xs text-brand-dark/60 truncate">
                                   {l.extras.map((e) => `+ ${extraLabel(e)}`).join(" · ")}
@@ -572,8 +598,7 @@ export default function TomarComandaPage() {
                             </span>
                             <span className="flex flex-col items-end gap-1 shrink-0">
                               <span className="text-xs font-semibold text-brand-pink">{fmt(lineTotal(l))}</span>
-                              <Pencil className="w-3.5 h-3.5 text-brand-dark/40" aria-hidden />
-                              <span className="sr-only">Editar extras y notas</span>
+                              {!l.weightKg && (<><Pencil className="w-3.5 h-3.5 text-brand-dark/40" aria-hidden /> <span className="sr-only">Editar extras y notas</span></>)}
                             </span>
                           </button>
                         </li>
@@ -969,6 +994,8 @@ export default function TomarComandaPage() {
           onDone={() => { setCancelTarget(null); refreshOpen(); }}
         />
       )}
+
+      <WeighDialog product={weighing} onClose={() => setWeighing(null)} onConfirm={addWeighed} />
 
       {showServeAll && (
         <ServeAllDialog

@@ -183,6 +183,12 @@ export async function buildSaleReceiptPdf(d: SaleReceiptData): Promise<jsPDF> {
     doc.text(pdfAmount(r.unitPrice), COL_UNIT, y, { align: "right" });
     doc.text(pdfAmount(r.total), COL_TOTAL, y, { align: "right" });
     y += rowH;
+    if (r.detail) {
+      doc.setFontSize(8.5);
+      doc.setTextColor(120);
+      doc.text(r.detail, COL_DESC, y - 0.6);
+      y += 4.2;
+    }
   }
   y += 1;
   rule(doc, y);

@@ -40,14 +40,16 @@ export function buildWhatsAppMessage(order?: WhatsAppOrder, whatsappNumber?: str
       name ? `Hola! Me interesa hacer un pedido de *${name}*` : `Hola! Me interesa hacer un pedido`,
       ``,
       `*Producto:* ${product.name}`,
-      `*Cantidad:* ${quantity}${offerLabel}`,
+      `*Cantidad:* ${quantity}${product.soldBy === "kg" ? " kg" : ""}${offerLabel}`,
       ...(extras.length > 0
         ? [
             quantity > 1 ? `*Extras (en cada unidad):*` : `*Extras:*`,
             ...extras.map((e) => `• ${e.name} ${e.price > 0 ? `+${colones(e.price)}` : "(sin costo)"}`),
           ]
         : []),
-      `*Total:* ${colones(total)}`,
+      product.soldBy === "kg"
+        ? `*Total aprox.:* ${colones(total)} (${colones(product.price)}/kg, se cobra según el peso exacto)`
+        : `*Total:* ${colones(total)}`,
       ``,
       `¿Podría confirmar disponibilidad? Gracias! 😊`,
     ];

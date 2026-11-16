@@ -123,7 +123,7 @@ export default function ProductCard({ product, index = 0, whatsappNumber, busine
           {/* Footer */}
           <div className="flex items-center justify-between mt-auto pt-2 border-t border-brand-muted">
             <span className="text-xl font-bold gradient-text font-brand">
-              ₡{product.price.toLocaleString("es-CR")}
+              ₡{product.price.toLocaleString("es-CR")}{product.soldBy === "kg" && <span className="text-sm">/kg</span>}
             </span>
             <Button
               variant="outline"

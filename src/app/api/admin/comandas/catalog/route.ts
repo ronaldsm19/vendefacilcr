@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
   await ensureExtrasMigrated(session.tenantId);
   const raw = await Product.find({ tenantId: session.tenantId, available: true })
-    .select("name price category station menuSection image extras")
+    .select("name price category station menuSection image extras soldBy")
     .sort({ category: 1, name: 1 })
     .lean() as Array<Record<string, unknown>>;
 
@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
     station: effectiveStation(p as { station?: string; menuSection?: string }),
     image: p.image ?? "",
     extras: normalizeExtras(p.extras) ?? [],
+    // "kg": el precio es por kilo y al comandar hay que mandar weightKg (peso de la pieza).
+    soldBy: p.soldBy === "kg" ? "kg" : "unidad",
   }));
 
   return NextResponse.json({ products });

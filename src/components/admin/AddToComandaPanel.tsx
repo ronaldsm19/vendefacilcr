@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Check, Minus, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { lineTotal, type LineExtra } from "@/lib/pricing";
+import WeighDialog from "@/components/admin/WeighDialog";
+import { formatKg } from "@/lib/soldBy";
 
 /**
  * Agregar a una comanda abierta lo que la mesa consumió y no se había anotado, desde el cobro de la
@@ -17,6 +19,8 @@ export interface AddableProduct {
   price: number;
   category: string;
   extras?: LineExtra[];
+  /** "kg": precio por kilo; la pieza se pesa antes de agregarla. */
+  soldBy?: "unidad" | "kg";
 }
 
 interface Line {
@@ -25,6 +29,7 @@ interface Line {
   price: number;
   quantity: number;
   extras: LineExtra[];
+  weightKg?: number;
 }
 
 interface AddToComandaPanelProps {
@@ -45,8 +50,8 @@ function norm(s: string) {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
-function lineKey(productId: string, extras: LineExtra[]) {
-  return `${productId}|${extras.map((e) => e.name).sort().join(",")}`;
+function lineKey(productId: string, extras: LineExtra[], weightKg?: number) {
+  return `${productId}|${weightKg ?? ""}|${extras.map((e) => e.name).sort().join(",")}`;
 }
 
 export default function AddToComandaPanel({ comandaId, comandaNumber, products, onCancel, onAdded }: AddToComandaPanelProps) {
@@ -57,15 +62,18 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
   const [lines, setLines] = useState<Line[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [weighing, setWeighing] = useState<AddableProduct | null>(null);
 
   const q = norm(query.trim());
   const results = products.filter((p) => norm(p.name).includes(q) || norm(p.category).includes(q));
   const chosenExtras: LineExtra[] = (selected?.extras ?? [])
     .filter((e) => extraNames.includes(e.name))
     .map((e) => ({ name: e.name, price: e.price }));
-  const total = lines.reduce((s, l) => s + lineTotal({ unitPrice: l.price, quantity: l.quantity, extras: l.extras }), 0);
+  const total = lines.reduce((s, l) => s + lineTotal({ unitPrice: l.price, quantity: l.quantity, extras: l.extras, weightKg: l.weightKg }), 0);
 
   function pick(p: AddableProduct) {
+    // Un producto por kilo se pesa: entra como una pieza con su peso.
+    if (p.soldBy === "kg") { setWeighing(p); setError(""); return; }
     setSelected(p);
     setQty(1);
     setExtraNames([]);
@@ -84,6 +92,19 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
     setQuery("");
   }
 
+  function addWeighed(weightKg: number) {
+    const p = weighing;
+    if (!p) return;
+    const key = lineKey(p._id, [], weightKg);
+    setLines((prev) =>
+      prev.some((l) => lineKey(l.productId, l.extras, l.weightKg) === key)
+        ? prev.map((l) => (lineKey(l.productId, l.extras, l.weightKg) === key ? { ...l, quantity: Math.min(99, l.quantity + 1) } : l))
+        : [...prev, { productId: p._id, name: p.name, price: p.price, quantity: 1, extras: [], weightKg }]
+    );
+    setWeighing(null);
+    setQuery("");
+  }
+
   async function submit() {
     if (lines.length === 0) return;
     setSaving(true);
@@ -93,7 +114,10 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, extras: l.extras.map((e) => e.name) })),
+          items: lines.map((l) => ({
+            productId: l.productId, quantity: l.quantity, extras: l.extras.map((e) => e.name),
+            ...(l.weightKg ? { weightKg: l.weightKg } : {}),
+          })),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -101,7 +125,7 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
         setError(data.error ?? "No se pudo agregar a la comanda");
         return;
       }
-      onAdded({ count: lines.length, summary: lines.map((l) => `${l.quantity}× ${l.name}`).join(", ") });
+      onAdded({ count: lines.length, summary: lines.map((l) => `${l.quantity}× ${l.name}${l.weightKg ? ` ${formatKg(l.weightKg)}` : ""}`).join(", ") });
     } catch {
       setError("No se pudo agregar a la comanda. Revisá tu conexión.");
     } finally {
@@ -111,6 +135,7 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
 
   return (
     <>
+      <WeighDialog product={weighing} onClose={() => setWeighing(null)} onConfirm={addWeighed} />
       <div>
         <p className="text-sm font-semibold text-brand-dark">Agregar a la comanda #{comandaNumber}</p>
         <p className="text-xs text-brand-dark/50">
@@ -192,7 +217,7 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
                     <span className="block truncate text-brand-dark">{p.name}</span>
                     {p.category && <span className="block truncate text-xs text-brand-dark/40">{p.category}</span>}
                   </span>
-                  <span className="shrink-0 font-semibold text-brand-pink">{fmt(p.price)}</span>
+                  <span className="shrink-0 font-semibold text-brand-pink">{fmt(p.price)}{p.soldBy === "kg" ? "/kg" : ""}</span>
                 </button>
               ))
             )}
@@ -204,18 +229,18 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
         <div className="space-y-1.5">
           <p className="text-xs font-semibold text-brand-dark/50 uppercase tracking-wide">Para agregar</p>
           {lines.map((l) => {
-            const key = lineKey(l.productId, l.extras);
+            const key = lineKey(l.productId, l.extras, l.weightKg);
             return (
               <div key={key} className="flex items-center justify-between gap-2 text-sm">
                 <span className="min-w-0">
-                  <span className="block">{l.quantity}× {l.name}</span>
+                  <span className="block">{l.quantity}× {l.name}{l.weightKg ? ` · ${formatKg(l.weightKg)}` : ""}</span>
                   {l.extras.length > 0 && (
                     <span className="block text-xs text-brand-dark/50">+ {l.extras.map((e) => e.name).join(", ")}</span>
                   )}
                 </span>
                 <span className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs font-semibold text-brand-pink">{fmt(lineTotal({ unitPrice: l.price, quantity: l.quantity, extras: l.extras }))}</span>
-                  <button type="button" onClick={() => setLines((prev) => prev.filter((x) => lineKey(x.productId, x.extras) !== key))}
+                  <span className="text-xs font-semibold text-brand-pink">{fmt(lineTotal({ unitPrice: l.price, quantity: l.quantity, extras: l.extras, weightKg: l.weightKg }))}</span>
+                  <button type="button" onClick={() => setLines((prev) => prev.filter((x) => lineKey(x.productId, x.extras, x.weightKg) !== key))}
                     aria-label={`Quitar ${l.name}`} className="p-1 rounded-lg text-brand-dark/40 hover:bg-brand-muted/30">
                     <X className="w-3.5 h-3.5" />
                   </button>

@@ -7,7 +7,8 @@ import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/payments";
 // Igual que en los tickets térmicos reales: solo el número con 2 decimales.
 
 import type { jsPDF } from "jspdf";
-import { extraQty, extrasTotal, type LineExtra } from "@/lib/pricing";
+import { baseUnitPrice, extraQty, extrasTotal, type LineExtra } from "@/lib/pricing";
+import { weighedName, weightDetail } from "@/lib/soldBy";
 
 // ── Modelo de filas del ticket ────────────────────────────────────
 export type Row =
@@ -132,6 +133,8 @@ export interface SaleTicketItem {
   unitPrice: number;       // precio base
   lineTotal: number;       // base + extras, por la cantidad
   extras?: LineExtra[];
+  /** Producto por kilo: peso de la pieza; unitPrice es el precio del kilo. */
+  weightKg?: number;
 }
 
 /** Una fila de la tabla de productos del tiquete: el producto, o uno de sus extras debajo. */
@@ -141,6 +144,8 @@ export interface TicketItemRow {
   quantity: number;
   unitPrice: number;
   total: number;
+  /** Pieza de un producto por kilo: "0,350 kg × ₡12 000/kg", para mostrar debajo donde quepa. */
+  detail?: string;
 }
 
 /**
@@ -153,7 +158,16 @@ export function ticketItemRows(items: SaleTicketItem[]): TicketItemRow[] {
   for (const it of items) {
     const extras = it.extras ?? [];
     const extrasAmount = extrasTotal(extras) * it.quantity;
-    rows.push({ isExtra: false, name: it.productName, quantity: it.quantity, unitPrice: it.unitPrice, total: it.lineTotal - extrasAmount });
+    // Una pieza pesada va con su peso en el nombre y el precio de LA PIEZA en P.U. (así Uds × P.U.
+    // da el total también en el agente, que no sabe de kilos); el precio del kilo va en el detalle.
+    rows.push({
+      isExtra: false,
+      name: weighedName(it.productName, it.weightKg),
+      quantity: it.quantity,
+      unitPrice: baseUnitPrice(it),
+      total: it.lineTotal - extrasAmount,
+      ...(it.weightKg ? { detail: weightDetail(it.weightKg, it.unitPrice) } : {}),
+    });
     for (const e of extras) {
       // Porciones del extra en toda la línea: por unidad × unidades.
       const count = extraQty(e) * it.quantity;
@@ -252,6 +266,7 @@ export function buildSaleRows(d: SaleTicketData, cfg: TicketConfigData = DEFAULT
         { text: money(r.total), width: 10, align: "r" },
       ]),
     });
+    if (r.detail) rows.push({ t: "left", size: 7, text: `    ${r.detail}` });
   }
   rows.push({ t: "divider" });
 
