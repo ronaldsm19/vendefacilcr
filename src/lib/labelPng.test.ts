@@ -90,5 +90,11 @@ eq('health que no contesta a tiempo', await checkAgentDetailed(), { failure: 'ti
 globalThis.fetch = (async () => { throw new TypeError('Failed to fetch'); }) as never;
 eq('health bloqueado o sin agente', await checkAgentDetailed(), { failure: 'network' });
 
+const { cleanAgentMessage } = await import('./labelAgent.ts');
+const powershellJunk = 'No se pudo imprimir la etiqueta en "Etiquetas GP-3120TUC": Command failed: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand CgAkAEUAcgByAG8AcgBBAGMAdABpAG8AbgBQAHIAZQBmAGUAcgBlAG4AYwBlAD0AJwBTAHQAbwBwACcA #< CLIXML <Objs Version="1.1.0.1"><Obj S="progress" RefId="0"></Obj></Objs>';
+eq('error de PowerShell sin la basura', cleanAgentMessage(powershellJunk), 'No se pudo imprimir la etiqueta en "Etiquetas GP-3120TUC": el agente no pudo terminar de imprimir (el driver de la impresora no respondió)');
+eq('mensaje normal igual', cleanAgentMessage('La impresora no tiene papel'), 'La impresora no tiene papel');
+eq('mensaje larguísimo se corta', cleanAgentMessage('a '.repeat(200)).length <= 200, true);
+
 if (failed) { console.log(`\n${failed} fallaron`); process.exit(1); }
 console.log('\nTodo bien');
