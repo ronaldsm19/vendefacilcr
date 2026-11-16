@@ -22,6 +22,44 @@ import { ticketItemRows, type SaleTicketData, type CashCloseTicketData, type Tic
 const AGENT_URL = process.env.NEXT_PUBLIC_PRINT_AGENT_URL ?? "http://localhost:9100";
 const AGENT_TOKEN = process.env.NEXT_PUBLIC_PRINT_AGENT_TOKEN ?? "";
 
+/**
+ * fetch al agente. Desde Chrome 142 una página de internet necesita el permiso "Acceso a la red
+ * local" para hablarle a la propia compu (localhost): Chrome lo pide la primera vez y, mientras no se
+ * conteste, la llamada queda esperando. targetAddressSpace le dice a Chrome que es a esta misma compu
+ * (los navegadores que no lo conocen lo ignoran).
+ */
+function agentFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${AGENT_URL}${path}`, AGENT_SPACE ? ({ ...init, targetAddressSpace: AGENT_SPACE } as RequestInit) : init);
+}
+
+/** "loopback" si el agente está en esta misma compu, "local" si está en otra de la red. */
+const AGENT_SPACE = (() => {
+  try {
+    const host = new URL(AGENT_URL).hostname;
+    if (host === "localhost" || host === "[::1]" || /^127\./.test(host)) return "loopback";
+    if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return "local";
+  } catch {
+    // URL mal escrita: que el navegador decida.
+  }
+  return null;
+})();
+
+/**
+ * Estado del permiso de red local de Chrome para esta página ("unknown" si el navegador no lo tiene).
+ * Chrome lo llamó primero "local-network-access" y después lo partió en "loopback-network".
+ */
+export async function localNetworkPermission(): Promise<"granted" | "denied" | "prompt" | "unknown"> {
+  for (const name of ["loopback-network", "local-network-access"]) {
+    try {
+      const st = await navigator.permissions.query({ name } as unknown as PermissionDescriptor);
+      return st.state;
+    } catch {
+      // Este navegador no conoce ese nombre: probar el otro.
+    }
+  }
+  return "unknown";
+}
+
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (AGENT_TOKEN) h["Authorization"] = `Bearer ${AGENT_TOKEN}`;
@@ -47,7 +85,7 @@ export interface AgentHealth {
   impresoras: string[];
   hora: string;
   /** Impresora de etiquetas (desde la 1.4.0). */
-  etiqueta?: { disponible: boolean };
+  etiqueta?: { configurada?: string | null; disponible: boolean; estado?: string | null };
   /** Báscula serial (desde la 1.4.0). */
   bascula?: { conectado: boolean };
 }
@@ -134,21 +172,27 @@ export type AgentPayload = PrintReceiptPayload | SaleAgentPayload | CashCloseAge
  * corto daba falsos "agente no activo" aunque el agente sí estuviera corriendo.
  */
 export async function checkAgent(): Promise<AgentHealth | null> {
+  const r = await checkAgentDetailed();
+  return "health" in r ? r.health : null;
+}
+
+/** Como checkAgent, pero dice por qué no hubo respuesta: no contestó a tiempo o la llamada falló. */
+export async function checkAgentDetailed(): Promise<{ health: AgentHealth } | { failure: "timeout" | "network" | "bad_response" }> {
   try {
-    const res = await fetch(`${AGENT_URL}/health`, {
+    const res = await agentFetch(`/health`, {
       signal: AbortSignal.timeout(12000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { failure: "bad_response" };
     const data = await res.json();
-    return data.ok ? (data as AgentHealth) : null;
-  } catch {
-    return null;
+    return data.ok ? { health: data as AgentHealth } : { failure: "bad_response" };
+  } catch (e) {
+    return { failure: e instanceof DOMException && e.name === "TimeoutError" ? "timeout" : "network" };
   }
 }
 
 /** Envía un recibo a la impresora térmica via POST /imprimir. */
 export async function printReceipt(payload: AgentPayload): Promise<AgentPrintResult> {
-  const res = await fetch(`${AGENT_URL}/imprimir`, {
+  const res = await agentFetch(`/imprimir`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -159,7 +203,7 @@ export async function printReceipt(payload: AgentPayload): Promise<AgentPrintRes
 
 /** Imprime el reporte de cierre de caja via POST /cierre (reporte formateado por el agente). */
 export async function printCierre(payload: AgentPayload): Promise<AgentPrintResult> {
-  const res = await fetch(`${AGENT_URL}/cierre`, {
+  const res = await agentFetch(`/cierre`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -170,7 +214,7 @@ export async function printCierre(payload: AgentPayload): Promise<AgentPrintResu
 
 /** Abre el cajón monedero SIN imprimir, via POST /cajon. */
 export async function printCajon(): Promise<AgentPrintResult> {
-  const res = await fetch(`${AGENT_URL}/cajon`, {
+  const res = await agentFetch(`/cajon`, {
     method: "POST",
     headers: authHeaders(),
     signal: AbortSignal.timeout(10000),
@@ -186,7 +230,7 @@ export type AgentScaleReading =
 
 /** Último peso que leyó el agente de la báscula. */
 export async function readScale(): Promise<AgentScaleReading> {
-  const res = await fetch(`${AGENT_URL}/peso`, {
+  const res = await agentFetch(`/peso`, {
     headers: authHeaders(),
     signal: AbortSignal.timeout(3000),
   });
@@ -205,7 +249,7 @@ export type AgentLabelResult =
  * la impresora de etiquetas del agente, sin ventana de impresión (POST /etiqueta, desde la 1.4.0).
  */
 export async function printLabelPng(pngBase64: string, copias: number): Promise<AgentLabelResult> {
-  const res = await fetch(`${AGENT_URL}/etiqueta`, {
+  const res = await agentFetch(`/etiqueta`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ copias, pngBase64 }),
