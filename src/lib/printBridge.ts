@@ -174,6 +174,21 @@ export async function printCajon(): Promise<AgentPrintResult> {
   return res.json() as Promise<AgentPrintResult>;
 }
 
+/** Lectura de la báscula serial que hace el agente (GET /peso, desde la 1.4.0). */
+export type AgentScaleReading =
+  | { ok: true; disponible: true; pesoKg: number; estable: boolean; edadMs?: number }
+  | { ok: true; disponible: false; motivo?: string }
+  | AgentError;
+
+/** Último peso que leyó el agente de la báscula. */
+export async function readScale(): Promise<AgentScaleReading> {
+  const res = await fetch(`${AGENT_URL}/peso`, {
+    headers: authHeaders(),
+    signal: AbortSignal.timeout(3000),
+  });
+  return res.json() as Promise<AgentScaleReading>;
+}
+
 /** Alias retro-compatible: abre el cajón (ahora via el endpoint real /cajon). */
 export async function openCashDrawer(): Promise<AgentPrintResult> {
   return printCajon();

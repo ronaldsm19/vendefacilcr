@@ -14,6 +14,8 @@ export interface SeedProduct {
   stock?: number;
   category: "gelatina" | "apretado" | "especial";
   available: boolean;
+  /** "kg": el precio es por kilo y lo pedido se cobra según el peso exacto. */
+  soldBy?: "unidad" | "kg";
 }
 
 // Datos de ejemplo escritos con la lista vieja de toppings; cada uno entra como extra de ₡0.

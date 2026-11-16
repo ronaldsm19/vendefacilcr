@@ -1,5 +1,8 @@
 import mongoose, { Schema } from "mongoose";
 import { MAX_EXTRA_NAME, type LineExtra } from "@/lib/pricing";
+import { MAX_BARCODE } from "@/lib/barcode";
+import { LABEL_LINE_SIZES, MAX_LABEL_LINE, MAX_LABEL_LOT, type ProductLabelFormat } from "@/lib/productLabel";
+import { SOLD_BY, type SoldBy } from "@/lib/soldBy";
 
 export type ProductExtra = LineExtra;
 
@@ -9,6 +12,8 @@ export interface IProduct {
   tenantId: string;
   name: string;
   description: string;
+  /** Precio fijo ("unidad") o por kilo ("kg"); en los de kilo `price` y `cost` son por kilo. */
+  soldBy?: SoldBy;
   price: number;
   cost: number;
   /** @deprecated Obsoleto: reemplazado por `extras`. Solo lo lee la migración única (src/server/services/productExtras.ts). */
@@ -27,6 +32,10 @@ export interface IProduct {
   station: "cocina" | "bebidas" | "ninguna";
   stock: number;
   sold: number;            // unidades vendidas acumuladas
+  /** Código de barras o SKU del negocio ("" = sin código). En mayúsculas; ver src/lib/barcode.ts. */
+  barcode?: string;
+  /** Formato de la etiqueta adhesiva; sin guardar = se arma con el nombre y la descripción. */
+  label?: ProductLabelFormat;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +51,11 @@ const ProductSchema = new Schema(
     description: {
       type: String,
       default: "",
+    },
+    soldBy: {
+      type: String,
+      enum: SOLD_BY,
+      default: "unidad",
     },
     price: {
       type: Number,
@@ -120,8 +134,40 @@ const ProductSchema = new Schema(
       default: 0,
       min: [0, "Las unidades vendidas no pueden ser negativas"],
     },
+    barcode: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [MAX_BARCODE, `El código puede tener hasta ${MAX_BARCODE} caracteres`],
+    },
+    label: {
+      type: new Schema(
+        {
+          lines: {
+            type: [{
+              text: { type: String, required: true, trim: true, maxlength: MAX_LABEL_LINE },
+              size: { type: String, enum: LABEL_LINE_SIZES, default: "md" },
+              bold: { type: Boolean, default: false },
+              _id: false,
+            }],
+            default: [],
+          },
+          showCode: { type: Boolean, default: true },
+          weightRow: { type: Boolean, default: false },
+          lot: { type: String, default: "", trim: true, maxlength: MAX_LABEL_LOT },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
   },
   { timestamps: true }
+);
+
+// Un código identifica un solo producto dentro del negocio. Los productos sin código no cuentan.
+ProductSchema.index(
+  { tenantId: 1, barcode: 1 },
+  { unique: true, partialFilterExpression: { barcode: { $gt: "" } } }
 );
 
 export const Product =

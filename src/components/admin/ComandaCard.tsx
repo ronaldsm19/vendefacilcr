@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { weighedName } from "@/lib/soldBy";
 import { CheckCheck, Ban, Pencil, Eye } from "lucide-react";
 import type { IComanda } from "@/models/Comanda";
 import { comandaMinutes, badgeLevel, BADGE_COLORS, type ComandaThresholds } from "@/lib/comandaTime";
@@ -74,7 +75,7 @@ export default function ComandaCard({ comanda, thresholds, now, onServe, onCance
         <div className="space-y-1 pt-1">
           {comanda.items.map((item, i) => (
             <div key={i} className="text-sm">
-              <span className="text-brand-dark">{item.quantity} × {item.productName}</span>
+              <span className="text-brand-dark">{item.quantity} × {weighedName(item.productName, item.weightKg)}</span>
               {item.extras?.map((e) => (
                 <p key={e.name} className="text-xs text-brand-dark/60 pl-4">
                   + {extraLabel(e)} <span className="text-brand-dark/40">₡{(e.price * extraQty(e)).toLocaleString("es-CR")}</span>

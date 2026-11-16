@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import WeighDialog from "@/components/admin/WeighDialog";
+import { weightDetail } from "@/lib/soldBy";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import OrderForm from "@/components/admin/OrderForm";
@@ -49,7 +51,7 @@ interface VentaStats {
 
 type OrderRow = IOrder & { _id: string };
 
-interface SaleItem { productId: string; productName: string; unitPrice: number; quantity: number; extras?: LineExtra[]; }
+interface SaleItem { productId: string; productName: string; unitPrice: number; quantity: number; extras?: LineExtra[]; weightKg?: number; }
 interface FullSale {
   _id: string;
   ticketNumber?: number;
@@ -69,7 +71,7 @@ interface FullSale {
   notes?: string;
   saleDate?: string;
 }
-interface ProductOption { _id: string; name: string; price: number; }
+interface ProductOption { _id: string; name: string; price: number; soldBy?: "unidad" | "kg"; }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -121,6 +123,8 @@ export default function AdminOrdersPage() {
   const [savingSale, setSavingSale]     = useState(false);
   const [saleEditError, setSaleEditError] = useState("");
   const [saleProducts, setSaleProducts] = useState<ProductOption[]>([]);
+  // Producto por kilo que se está pesando para agregarlo a la venta que se edita.
+  const [weighingSale, setWeighingSale] = useState<ProductOption | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [showProductDrop, setShowProductDrop] = useState(false);
   const productSearchRef = useRef<HTMLDivElement>(null);
@@ -388,10 +392,17 @@ export default function AdminOrdersPage() {
   }
 
   function addSaleProduct(p: ProductOption) {
+    // Un producto por kilo se pesa: entra como una pieza nueva con su peso.
+    if (p.soldBy === "kg") {
+      setWeighingSale(p);
+      setProductSearch("");
+      setShowProductDrop(false);
+      return;
+    }
     setEditSale((prev) => {
       if (!prev) return prev;
       // Se suma a la línea del mismo producto sin extras; si solo hay líneas con extras, va en una nueva.
-      const existingIdx = prev.items.findIndex((i) => i.productId === p._id && !(i.extras?.length));
+      const existingIdx = prev.items.findIndex((i) => i.productId === p._id && !(i.extras?.length) && !i.weightKg);
       if (existingIdx >= 0) {
         return { ...prev, items: prev.items.map((i, idx) => idx === existingIdx ? { ...i, quantity: i.quantity + 1 } : i) };
       }
@@ -399,6 +410,16 @@ export default function AdminOrdersPage() {
     });
     setProductSearch("");
     setShowProductDrop(false);
+  }
+
+  function addWeighedSaleProduct(weightKg: number) {
+    const p = weighingSale;
+    if (!p) return;
+    setEditSale((prev) => prev && ({
+      ...prev,
+      items: [...prev.items, { productId: p._id, productName: p.name, unitPrice: p.price, quantity: 1, extras: [], weightKg }],
+    }));
+    setWeighingSale(null);
   }
 
   // ── Client-side filtering ──────────────────────────────────────────────────
@@ -805,17 +826,19 @@ export default function AdminOrdersPage() {
 
                 {/* Productos */}
                 <div>
+                  <WeighDialog product={weighingSale} onClose={() => setWeighingSale(null)} onConfirm={addWeighedSaleProduct} />
                   <label className="block text-xs font-medium text-brand-dark/60 mb-2">Productos</label>
                   <div className="space-y-2 mb-2">
                     {editSale.items.map((item, idx) => (
                       <div key={`${item.productId}-${idx}`} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
                         <span className="flex-1 min-w-0">
                           <span className="block text-sm font-medium text-gray-900 truncate">{item.productName}</span>
+                          {item.weightKg ? <span className="block text-xs text-gray-500">{weightDetail(item.weightKg, item.unitPrice)}</span> : null}
                           {item.extras?.map((e) => (
                             <span key={e.name} className="block text-xs text-gray-500 truncate">+ {extraLabel(e)} {fmt(e.price * extraQty(e))}</span>
                           ))}
                         </span>
-                        <span className="text-xs text-gray-400">{fmt(item.unitPrice)}</span>
+                        {!item.weightKg && <span className="text-xs text-gray-400">{fmt(item.unitPrice)}</span>}
                         <div className="flex items-center gap-1">
                           <button type="button" onClick={() => updateSaleItem(idx, -1)}
                             className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
@@ -854,7 +877,7 @@ export default function AdminOrdersPage() {
                           <button key={p._id} type="button" onClick={() => addSaleProduct(p)}
                             className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-brand-muted/20 text-left">
                             <span>{p.name}</span>
-                            <span className="text-brand-pink font-semibold">{fmt(p.price)}</span>
+                            <span className="text-brand-pink font-semibold">{fmt(p.price)}{p.soldBy === "kg" ? "/kg" : ""}</span>
                           </button>
                         ))}
                       </div>

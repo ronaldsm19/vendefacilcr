@@ -3,6 +3,7 @@ import { Product } from "@/models/Product";
 import type { IComandaItem } from "@/models/Comanda";
 import { ServiceError } from "@/server/errors";
 import { extraQty, extrasKey, lineTotal, normalizeExtras, type LineExtra } from "@/lib/pricing";
+import { normalizeWeightKg } from "@/lib/soldBy";
 
 export interface SaleItemRecord {
   productId: string;
@@ -10,6 +11,8 @@ export interface SaleItemRecord {
   unitPrice: number;      // precio base
   quantity: number;
   extras: LineExtra[];
+  /** Producto por kilo: peso de cada pieza; unitPrice es el precio del kilo. */
+  weightKg?: number;
   lineTotal: number;      // (base + extras) × cantidad, calculado acá con src/lib/pricing.ts
 }
 
@@ -33,6 +36,8 @@ export function parseSaleItems(raw: unknown): ParsedSaleItem[] | null {
     if (!Number.isInteger(i.quantity) || (i.quantity as number) < 1) return null;
     const extras = normalizeExtras(i.extras);
     if (!extras) return null;
+    const weightKg = normalizeWeightKg(i.weightKg);
+    if (weightKg === null) return null;
     const hasRef = i.comandaId !== undefined || i.comandaIndex !== undefined;
     if (hasRef && (
       typeof i.comandaId !== "string" || !mongoose.isValidObjectId(i.comandaId) ||
@@ -44,6 +49,7 @@ export function parseSaleItems(raw: unknown): ParsedSaleItem[] | null {
       unitPrice:   i.unitPrice,
       quantity:    i.quantity as number,
       extras,
+      ...(weightKg ? { weightKg } : {}),
     };
     out.push({
       ...line,
@@ -54,9 +60,9 @@ export function parseSaleItems(raw: unknown): ParsedSaleItem[] | null {
   return out;
 }
 
-/** Misma línea (producto, precio base y extras con sus precios), sin importar la cantidad. */
-export function saleLineKey(l: Pick<SaleItemRecord, "productId" | "unitPrice" | "extras">): string {
-  return `${l.productId}|${l.unitPrice}|${extrasKey(l.extras)}`;
+/** Misma línea (producto, precio base, peso de la pieza y extras con sus precios), sin importar la cantidad. */
+export function saleLineKey(l: Pick<SaleItemRecord, "productId" | "unitPrice" | "extras" | "weightKg">): string {
+  return `${l.productId}|${l.unitPrice}|${l.weightKg ?? ""}|${extrasKey(l.extras)}`;
 }
 
 function colones(n: number): string {
@@ -64,7 +70,9 @@ function colones(n: number): string {
 }
 
 function record(l: Omit<SaleItemRecord, "lineTotal">): SaleItemRecord {
-  return { ...l, lineTotal: lineTotal(l) };
+  const { weightKg, ...rest } = l;
+  const line = weightKg ? { ...rest, weightKg } : rest;
+  return { ...line, lineTotal: lineTotal(line) };
 }
 
 /**
@@ -82,18 +90,26 @@ export async function checkCatalogPrices(
   const toCheck = items.filter((i) => !keep.has(saleLineKey(i)));
   const ids = Array.from(new Set(toCheck.map((i) => i.productId).filter((id) => mongoose.isValidObjectId(id))));
   const products = ids.length > 0
-    ? await Product.find({ _id: { $in: ids }, tenantId }).select("name price extras").lean() as Array<{ _id: unknown; name: string; price: number; extras?: unknown }>
+    ? await Product.find({ _id: { $in: ids }, tenantId }).select("name price extras soldBy").lean() as Array<{ _id: unknown; name: string; price: number; extras?: unknown; soldBy?: string }>
     : [];
   const byId = new Map(products.map((p) => [String(p._id), p]));
 
   return items.map((item) => {
     if (keep.has(saleLineKey(item))) {
-      const { productId, productName, unitPrice, quantity, extras } = item;
-      return record({ productId, productName, unitPrice, quantity, extras });
+      const { productId, productName, unitPrice, quantity, extras, weightKg } = item;
+      return record({ productId, productName, unitPrice, quantity, extras, weightKg });
     }
     const p = byId.get(item.productId);
     if (!p) {
       throw new ServiceError(409, `"${item.productName}" ya no está en el catálogo.`, "PRICE_CHANGED");
+    }
+    // Un producto por kilo se cobra con su peso, y uno de precio fijo nunca: si el modo cambió
+    // desde que se cargó la caja, se avisa en vez de cobrar mal.
+    if (p.soldBy === "kg" && !item.weightKg) {
+      throw new ServiceError(409, `"${p.name}" ahora se vende por kilo: quitalo y agregalo de nuevo con su peso.`, "PRICE_CHANGED");
+    }
+    if (p.soldBy !== "kg" && item.weightKg) {
+      throw new ServiceError(409, `"${p.name}" ya no se vende por kilo: quitalo y agregalo de nuevo.`, "PRICE_CHANGED");
     }
     if (p.price !== item.unitPrice) {
       throw new ServiceError(409, `El precio de "${p.name}" cambió de ${colones(item.unitPrice)} a ${colones(p.price)}.`, "PRICE_CHANGED");
@@ -109,7 +125,7 @@ export async function checkCatalogPrices(
       }
       return { name: c.name, price: c.price, qty: extraQty(e) };
     });
-    return record({ productId: item.productId, productName: p.name, unitPrice: p.price, quantity: item.quantity, extras });
+    return record({ productId: item.productId, productName: p.name, unitPrice: p.price, quantity: item.quantity, extras, weightKg: item.weightKg });
   });
 }
 
@@ -150,6 +166,7 @@ export function checkComandaLines(
       productId: String(exp.src.productId),
       unitPrice: exp.src.unitPrice,
       extras: normalizeExtras(exp.src.extras) ?? [],
+      weightKg: exp.src.weightKg || undefined,
     };
     if (saleLineKey(item) !== saleLineKey(snapshot)) throw mismatch();
     return record({ ...snapshot, productName: exp.src.productName, quantity: item.quantity });

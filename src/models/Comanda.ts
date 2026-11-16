@@ -20,6 +20,7 @@ export interface IComandaItem {
   note: string;           // nota por ítem, "" si no hay
   paidQty: number;        // default 0; lo usa Fase 5
   extras?: LineExtra[];   // copia congelada de los extras elegidos (aplican a toda la línea); comandas viejas no lo tienen
+  weightKg?: number;      // producto por kilo: peso de la pieza (unitPrice = precio del kilo)
 }
 
 export interface IComanda {
@@ -60,6 +61,7 @@ const ComandaItemSchema = new Schema(
     note:        { type: String, default: "", maxlength: 200 },
     paidQty:     { type: Number, default: 0, min: 0 },
     extras:      { type: [LineExtraSchema], default: [] },
+    weightKg:    { type: Number, min: 0 },
   },
   { _id: false }
 );

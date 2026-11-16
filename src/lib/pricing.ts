@@ -39,6 +39,11 @@ export interface PricedLine {
   quantity: number;
   /** Extras elegidos; aplican a TODAS las unidades de la línea. */
   extras?: LineExtra[];
+  /**
+   * Producto por kilo: lo que pesó la pieza. Entonces `unitPrice` es el precio del kilo y cada
+   * unidad de la línea es una pieza de ese peso. Sin dato = producto de precio fijo.
+   */
+  weightKg?: number;
 }
 
 /** Lo que suman los extras de UNA unidad: precio × porciones de cada uno. */
@@ -46,9 +51,17 @@ export function extrasTotal(extras: LineExtra[] | undefined): number {
   return (extras ?? []).reduce((sum, e) => sum + e.price * extraQty(e), 0);
 }
 
-/** Precio unitario efectivo: base + suma de los extras de la línea. */
-export function effectiveUnitPrice(line: Pick<PricedLine, "unitPrice" | "extras">): number {
-  return line.unitPrice + extrasTotal(line.extras);
+/**
+ * Precio base de UNA unidad: el precio fijo, o en un producto por kilo, kilo × peso redondeado a
+ * colones enteros (así cada pieza tiene un precio exacto que suma igual en pantalla, tiquete y caja).
+ */
+export function baseUnitPrice(line: Pick<PricedLine, "unitPrice" | "weightKg">): number {
+  return line.weightKg ? Math.round(line.unitPrice * line.weightKg) : line.unitPrice;
+}
+
+/** Precio unitario efectivo: base (de la pieza, si es por kilo) + suma de los extras de la línea. */
+export function effectiveUnitPrice(line: Pick<PricedLine, "unitPrice" | "extras" | "weightKg">): number {
+  return baseUnitPrice(line) + extrasTotal(line.extras);
 }
 
 /** Total de una línea: precio unitario efectivo por cantidad. */
@@ -70,7 +83,7 @@ export function offerLineTotal(
   offers: { qty: number; price: number }[] | undefined,
 ): number {
   const offer = (offers ?? []).find((o) => o.qty === line.quantity);
-  const base = offer ? offer.price : line.unitPrice * line.quantity;
+  const base = offer ? offer.price : baseUnitPrice(line) * line.quantity;
   return base + extrasTotal(line.extras) * line.quantity;
 }
 
