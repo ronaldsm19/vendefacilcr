@@ -74,16 +74,16 @@ globalThis.fetch = (async () => { throw new Error('ECONNREFUSED'); }) as never;
 eq('sin agente', (await readScaleKg()).tone, 'error');
 
 // ── Por qué no se imprime directo (aviso en el editor) ──────────────
-const { labelPrinterProblem } = await import('./labelAgent.ts');
-const { checkAgentDetailed } = await import('./printBridge.ts');
-const canaan = { ok: true, version: '1.4.0', etiqueta: { configurada: 'Etiquetas GP-3120TUC', disponible: true, estado: 'Lista' } };
-eq('health real de Canaán: se imprime directo', labelPrinterProblem(canaan as never), null);
-eq('agente viejo sin etiquetas', labelPrinterProblem({ ok: true, version: '1.2.1' } as never), 'El agente de esta compu (versión 1.2.1) todavía no imprime etiquetas: hay que actualizarlo a la 1.4.0.');
-eq('sin etiquetadora configurada', labelPrinterProblem({ ...canaan, etiqueta: { configurada: null, disponible: false } } as never), 'El agente de impresión no tiene configurada una impresora de etiquetas.');
-eq('etiquetadora no lista', labelPrinterProblem({ ...canaan, etiqueta: { configurada: 'GP', disponible: false, estado: 'Sin papel' } } as never), 'La impresora de etiquetas "GP" no está lista (Sin papel).');
+const { labelRejectReason } = await import('./labelAgent.ts');
+const { checkAgentDetailed, printLabelPng } = await import('./printBridge.ts');
+eq('agente viejo sin /etiqueta', labelRejectReason({ ok: false, codigo: 'NO_ENCONTRADO', mensaje: 'Ruta no encontrada: POST /etiqueta' }), 'El agente de impresión de esta compu todavía no imprime etiquetas: hay que actualizarlo a la 1.4.0.');
+eq('sin etiquetadora configurada', labelRejectReason({ ok: false, codigo: 'ETIQUETA_IMPRESORA_NO_CONFIGURADA', mensaje: 'x' }), 'El agente de impresión no tiene configurada una impresora de etiquetas.');
+eq('otro error: el mensaje del agente', labelRejectReason({ ok: false, codigo: 'SIN_PAPEL', mensaje: 'La impresora no tiene papel' }), 'La impresora no tiene papel');
 let lastInit: Record<string, unknown> = {};
-globalThis.fetch = (async (_u: string, init: Record<string, unknown>) => { lastInit = init; return { ok: true, json: async () => canaan }; }) as never;
-eq('health con respuesta', 'health' in (await checkAgentDetailed()), true);
+let lastUrl = '';
+globalThis.fetch = (async (u: string, init: Record<string, unknown>) => { lastUrl = u; lastInit = init; return { ok: true, json: async () => ({ ok: true, mensaje: 'Etiqueta enviada.', copias: 2 }) }; }) as never;
+eq('etiqueta va directo a POST /etiqueta', [(await printLabelPng('iVBOR', 2)).ok, lastUrl.endsWith('/etiqueta'), lastInit.method], [true, true, 'POST']);
+eq('con copias y PNG en el cuerpo', JSON.parse(lastInit.body as string), { copias: 2, pngBase64: 'iVBOR' });
 eq('le dice a Chrome que el agente es esta misma compu', lastInit.targetAddressSpace, 'loopback');
 globalThis.fetch = (async () => { throw new DOMException('t', 'TimeoutError'); }) as never;
 eq('health que no contesta a tiempo', await checkAgentDetailed(), { failure: 'timeout' });
