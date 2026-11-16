@@ -2,14 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  AlertCircle, ArrowDown, ArrowUp, Bold, Loader2, Plus, Printer, Save, Scale, Trash2, Wand2,
+  AlertCircle, ArrowDown, ArrowUp, Bold, Check, Loader2, Plus, Printer, Save, Scale, Trash2, Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ProductLabelFace, { MIN_MODULE_MM, printLabels, type LabelFit } from "@/components/admin/ProductLabelFace";
 import { MAX_BARCODE, normalizeBarcode } from "@/lib/barcode";
 import { canEncodeCode39 } from "@/lib/code39";
 import { formatCRC } from "@/lib/billing";
-import { readScale } from "@/lib/printBridge";
+import { printLabelsWithAgent } from "@/lib/labelAgent";
+import { kgInputText, readScaleKg } from "@/lib/scale";
 import { formatKg, parseKg, priceForWeight, type SoldBy } from "@/lib/soldBy";
 import {
   LABEL_HEIGHT_MM, LABEL_LINE_SIZES, LABEL_SIZE_NAMES, LABEL_WIDTH_MM, MAX_LABEL_COPIES,
@@ -63,6 +64,7 @@ export default function LabelEditor({
   const [busy, setBusy] = useState<"" | "save" | "print">("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [printMsg, setPrintMsg] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
   const [fit, setFit] = useState<LabelFit | null>(null);
   // Datos de esta impresión para la fila Peso · Precio · Lote. El precio de un producto por kilo
   // sale solo del peso; uno de precio fijo propone su precio. Lo que se deje vacío queda en blanco.
@@ -170,11 +172,23 @@ export default function LabelEditor({
     setBusy("print");
     setError("");
     setNotice("");
+    setPrintMsg(null);
+    const face = labelRef.current;
     try {
       // El código nuevo se guarda antes de imprimir: si no, la etiqueta pegada no la reconoce la caja.
       if (!hasCode && !(await saveCode())) return;
       if (canSave && dirty && !(await saveFormat())) return;
-      printLabels(labelRef.current, copiesNum);
+      // Directo a la impresora de etiquetas del agente; si no está o falla, por la ventana del navegador.
+      const sent = await printLabelsWithAgent(cleanFormat(), code, format.weightRow ? rowValues : undefined, copiesNum);
+      const many = (n: number) => (n === 1 ? "1 etiqueta" : `${n} etiquetas`);
+      if (sent.status === "printed") {
+        setPrintMsg({ tone: "ok", text: `Se mandaron ${many(sent.printed)} a la impresora de etiquetas${sent.test ? " (el agente está en modo prueba: no imprime de verdad)" : ""}.` });
+      } else if (sent.status === "partial") {
+        setPrintMsg({ tone: "warn", text: `Se imprimieron ${many(sent.printed)} de ${copiesNum} y la impresora se detuvo: ${sent.reason}. Revisala e imprimí las que faltan.` });
+      } else {
+        if (sent.reason) setPrintMsg({ tone: "warn", text: `${sent.reason}. Se abrió la ventana de impresión.` });
+        printLabels(face, copiesNum);
+      }
     } catch {
       setError("Sin conexión, probá de nuevo");
     } finally {
@@ -199,28 +213,10 @@ export default function LabelEditor({
   async function handleReadScale() {
     setReadingScale(true);
     setScaleMsg(null);
-    try {
-      const r = await readScale();
-      if (!r.ok) {
-        setScaleMsg({
-          tone: "error",
-          text: r.codigo === "NO_ENCONTRADO"
-            ? "El agente de impresión de esta compu todavía no lee básculas: hay que actualizarlo."
-            : r.mensaje || "El agente no pudo leer la báscula",
-        });
-      } else if (!r.disponible) {
-        setScaleMsg({ tone: "error", text: r.motivo || "La báscula no está conectada al agente" });
-      } else if (!(r.pesoKg > 0)) {
-        setScaleMsg({ tone: "warn", text: "La báscula marca 0: poné el producto encima" });
-      } else {
-        setWeightText(r.pesoKg.toFixed(3).replace(".", ","));
-        setScaleMsg(r.estable ? { tone: "ok", text: "Peso leído de la báscula" } : { tone: "warn", text: "La báscula todavía se movía: revisá el peso" });
-      }
-    } catch {
-      setScaleMsg({ tone: "error", text: "No se pudo hablar con el agente de impresión. ¿Está abierto en esta compu?" });
-    } finally {
-      setReadingScale(false);
-    }
+    const r = await readScaleKg();
+    if (r.kg) setWeightText(kgInputText(r.kg));
+    setScaleMsg(r);
+    setReadingScale(false);
   }
 
   return (
@@ -452,13 +448,18 @@ export default function LabelEditor({
             {dirty ? "Guardar formato" : notice || "Formato guardado"}
           </Button>
         )}
+        {printMsg && (
+          <p className={`flex items-start gap-1.5 text-sm rounded-xl px-3 py-2 ${printMsg.tone === "ok" ? "text-emerald-700 bg-emerald-50" : "text-amber-800 bg-amber-50"}`}>
+            {printMsg.tone === "ok" ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />} {printMsg.text}
+          </p>
+        )}
         {error && (
           <p className="flex items-start gap-1.5 text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> {error}
           </p>
         )}
         <p className="text-xs text-brand-dark/50">
-          En la ventana de impresión elegí la impresora de etiquetas, con papel de {LABEL_WIDTH_MM} × {LABEL_HEIGHT_MM} mm y márgenes en &quot;Ninguno&quot;.
+          Si el agente de impresión de esta compu tiene la impresora de etiquetas, salen directo. Si no, en la ventana de impresión elegí la impresora de etiquetas, con papel de {LABEL_WIDTH_MM} × {LABEL_HEIGHT_MM} mm y márgenes en &quot;Ninguno&quot;.
         </p>
       </div>
     </div>
