@@ -15,6 +15,8 @@ export const LABEL_SIZE_PT: Record<LabelLineSize, number> = { lg: 11, md: 9, sm:
 
 export const MAX_LABEL_LINES = 8;
 export const MAX_LABEL_LINE = 120;
+/** Largo del lote (tanda de producción), p. ej. la fecha de elaboración "161126". */
+export const MAX_LABEL_LOT = 30;
 /** Cuántas etiquetas se mandan de una vez. */
 export const MAX_LABEL_COPIES = 300;
 
@@ -28,8 +30,17 @@ export interface ProductLabelFormat {
   lines: LabelLine[];
   /** El número debajo de las barras, entre asteriscos (*10001*). */
   showCode: boolean;
-  /** Fila "Peso · Precio · Lote" sobre el código, para llenar a mano. */
+  /** Fila "Peso · Precio · Lote" sobre el código: con los valores del popup o en blanco para escribir a mano. */
   weightRow: boolean;
+  /** Último lote impreso: se propone la próxima vez, porque una tanda se etiqueta en varias tandas de impresión. */
+  lot: string;
+}
+
+/** Lo que se llena al imprimir en la fila Peso · Precio · Lote (vacío = queda en blanco). */
+export interface LabelRowValues {
+  weight: string;
+  price: string;
+  lot: string;
 }
 
 /** Formato de arranque para un producto que todavía no tiene: el nombre grande y la descripción. */
@@ -37,7 +48,7 @@ export function defaultLabel(product: { name: string; description?: string }): P
   const lines: LabelLine[] = [{ text: product.name.trim(), size: "lg", bold: false }];
   const desc = (product.description ?? "").trim().replace(/\s+/g, " ");
   if (desc) lines.push({ text: desc.slice(0, MAX_LABEL_LINE), size: "md", bold: false });
-  return { lines, showCode: true, weightRow: false };
+  return { lines, showCode: true, weightRow: false, lot: "" };
 }
 
 /**
@@ -58,5 +69,7 @@ export function normalizeLabel(raw: unknown): ProductLabelFormat | null {
     const size = LABEL_LINE_SIZES.includes(l.size as LabelLineSize) ? (l.size as LabelLineSize) : "md";
     if (text) lines.push({ text, size, bold: l.bold === true });
   }
-  return { lines, showCode: r.showCode !== false, weightRow: r.weightRow === true };
+  const lot = typeof r.lot === "string" ? r.lot.trim() : "";
+  if (lot.length > MAX_LABEL_LOT) return null;
+  return { lines, showCode: r.showCode !== false, weightRow: r.weightRow === true, lot };
 }

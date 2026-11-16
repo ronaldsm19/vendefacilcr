@@ -1,7 +1,8 @@
 import mongoose, { Schema } from "mongoose";
 import { MAX_EXTRA_NAME, type LineExtra } from "@/lib/pricing";
 import { MAX_BARCODE } from "@/lib/barcode";
-import { LABEL_LINE_SIZES, MAX_LABEL_LINE, type ProductLabelFormat } from "@/lib/productLabel";
+import { LABEL_LINE_SIZES, MAX_LABEL_LINE, MAX_LABEL_LOT, type ProductLabelFormat } from "@/lib/productLabel";
+import { SOLD_BY, type SoldBy } from "@/lib/soldBy";
 
 export type ProductExtra = LineExtra;
 
@@ -11,6 +12,8 @@ export interface IProduct {
   tenantId: string;
   name: string;
   description: string;
+  /** Precio fijo ("unidad") o por kilo ("kg"); en los de kilo `price` y `cost` son por kilo. */
+  soldBy?: SoldBy;
   price: number;
   cost: number;
   /** @deprecated Obsoleto: reemplazado por `extras`. Solo lo lee la migración única (src/server/services/productExtras.ts). */
@@ -48,6 +51,11 @@ const ProductSchema = new Schema(
     description: {
       type: String,
       default: "",
+    },
+    soldBy: {
+      type: String,
+      enum: SOLD_BY,
+      default: "unidad",
     },
     price: {
       type: Number,
@@ -146,6 +154,7 @@ const ProductSchema = new Schema(
           },
           showCode: { type: Boolean, default: true },
           weightRow: { type: Boolean, default: false },
+          lot: { type: String, default: "", trim: true, maxlength: MAX_LABEL_LOT },
         },
         { _id: false }
       ),

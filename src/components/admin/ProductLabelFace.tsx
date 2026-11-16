@@ -3,7 +3,7 @@
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { code39Bars } from "@/lib/code39";
 import {
-  LABEL_HEIGHT_MM, LABEL_SIZE_PT, LABEL_WIDTH_MM, type ProductLabelFormat,
+  LABEL_HEIGHT_MM, LABEL_SIZE_PT, LABEL_WIDTH_MM, type LabelRowValues, type ProductLabelFormat,
 } from "@/lib/productLabel";
 
 /** Módulo (barra angosta) ideal: 2 puntos en una térmica de 203 dpi, 3 en una de 300. */
@@ -32,8 +32,10 @@ export interface LabelFit {
 const ProductLabelFace = forwardRef<HTMLDivElement, {
   format: ProductLabelFormat;
   code: string;
+  /** Peso, precio y lote de esta impresión; lo vacío queda en blanco para escribir a mano. */
+  values?: LabelRowValues;
   onFit?: (fit: LabelFit) => void;
-}>(function ProductLabelFace({ format, code, onFit }, ref) {
+}>(function ProductLabelFace({ format, code, values, onFit }, ref) {
   const rootRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   useImperativeHandle(ref, () => rootRef.current!, []);
@@ -42,7 +44,8 @@ const ProductLabelFace = forwardRef<HTMLDivElement, {
   const moduleMm = bars ? Math.min(MODULE_MM, BARS_AREA_MM / (bars.width + QUIET_MODULES)) : null;
   const barHeightMm = format.showCode ? 9 : 11;
 
-  const linesKey = JSON.stringify(format);
+  const rowFilled = !!values && !!(values.weight || values.price || values.lot);
+  const linesKey = JSON.stringify([format, rowFilled]);
   useLayoutEffect(() => {
     const box = textRef.current;
     if (!box) return;
@@ -101,13 +104,23 @@ const ProductLabelFace = forwardRef<HTMLDivElement, {
         ))}
       </div>
 
-      {format.weightRow && (
+      {format.weightRow && (rowFilled ? (
+        // Con valores: el nombre chiquito arriba y el dato abajo, en tres columnas iguales.
+        <div style={{ flex: "none", display: "flex", marginTop: "0.8mm", textAlign: "center", lineHeight: 1.1 }}>
+          {([["Peso", values!.weight], ["Precio", values!.price], ["Lote", values!.lot]] as const).map(([name, value]) => (
+            <div key={name} style={{ flex: "1 1 0", minWidth: 0 }}>
+              <div style={{ fontSize: "6.5pt" }}>{name}</div>
+              <div style={{ fontSize: "9pt", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden" }}>{value || " "}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
         <div style={{ flex: "none", display: "flex", justifyContent: "space-between", padding: "0 2mm", marginTop: "0.8mm", fontSize: "9pt" }}>
           <span>Peso</span>
           <span>Precio</span>
           <span>Lote</span>
         </div>
-      )}
+      ))}
 
       <div style={{ flex: "none", marginTop: "1mm", display: "flex", flexDirection: "column", alignItems: "center" }}>
         {bars && moduleMm ? (

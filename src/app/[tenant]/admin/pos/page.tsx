@@ -50,6 +50,7 @@ interface ProductRow {
   available: boolean;
   extras?: LineExtra[];
   barcode?: string;
+  soldBy?: "unidad" | "kg";
 }
 
 interface CartLine {
@@ -187,7 +188,7 @@ function ProductCard({
       )}
       <div className="p-3">
         <p className="font-bold text-base text-gray-900 leading-tight line-clamp-2">{product.name}</p>
-        <p className="text-sm font-semibold text-brand-pink mt-1">{fmt(product.price)}</p>
+        <p className="text-sm font-semibold text-brand-pink mt-1">{fmt(product.price)}{product.soldBy === "kg" ? "/kg" : ""}</p>
       </div>
     </button>
   );

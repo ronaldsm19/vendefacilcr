@@ -2,15 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  AlertCircle, ArrowDown, ArrowUp, Bold, Loader2, Plus, Printer, Save, Trash2, Wand2,
+  AlertCircle, ArrowDown, ArrowUp, Bold, Loader2, Plus, Printer, Save, Scale, Trash2, Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ProductLabelFace, { MIN_MODULE_MM, printLabels, type LabelFit } from "@/components/admin/ProductLabelFace";
 import { MAX_BARCODE, normalizeBarcode } from "@/lib/barcode";
 import { canEncodeCode39 } from "@/lib/code39";
+import { formatCRC } from "@/lib/billing";
+import { readScale } from "@/lib/printBridge";
+import { formatKg, parseKg, priceForWeight, type SoldBy } from "@/lib/soldBy";
 import {
   LABEL_HEIGHT_MM, LABEL_LINE_SIZES, LABEL_SIZE_NAMES, LABEL_WIDTH_MM, MAX_LABEL_COPIES,
-  MAX_LABEL_LINE, MAX_LABEL_LINES, defaultLabel, type LabelLine, type ProductLabelFormat,
+  MAX_LABEL_LINE, MAX_LABEL_LINES, MAX_LABEL_LOT, defaultLabel, type LabelLine, type LabelRowValues,
+  type ProductLabelFormat,
 } from "@/lib/productLabel";
 
 export interface LabelProduct {
@@ -18,6 +22,8 @@ export interface LabelProduct {
   name: string;
   description?: string;
   barcode?: string;
+  price: number;
+  soldBy?: SoldBy;
   label?: ProductLabelFormat;
 }
 
@@ -46,7 +52,9 @@ export default function LabelEditor({
   suggestedCode: string;
   onSaved: (productId: string, changes: { label?: ProductLabelFormat; barcode?: string }) => void;
 }) {
-  const initial = product.label ?? defaultLabel(product);
+  // Los formatos guardados antes del lote no lo traen.
+  const initial: ProductLabelFormat = product.label ? { ...product.label, lot: product.label.lot ?? "" } : defaultLabel(product);
+  const byKg = product.soldBy === "kg";
   const [format, setFormat] = useState<ProductLabelFormat>(initial);
   // Sin formato guardado todavía, el de arranque cuenta como cambio: se puede guardar tal cual.
   const [savedFormat, setSavedFormat] = useState(product.label ? JSON.stringify(initial) : "");
@@ -56,6 +64,12 @@ export default function LabelEditor({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [fit, setFit] = useState<LabelFit | null>(null);
+  // Datos de esta impresión para la fila Peso · Precio · Lote. El precio de un producto por kilo
+  // sale solo del peso; uno de precio fijo propone su precio. Lo que se deje vacío queda en blanco.
+  const [weightText, setWeightText] = useState("");
+  const [priceText, setPriceText] = useState(byKg ? "" : String(product.price));
+  const [scaleMsg, setScaleMsg] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
+  const [readingScale, setReadingScale] = useState(false);
   const labelRef = useRef<HTMLDivElement>(null);
 
   const previewBox = useRef<HTMLDivElement>(null);
@@ -170,6 +184,45 @@ export default function LabelEditor({
 
   const tooLong = fit?.moduleMm != null && fit.moduleMm < MIN_MODULE_MM;
 
+  const kg = weightText.trim() ? parseKg(weightText) : null;
+  const weightError = weightText.trim() !== "" && kg === null ? "Escribí el peso en kilos, p. ej. 0,350" : "";
+  const autoPrice = byKg && kg !== null ? priceForWeight(product.price, kg) : null;
+  const typedPrice = priceText.trim() === "" ? null : Number(priceText);
+  const priceError = typedPrice !== null && (!Number.isFinite(typedPrice) || typedPrice < 0) ? "Precio inválido" : "";
+  const finalPrice = typedPrice !== null && !priceError ? typedPrice : autoPrice;
+  const rowValues: LabelRowValues = {
+    weight: kg !== null ? formatKg(kg) : "",
+    price: finalPrice !== null ? formatCRC(finalPrice) : "",
+    lot: format.lot.trim(),
+  };
+
+  async function handleReadScale() {
+    setReadingScale(true);
+    setScaleMsg(null);
+    try {
+      const r = await readScale();
+      if (!r.ok) {
+        setScaleMsg({
+          tone: "error",
+          text: r.codigo === "NO_ENCONTRADO"
+            ? "El agente de impresión de esta compu todavía no lee básculas: hay que actualizarlo."
+            : r.mensaje || "El agente no pudo leer la báscula",
+        });
+      } else if (!r.disponible) {
+        setScaleMsg({ tone: "error", text: r.motivo || "La báscula no está conectada al agente" });
+      } else if (!(r.pesoKg > 0)) {
+        setScaleMsg({ tone: "warn", text: "La báscula marca 0: poné el producto encima" });
+      } else {
+        setWeightText(r.pesoKg.toFixed(3).replace(".", ","));
+        setScaleMsg(r.estable ? { tone: "ok", text: "Peso leído de la báscula" } : { tone: "warn", text: "La báscula todavía se movía: revisá el peso" });
+      }
+    } catch {
+      setScaleMsg({ tone: "error", text: "No se pudo hablar con el agente de impresión. ¿Está abierto en esta compu?" });
+    } finally {
+      setReadingScale(false);
+    }
+  }
+
   return (
     <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
       {/* Editor */}
@@ -273,6 +326,66 @@ export default function LabelEditor({
           </label>
         </div>
 
+        {format.weightRow && (
+          <div className="rounded-xl border border-brand-muted p-3 space-y-3">
+            <p className="text-sm font-medium text-brand-dark">Datos de esta impresión</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label htmlFor="label-weight" className="block text-xs font-medium text-brand-dark/70 mb-1">Peso (kg)</label>
+                <input
+                  id="label-weight"
+                  type="text"
+                  inputMode="decimal"
+                  value={weightText}
+                  placeholder="0,350"
+                  onChange={(e) => { setWeightText(e.target.value); setScaleMsg(null); }}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="label-price" className="block text-xs font-medium text-brand-dark/70 mb-1">Precio (₡)</label>
+                <input
+                  id="label-price"
+                  type="number"
+                  min={0}
+                  value={priceText}
+                  placeholder={autoPrice !== null ? String(autoPrice) : ""}
+                  onChange={(e) => setPriceText(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="label-lot" className="block text-xs font-medium text-brand-dark/70 mb-1">Lote</label>
+                <input
+                  id="label-lot"
+                  type="text"
+                  value={format.lot}
+                  maxLength={MAX_LABEL_LOT}
+                  placeholder="161126"
+                  onChange={(e) => setFormat((f) => ({ ...f, lot: e.target.value }))}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+            <Button type="button" variant="secondary" size="sm" onClick={handleReadScale} disabled={readingScale}>
+              {readingScale ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scale className="w-4 h-4" />} Leer báscula
+            </Button>
+            {scaleMsg && (
+              <p className={`text-xs ${scaleMsg.tone === "ok" ? "text-emerald-700" : scaleMsg.tone === "warn" ? "text-amber-700" : "text-red-600"}`}>{scaleMsg.text}</p>
+            )}
+            {weightError && <p className="text-xs text-red-600">{weightError}</p>}
+            {priceError && <p className="text-xs text-red-600">{priceError}</p>}
+            <p className="text-xs text-brand-dark/50">
+              {byKg
+                ? autoPrice !== null && typedPrice === null
+                  ? `${formatCRC(product.price)}/kg × ${formatKg(kg!)} = ${formatCRC(autoPrice)}.`
+                  : `Se vende a ${formatCRC(product.price)}/kg: con el peso, el precio sale solo.`
+                : "Precio fijo del producto. Borralo si lo querés escribir a mano."}
+              {" "}Lo que dejes vacío sale en blanco para llenarlo a mano. El lote es la tanda de producción (p. ej. la fecha en que se hizo).
+            </p>
+          </div>
+        )}
+
         {!canSave && (
           <p className="text-xs text-brand-dark/50">Podés cambiar el texto para esta impresión. Guardarlo lo hace quien edita los productos.</p>
         )}
@@ -286,7 +399,7 @@ export default function LabelEditor({
             style={{ width: LABEL_WIDTH_MM * PX_PER_MM * previewScale, height: LABEL_HEIGHT_MM * PX_PER_MM * previewScale }}
           >
             <div style={{ transform: `scale(${previewScale})`, transformOrigin: "top left", width: "max-content" }}>
-              <ProductLabelFace ref={labelRef} format={format} code={codeError ? "" : code} onFit={setFit} />
+              <ProductLabelFace ref={labelRef} format={format} code={codeError ? "" : code} values={format.weightRow ? rowValues : undefined} onFit={setFit} />
             </div>
           </div>
           <p className="text-xs text-brand-dark/50 text-center mt-2">Tamaño real: {LABEL_WIDTH_MM} × {LABEL_HEIGHT_MM} mm</p>
@@ -323,7 +436,7 @@ export default function LabelEditor({
           <Button
             type="button"
             className="flex-1"
-            disabled={!!busy || !code || !!codeError || !copiesOk || (!hasCode && !canSave)}
+            disabled={!!busy || !code || !!codeError || !copiesOk || (!hasCode && !canSave) || (format.weightRow && (!!weightError || !!priceError))}
             onClick={handlePrint}
           >
             {busy === "print" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}

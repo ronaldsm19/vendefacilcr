@@ -8,6 +8,7 @@ import { X, Plus, Upload, ImageIcon, Loader2, Images, Wand2 } from "lucide-react
 import { MAX_BARCODE } from "@/lib/barcode";
 import CategoryCombobox from "@/components/admin/CategoryCombobox";
 import { STATIONS, effectiveStation } from "@/lib/station";
+import type { SoldBy } from "@/lib/soldBy";
 
 const MAX_EXTRA_IMAGES = 4;
 
@@ -33,6 +34,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
   const [form, setForm] = useState({
     name:         initial?.name         ?? "",
     description:  initial?.description  ?? "",
+    soldBy:       (initial?.soldBy ?? "unidad") as SoldBy,
     price:        initial?.price?.toString() ?? "",
     cost:         initial?.cost?.toString()  ?? "",
     stock:        initial?.stock?.toString() ?? "0",
@@ -215,7 +217,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
             <p className="font-semibold text-brand-dark">{initial?.name}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-brand-dark mb-1">Precio de venta (₡) *</label>
+            <label className="block text-sm font-medium text-brand-dark mb-1">{form.soldBy === "kg" ? "Precio por kilo (₡) *" : "Precio de venta (₡) *"}</label>
             <input
               type="number" required min={0}
               value={form.price}
@@ -253,10 +255,36 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
         />
       </div>
 
+      {/* Precio fijo o por kilo */}
+      <div>
+        <p className="block text-sm font-medium text-brand-dark mb-1">Se vende</p>
+        <div className="flex gap-1.5" role="radiogroup" aria-label="Cómo se vende">
+          {([["unidad", "A precio fijo"], ["kg", "Por kilo"]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={form.soldBy === key}
+              onClick={() => setForm({ ...form, soldBy: key })}
+              className={`px-3 py-1.5 rounded-full text-sm font-semibold border transition-colors cursor-pointer ${
+                form.soldBy === key ? "gradient-bg text-white border-transparent" : "bg-white text-brand-dark/60 border-brand-muted hover:text-brand-dark"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-brand-dark/50 mt-1">
+          {form.soldBy === "kg"
+            ? "El precio y el costo son por kilo. Al pesarlo, el precio de la pieza sale solo (p. ej. un queso madurado)."
+            : "Siempre cuesta lo mismo (p. ej. un burrito o un café)."}
+        </p>
+      </div>
+
       {/* Precios */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-brand-dark mb-1">Precio de venta (₡) *</label>
+          <label className="block text-sm font-medium text-brand-dark mb-1">{form.soldBy === "kg" ? "Precio por kilo (₡) *" : "Precio de venta (₡) *"}</label>
           <input
             type="number" required min={0}
             value={form.price}
@@ -265,7 +293,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-brand-dark mb-1">Precio de costo (₡)</label>
+          <label className="block text-sm font-medium text-brand-dark mb-1">{form.soldBy === "kg" ? "Costo por kilo (₡)" : "Precio de costo (₡)"}</label>
           <input
             type="number" min={0}
             value={form.cost}

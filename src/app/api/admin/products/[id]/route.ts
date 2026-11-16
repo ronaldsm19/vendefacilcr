@@ -8,6 +8,7 @@ import { normalizeExtras } from "@/lib/pricing";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
 import { barcodeConflict, resolveBarcode } from "@/server/services/productBarcodes";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { isSoldBy } from "@/lib/soldBy";
 
 export async function GET(
   request: NextRequest,
@@ -55,6 +56,9 @@ export async function PUT(
   // La etiqueta se guarda solo desde su editor (PUT .../label): así una ficha abierta desde antes
   // no pisa el formato que se acaba de armar.
   delete body.label;
+  if (body.soldBy !== undefined && !isSoldBy(body.soldBy)) {
+    return NextResponse.json({ error: "El producto se vende por unidad o por kilo" }, { status: 400 });
+  }
 
   // Sin permiso completo solo sobreviven estos tres. Se descarta el resto en vez de rechazar la
   // petición: la pantalla ya manda el producto entero y lo que importa es que un campo que la

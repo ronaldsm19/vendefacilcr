@@ -9,6 +9,7 @@ import { normalizeExtras } from "@/lib/pricing";
 import { ensureExtrasMigrated } from "@/server/services/productExtras";
 import { barcodeConflict, resolveBarcode } from "@/server/services/productBarcodes";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
+import { isSoldBy } from "@/lib/soldBy";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -46,7 +47,10 @@ export async function POST(request: NextRequest) {
   await connectToDatabase();
   const body = await request.json();
 
-  const { name, description, price, cost, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock } = body;
+  const { name, description, price, cost, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock, soldBy } = body;
+  if (soldBy !== undefined && !isSoldBy(soldBy)) {
+    return NextResponse.json({ error: "El producto se vende por unidad o por kilo" }, { status: 400 });
+  }
   if (!name || !price || !category) {
     return NextResponse.json({ error: "Faltan campos requeridos (nombre, precio, categoría)" }, { status: 400 });
   }
@@ -67,6 +71,7 @@ export async function POST(request: NextRequest) {
   const product = await Product.create({
     tenantId: session.tenantId,
     name, description,
+    soldBy: soldBy ?? "unidad",
     price: Number(price),
     cost:  cost !== undefined ? Number(cost) : 0,
     extras,
