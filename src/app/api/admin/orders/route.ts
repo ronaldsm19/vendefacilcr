@@ -43,12 +43,17 @@ export async function POST(request: NextRequest) {
   if (!items) {
     return NextResponse.json({ error: "Extras inválidos en algún producto" }, { status: 400 });
   }
-  // Un pedido manual no tiene peso: un producto por kilo se cobraría como si fuera un kilo entero.
+  // Un pedido manual no tiene peso ni precio por pieza: un producto por kilo se cobraría como si
+  // fuera un kilo entero, y uno de precio libre a su precio sugerido.
   const itemIds = items.map((i) => i.productId).filter((id) => mongoose.isValidObjectId(id));
   if (itemIds.length > 0) {
-    const byKg = await Product.findOne({ _id: { $in: itemIds }, tenantId: session.tenantId, soldBy: "kg" }).select("name").lean<{ name: string } | null>();
-    if (byKg) {
-      return NextResponse.json({ error: `"${byKg.name}" se vende por kilo: cobralo en la caja, donde se pesa.` }, { status: 400 });
+    const special = await Product.findOne({ _id: { $in: itemIds }, tenantId: session.tenantId, soldBy: { $in: ["kg", "libre"] } })
+      .select("name soldBy").lean<{ name: string; soldBy: string } | null>();
+    if (special) {
+      const msg = special.soldBy === "kg"
+        ? `"${special.name}" se vende por kilo: cobralo en la caja, donde se pesa.`
+        : `"${special.name}" es de precio libre: cobralo en la caja, donde se escribe el precio de la pieza.`;
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
   }
 

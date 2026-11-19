@@ -56,7 +56,8 @@ async function getTenantWithMenu(slug: string) {
 
 async function getAvailableProducts(tenantId: string) {
   try {
-    const products = await Product.find({ tenantId, available: true })
+    // Los de precio libre (cada pieza vale distinto) se venden solo en la caja: no van a la tienda.
+    const products = await Product.find({ tenantId, available: true, soldBy: { $ne: "libre" } })
       .select("-cost -barcode -label")
       .sort({ createdAt: -1 })
       .lean();

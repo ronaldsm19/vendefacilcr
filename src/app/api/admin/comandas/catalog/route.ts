@@ -17,7 +17,14 @@ export async function GET(request: NextRequest) {
   if (deniedPlan) return deniedPlan;
 
   await ensureExtrasMigrated(session.tenantId);
-  const raw = await Product.find({ tenantId: session.tenantId, available: true })
+  // Los de precio libre solo van a quien sabe pedir el precio de la pieza (la web manda
+  // ?precioLibre=1). La app de meseros todavía no: si los recibiera, los comandaría sin precio.
+  const withOpenPrice = request.nextUrl.searchParams.get("precioLibre") === "1";
+  const raw = await Product.find({
+    tenantId: session.tenantId,
+    available: true,
+    ...(withOpenPrice ? {} : { soldBy: { $ne: "libre" } }),
+  })
     .select("name price category station menuSection image extras soldBy")
     .sort({ category: 1, name: 1 })
     .lean() as Array<Record<string, unknown>>;
@@ -31,7 +38,8 @@ export async function GET(request: NextRequest) {
     image: p.image ?? "",
     extras: normalizeExtras(p.extras) ?? [],
     // "kg": el precio es por kilo y al comandar hay que mandar weightKg (peso de la pieza).
-    soldBy: p.soldBy === "kg" ? "kg" : "unidad",
+    // "libre": hay que mandar unitPrice (precio de la pieza); price es solo el sugerido.
+    soldBy: p.soldBy === "kg" || p.soldBy === "libre" ? p.soldBy : "unidad",
   }));
 
   return NextResponse.json({ products });
