@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { sameBarcode } from "@/lib/barcode";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
+import { usePolling } from "@/hooks/usePolling";
+import { HEARTBEAT_MS } from "@/lib/cobroLock";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { buildSalePayload, checkAgent, printReceipt } from "@/lib/printBridge";
@@ -113,6 +115,8 @@ interface OpenTable {
   tableId: string; tableLabel: string; tableShape: string; areaId: string; areaName: string;
   tableStatus: string | null; openCount: number; pendingTotal: number;
   oldestSentAt: string; minutes: number; comandas: OpenComanda[];
+  /** Candado de cobro (Fase 2): otra caja la está cobrando. null = libre para cobrar. */
+  cobroLock?: { byName: string; mine: boolean } | null;
 }
 
 function defaultPicks(t: OpenTable) {
@@ -207,6 +211,41 @@ function ProductCard({
 // con un switch para aplicarlos o no en ESTA venta; el porcentaje no se cambia desde el POS.
 
 const APPLY_ALL: Required<AppliedCharges> = { iva: true, service: true, tip: true };
+
+// ── Puntos de venta (pestañas): cada pestaña es una venta en proceso independiente ──
+// Fase 1: locales por terminal (se guardan en localStorage, sin servidor). Solo Premium.
+const MAX_TABS = 6;
+let tabSeqCounter = 0;
+function newTabId() { return `t${Date.now().toString(36)}${(tabSeqCounter++).toString(36)}`; }
+
+/** Todo el estado de UNA venta en proceso, para poder guardarla/restaurarla al cambiar de pestaña. */
+interface SaleDraft {
+  cart: CartLine[];
+  tipAmount: number;
+  customerName: string;
+  tableNumber: string;
+  observaciones: string;
+  paymentMethod: PaymentMethod;
+  mixedAmounts: { efectivo: number; sinpe: number; tarjeta: number };
+  orderType: OrderType;
+  pickupTime: string;
+  deliveryAddress: string;
+  deliveryPhone: string;
+  deliveryFee: number;
+  tableId: string;
+  comandaSelections: ComandaSelection[];
+  isPartialCharge: boolean;
+  applied: Required<AppliedCharges>;
+}
+
+function emptyDraft(): SaleDraft {
+  return {
+    cart: [], tipAmount: 0, customerName: "", tableNumber: "", observaciones: "",
+    paymentMethod: "efectivo", mixedAmounts: { efectivo: 0, sinpe: 0, tarjeta: 0 },
+    orderType: "LOCAL", pickupTime: "", deliveryAddress: "", deliveryPhone: "", deliveryFee: 0,
+    tableId: "", comandaSelections: [], isPartialCharge: false, applied: { ...APPLY_ALL },
+  };
+}
 
 function ChargeSwitch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -431,22 +470,186 @@ function PosPageInner() {
   // Flag: solo persistir DESPUÉS de que el draft haya sido restaurado
   const [draftLoaded, setDraftLoaded] = useState(false);
 
+  // ── Pestañas (puntos de venta abiertos a la vez) — solo Premium ──
+  // `tabIds` es el orden visible; `activeTabId` la pestaña activa (su estado es el de arriba, en vivo).
+  // Las pestañas NO activas guardan su venta en `parkedDrafts` (ref: no necesita re-render al aparcar).
+  const [tabIds, setTabIds] = useState<string[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string>("");
+  const parkedDrafts = useRef<Record<string, SaleDraft>>({});
+
+  // ── Nombre de esta terminal/caja (Fase 3), local por navegador. Aparece en "en cobro por … · Caja N". ──
+  const [terminalLabel, setTerminalLabel] = useState("");
+  const TERMINAL_KEY = `pos_terminal_${tenantSlug}`;
+  function changeTerminalLabel(v: string) {
+    const clean = v.slice(0, 24);
+    setTerminalLabel(clean);
+    try { localStorage.setItem(TERMINAL_KEY, clean); } catch {}
+  }
+
+  /** Lee el estado de la venta activa (lo de "arriba") como un SaleDraft. */
+  function snapshotDraft(): SaleDraft {
+    return {
+      cart, tipAmount, customerName, tableNumber, observaciones, paymentMethod,
+      mixedAmounts, orderType, pickupTime, deliveryAddress, deliveryPhone, deliveryFee,
+      tableId, comandaSelections, isPartialCharge, applied,
+    };
+  }
+
+  /** Vuelca un SaleDraft a los estados de la venta activa (al cambiar de pestaña). */
+  function restoreDraft(d: SaleDraft) {
+    setCart(d.cart ?? []);
+    setTipAmount(d.tipAmount ?? 0);
+    setCustomerName(d.customerName ?? "");
+    setTableNumber(d.tableNumber ?? "");
+    setObservaciones(d.observaciones ?? "");
+    setPaymentMethod(d.paymentMethod ?? "efectivo");
+    setMixedAmounts(d.mixedAmounts ?? { efectivo: 0, sinpe: 0, tarjeta: 0 });
+    setOrderType(d.orderType ?? "LOCAL");
+    setPickupTime(d.pickupTime ?? "");
+    setDeliveryAddress(d.deliveryAddress ?? "");
+    setDeliveryPhone(d.deliveryPhone ?? "");
+    setDeliveryFee(d.deliveryFee ?? 0);
+    setTableId(d.tableId ?? "");
+    setComandaSelections(d.comandaSelections ?? []);
+    setIsPartialCharge(d.isPartialCharge ?? false);
+    setApplied(d.applied ? { iva: d.applied.iva !== false, service: d.applied.service !== false, tip: d.applied.tip !== false } : { ...APPLY_ALL });
+  }
+
+  /** Limpia avisos/paneles transitorios al cambiar o abrir pestaña (no son parte de la venta). */
+  function clearTransientUI() {
+    setSaleError(null);
+    setShowSuccess(false);
+    setLastTableNote(null);
+    setNextTableToCharge(null);
+    setShowCartPanel(false);
+    setInvoiceCustomer(null);
+    setInvoiceSentTo(null);
+  }
+
+  /** Cambia a otra pestaña: aparca la actual y restaura la destino. */
+  function switchTab(toId: string) {
+    if (toId === activeTabId) return;
+    if (!tabIds.includes(toId)) return;
+    parkedDrafts.current[activeTabId] = snapshotDraft();
+    const d = parkedDrafts.current[toId] ?? emptyDraft();
+    delete parkedDrafts.current[toId];
+    restoreDraft(d);
+    clearTransientUI();
+    setActiveTabId(toId);
+  }
+
+  /** Abre una nueva pestaña (cuenta vacía), aparcando la actual. */
+  function newTab() {
+    if (tabIds.length >= MAX_TABS) {
+      setSaleError({ message: `Máximo ${MAX_TABS} cuentas abiertas a la vez. Cerrá una para abrir otra.` });
+      return;
+    }
+    parkedDrafts.current[activeTabId] = snapshotDraft();
+    restoreDraft(emptyDraft());
+    clearTransientUI();
+    const id = newTabId();
+    setTabIds((prev) => [...prev, id]);
+    setActiveTabId(id);
+  }
+
+  /** Cierra una pestaña. Si tiene ítems pide confirmación. Siempre queda al menos una. */
+  function closeTab(id: string) {
+    if (tabIds.length <= 1) return;
+    const draft = id === activeTabId ? snapshotDraft() : parkedDrafts.current[id];
+    if (draft && draft.cart.length > 0 && !window.confirm("Esta cuenta tiene productos sin cobrar. ¿Cerrarla y perder su avance?")) return;
+    const closedTableId = draft?.tableId;
+    const idx = tabIds.indexOf(id);
+    const remaining = tabIds.filter((x) => x !== id);
+    let activeDraftAfter: SaleDraft;
+    if (id === activeTabId) {
+      const neighbor = remaining[Math.min(idx, remaining.length - 1)];
+      const d = parkedDrafts.current[neighbor] ?? emptyDraft();
+      delete parkedDrafts.current[neighbor];
+      restoreDraft(d);
+      clearTransientUI();
+      setActiveTabId(neighbor);
+      activeDraftAfter = d;
+    } else {
+      activeDraftAfter = snapshotDraft();
+    }
+    delete parkedDrafts.current[id];
+    setTabIds(remaining);
+    // Liberar el candado de la mesa cerrada si ninguna otra pestaña la sigue usando.
+    if (isPremium && closedTableId) {
+      const stillUsed = new Set<string>();
+      if (activeDraftAfter.tableId) stillUsed.add(activeDraftAfter.tableId);
+      for (const d of Object.values(parkedDrafts.current)) if (d.tableId) stillUsed.add(d.tableId);
+      if (!stillUsed.has(closedTableId)) releaseTable(closedTableId);
+    }
+  }
+
+  /** Etiqueta/metadata de una pestaña para la barra (de su draft activo o aparcado). */
+  function tabInfo(id: string): { name: string; isMesa: boolean; count: number } {
+    const d = id === activeTabId ? snapshotDraft() : (parkedDrafts.current[id] ?? emptyDraft());
+    const isMesa = Boolean(d.tableId) || Boolean(d.tableNumber.trim());
+    const name = d.tableNumber.trim() || "Mostrador";
+    const count = d.cart.reduce((s, l) => s + l.quantity, 0);
+    return { name, isMesa, count };
+  }
+
+  // ── Candado de cobro entre terminales (Fase 2) ──────────────────────────────
+  // Mientras esta caja tiene una mesa abierta (en cualquier pestaña), la "reclama" para que otras
+  // cajas la vean "en cobro por …". Se renueva con heartbeat y se libera al cobrar/cerrar la cuenta.
+  const heldLocks = useRef<Set<string>>(new Set());
+
+  async function claimTable(tid: string): Promise<{ ok: boolean; lockedByName?: string }> {
+    try {
+      const res = await fetch(`/api/admin/salon/tables/${tid}/claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cajaLabel: terminalLabel }),
+      });
+      if (res.ok) { heldLocks.current.add(tid); return { ok: true }; }
+      const data = await res.json().catch(() => ({}));
+      return { ok: false, lockedByName: data.lockedByName };
+    } catch { return { ok: false }; }
+  }
+
+  function releaseTable(tid: string) {
+    heldLocks.current.delete(tid);
+    fetch(`/api/admin/salon/tables/${tid}/release`, { method: "POST" }).catch(() => {});
+  }
+
+  /** Mesas que esta terminal tiene abiertas ahora (pestaña activa + aparcadas). */
+  function tablesInUse(): Set<string> {
+    const ids = new Set<string>();
+    if (tableId) ids.add(tableId);
+    for (const d of Object.values(parkedDrafts.current)) if (d.tableId) ids.add(d.tableId);
+    return ids;
+  }
+
+  /** Heartbeat: renueva el lease de las mesas en uso y libera las que ya no uso. */
+  async function reconcileLocks() {
+    const inUse = tablesInUse();
+    for (const id of Array.from(heldLocks.current)) if (!inUse.has(id)) releaseTable(id);
+    for (const id of inUse) await claimTable(id);
+  }
+
+  usePolling(reconcileLocks, HEARTBEAT_MS, isPremium && draftLoaded);
+
   // ── Persist draft cart (carrito, datos del pedido y qué cobros aplica esta venta; los porcentajes vienen siempre de la configuración) ─
   useEffect(() => {
-    if (!draftLoaded || !tenantSlug) return;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      cart, paymentMethod, tipAmount, orderType,
-      tableId, tableNumber, customerName, comandaSelections, applied,
-    }));
+    if (!draftLoaded || !tenantSlug || !activeTabId) return;
+    const active = snapshotDraft();
+    const parked = isPremium ? parkedDrafts.current : {};
+    const ids = tabIds.length ? tabIds : [activeTabId];
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ v: 2, tabIds: ids, activeTabId, parked, active }));
     window.dispatchEvent(new CustomEvent("pos-cart-update"));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, paymentMethod, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName, comandaSelections, applied]);
+  }, [cart, paymentMethod, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName,
+      observaciones, mixedAmounts, pickupTime, deliveryAddress, deliveryPhone, deliveryFee,
+      isPartialCharge, comandaSelections, applied, tabIds, activeTabId]);
 
-  async function loadOpenTables(focusTableId?: string): Promise<OpenTable[]> {
-    setTablesLoading(true);
+  async function loadOpenTables(focusTableId?: string, silent = false): Promise<OpenTable[]> {
+    if (!silent) setTablesLoading(true);
     try {
-      const res = await fetch("/api/admin/comandas/open-by-table");
-      if (!res.ok) { setOpenTables([]); return []; }
+      const res = await fetch("/api/admin/comandas/open-by-table", { cache: "no-store" });
+      if (!res.ok) { if (!silent) setOpenTables([]); return []; }
       const data = await res.json();
       const tables: OpenTable[] = data.tables ?? [];
       setOpenTables(tables);
@@ -460,9 +663,12 @@ function PosPageInner() {
       }
       return tables;
     } finally {
-      setTablesLoading(false);
+      if (!silent) setTablesLoading(false);
     }
   }
+
+  // Refresco en vivo del panel de Mesas (vista lista): mantiene al día los candados de otras cajas.
+  usePolling(() => loadOpenTables(undefined, true), 5000, isPremium && showTablesPanel && !activeTable);
 
   // ── Load data ────────────────────────────────────────────────────
   useEffect(() => {
@@ -482,6 +688,8 @@ function PosPageInner() {
       try {
         const savedSection = localStorage.getItem("pos_section");
         if (savedSection) setActiveSection(savedSection);
+        const savedTerminal = localStorage.getItem(`pos_terminal_${pathname.split("/")[1]}`);
+        if (savedTerminal) setTerminalLabel(savedTerminal);
       } catch {}
       // `||` (no `??`): si tenantName viene como cadena vacía, igual caemos al
       // slug del tenant, para que el nombre del negocio nunca vaya vacío (el
@@ -512,32 +720,49 @@ function PosPageInner() {
         }))
         .filter((g) => g.tables.length > 0);
       setTableGroups(groups);
-      // Restaurar borrador del carrito si existe. Borradores viejos pueden traer ivaRate o
-      // serviceRate: se ignoran, los cobros salen siempre de la configuración del negocio.
+      // Restaurar borrador(es). v2 = varias pestañas; el formato viejo (un solo carrito) se migra
+      // a una pestaña. Los cobros salen siempre de la configuración del negocio (se ignora ivaRate/serviceRate viejos).
+      let bootIds: string[] = [];
+      let bootActive = "";
       try {
         const raw = localStorage.getItem(`pos_cart_${pathname.split("/")[1]}`);
-        if (raw) {
-          const draft = JSON.parse(raw);
-          if (Array.isArray(draft.cart) && draft.cart.length > 0) {
-            setCart(draft.cart);
-            if (draft.paymentMethod) setPaymentMethod(draft.paymentMethod);
-            if (typeof draft.tipAmount   === "number") setTipAmount(draft.tipAmount);
-            if (draft.orderType) setOrderType(draft.orderType);
-            if (typeof draft.tableId === "string") setTableId(draft.tableId);
-            if (typeof draft.tableNumber === "string") setTableNumber(draft.tableNumber);
-            if (typeof draft.customerName === "string") setCustomerName(draft.customerName);
-            if (Array.isArray(draft.comandaSelections)) setComandaSelections(draft.comandaSelections);
-            if (draft.applied && typeof draft.applied === "object") {
-              setApplied({
-                iva: draft.applied.iva !== false,
-                service: draft.applied.service !== false,
-                tip: draft.applied.tip !== false,
-              });
-            }
+        const draft = raw ? JSON.parse(raw) : null;
+        if (draft && draft.v === 2 && Array.isArray(draft.tabIds) && draft.tabIds.length) {
+          // Formato nuevo: varias pestañas.
+          let ids: string[] = draft.tabIds.filter((x: unknown) => typeof x === "string");
+          const active = ids.includes(draft.activeTabId) ? draft.activeTabId : ids[0];
+          const parked: Record<string, SaleDraft> = (draft.parked && typeof draft.parked === "object") ? draft.parked : {};
+          if (!isPremium) { ids = [active]; parkedDrafts.current = {}; }   // sin Premium: una sola pestaña
+          else {
+            const clean: Record<string, SaleDraft> = {};
+            for (const id of ids) if (id !== active && parked[id]) clean[id] = parked[id];
+            parkedDrafts.current = clean;
           }
+          restoreDraft((draft.active && typeof draft.active === "object") ? draft.active : emptyDraft());
+          bootIds = ids; bootActive = active;
+        } else if (draft && Array.isArray(draft.cart) && draft.cart.length > 0) {
+          // Migración del formato viejo (un solo carrito) → una pestaña.
+          restoreDraft({
+            ...emptyDraft(),
+            cart: draft.cart,
+            paymentMethod: draft.paymentMethod ?? "efectivo",
+            tipAmount: typeof draft.tipAmount === "number" ? draft.tipAmount : 0,
+            orderType: draft.orderType ?? "LOCAL",
+            tableId: typeof draft.tableId === "string" ? draft.tableId : "",
+            tableNumber: typeof draft.tableNumber === "string" ? draft.tableNumber : "",
+            customerName: typeof draft.customerName === "string" ? draft.customerName : "",
+            comandaSelections: Array.isArray(draft.comandaSelections) ? draft.comandaSelections : [],
+            applied: (draft.applied && typeof draft.applied === "object")
+              ? { iva: draft.applied.iva !== false, service: draft.applied.service !== false, tip: draft.applied.tip !== false }
+              : { ...APPLY_ALL },
+          });
         }
       } catch { /* ignore */ }
 
+      // Siempre debe existir al menos una pestaña.
+      if (!bootIds.length) { bootActive = newTabId(); bootIds = [bootActive]; }
+      setTabIds(bootIds);
+      setActiveTabId(bootActive);
       setDraftLoaded(true);
       setLoading(false);
       if (isPremium) loadOpenTables();
@@ -768,11 +993,16 @@ function PosPageInner() {
   }
 
   function clearComandas() {
+    const cleared = tableId;
     setCart((prev) => prev.filter((l) => !l.comandaId));
     setComandaSelections([]);
     setTableId("");
     setSaleError(null);
     setIsPartialCharge(false);
+    // Liberar el candado de esa mesa si ninguna otra pestaña la usa.
+    if (isPremium && cleared && !Object.values(parkedDrafts.current).some((d) => d.tableId === cleared)) {
+      releaseTable(cleared);
+    }
   }
 
   /**
@@ -824,7 +1054,7 @@ function PosPageInner() {
     setTableNumber(v);
   }
 
-  function applySelection() {
+  async function applySelection() {
     if (!activeTable) return;
     const t = activeTable;
     const selections: ComandaSelection[] = [];
@@ -852,6 +1082,13 @@ function PosPageInner() {
       }
     }
     if (selections.length === 0) return;
+    // Reclamar la mesa antes de cargarla: si otra caja la está cobrando, avisar y no cargarla.
+    const claim = await claimTable(t.tableId);
+    if (!claim.ok) {
+      setPanelNotice(`La está cobrando ${claim.lockedByName ?? "otra caja"}. Esperá a que termine o refrescá.`);
+      loadOpenTables(t.tableId);
+      return;
+    }
     const display = `${t.tableShape === "barstool" ? "Banqueta" : "Mesa"} ${t.tableLabel}`;
     setCart((prev) => [...prev.filter((l) => !l.comandaId), ...lines]);
     setComandaSelections(selections);
@@ -1049,6 +1286,8 @@ function PosPageInner() {
       setShowCartPanel(false);
       setComandaSelections([]);
       setTableId("");
+      // Cobrada: liberar el candado para que otra caja pueda retomar la mesa (si sobró algo pendiente).
+      if (isPremium && chargedTableId) releaseTable(chargedTableId);
       setLastTableNote(data.table?.status === "por_limpiar" ? `${prevTableNumber} quedó por limpiar` : null);
       setNextTableToCharge(null);
       if (isPremium) {
@@ -1123,11 +1362,80 @@ function PosPageInner() {
       <div className="flex items-center justify-between gap-4 px-4 pt-4 pb-3 border-b border-brand-muted">
         <h1 className="font-brand text-xl font-bold text-brand-dark">Punto de venta</h1>
 
-        {/* Encargado */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-brand-muted text-sm text-brand-dark/70">
-          <UserCircle className="w-4 h-4" /> {session.name}
+        <div className="flex items-center gap-2">
+          {/* Nombre de esta caja/terminal (para el aviso "en cobro por … · Caja N") */}
+          {isPremium && (
+            <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-brand-muted text-sm text-brand-dark/70" title="Nombre de esta caja (se muestra a otras cajas al cobrar una mesa)">
+              <span className="text-brand-dark/40 text-xs">Caja</span>
+              <input
+                type="text"
+                value={terminalLabel}
+                onChange={(e) => changeTerminalLabel(e.target.value)}
+                placeholder="(sin nombre)"
+                aria-label="Nombre de esta caja/terminal"
+                className="w-24 bg-transparent focus:outline-none placeholder:text-brand-dark/30"
+              />
+            </label>
+          )}
+          {/* Encargado */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-brand-muted text-sm text-brand-dark/70">
+            <UserCircle className="w-4 h-4" /> {session.name}
+          </div>
         </div>
       </div>
+
+      {/* ── Pestañas (puntos de venta abiertos a la vez) — solo Premium ── */}
+      {isPremium && tabIds.length > 0 && (
+        <div className="flex items-end gap-1 px-2 pt-2 border-b border-brand-muted bg-brand-muted/40 overflow-x-auto scrollbar-hide shrink-0">
+          {tabIds.map((id, i) => {
+            const info = tabInfo(id);
+            const active = id === activeTabId;
+            // Las cuentas de mesa muestran su mesa; las de mostrador se numeran para distinguirlas.
+            const label = info.isMesa ? info.name : (i === 0 ? "Mostrador" : `Cuenta ${i + 1}`);
+            return (
+              <div
+                key={id}
+                role="button"
+                tabIndex={0}
+                onClick={() => switchTab(id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchTab(id); } }}
+                className={`group flex items-center gap-2 px-3 py-2 rounded-t-xl border border-b-0 whitespace-nowrap text-sm cursor-pointer transition-colors ${
+                  active
+                    ? "bg-white border-brand-muted text-brand-dark font-semibold -mb-px"
+                    : "border-transparent text-brand-dark/55 hover:bg-white/60"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${info.isMesa ? "bg-brand-pink" : "bg-brand-orange"}`} />
+                <span className="max-w-[130px] truncate">{label}</span>
+                {info.count > 0 && (
+                  <span className={`text-xs font-semibold ${active ? "text-brand-pink" : "text-brand-dark/40"}`}>{info.count}</span>
+                )}
+                {tabIds.length > 1 && (
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={`Cerrar ${label}`}
+                    onClick={(e) => { e.stopPropagation(); closeTab(id); }}
+                    className="ml-0.5 w-4 h-4 rounded flex items-center justify-center text-brand-dark/40 hover:bg-red-50 hover:text-red-500"
+                  >
+                    <X className="w-3 h-3" />
+                  </span>
+                )}
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={newTab}
+            disabled={tabIds.length >= MAX_TABS}
+            aria-label="Nueva cuenta"
+            title={tabIds.length >= MAX_TABS ? `Máximo ${MAX_TABS} cuentas` : "Nueva cuenta"}
+            className="mb-1 ml-1 w-7 h-7 shrink-0 rounded-lg text-brand-pink hover:bg-brand-pink/10 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Comandas sin cobrar — a la vista apenas se abre la caja, no escondido en el menú */}
       {isPremium && (
@@ -2077,11 +2385,17 @@ function PosPageInner() {
                     {openTables.map((t) => {
                       const level = badgeLevel(t.minutes, thresholds);
                       const hasPrevious = t.comandas.some((c) => c.isPrevious);
+                      const lockedByOther = !!(t.cobroLock && !t.cobroLock.mine);
                       return (
                         <button
                           key={t.tableId}
                           type="button"
+                          aria-disabled={lockedByOther}
                           onClick={() => {
+                            if (lockedByOther) {
+                              setPanelNotice(`La ${t.tableShape === "barstool" ? "banqueta" : "mesa"} ${t.tableLabel} la está cobrando ${t.cobroLock!.byName}.`);
+                              return;
+                            }
                             setActiveTable(t);
                             setPicked(defaultPicks(t));
                             setPanelAdded(null);
@@ -2091,7 +2405,11 @@ function PosPageInner() {
                                 : null
                             );
                           }}
-                          className="text-left rounded-xl border border-brand-muted p-3 hover:border-brand-pink/40 transition-colors"
+                          className={`text-left rounded-xl border p-3 transition-colors ${
+                            lockedByOther
+                              ? "border-red-200 bg-red-50/50 cursor-not-allowed"
+                              : "border-brand-muted hover:border-brand-pink/40"
+                          }`}
                         >
                           <p className="text-sm font-semibold text-brand-dark">
                             {t.tableShape === "barstool" ? "Banqueta" : "Mesa"} {t.tableLabel}
@@ -2100,9 +2418,14 @@ function PosPageInner() {
                           <p className="text-xs text-brand-dark/60 mt-0.5">
                             {t.openCount} comanda{t.openCount !== 1 ? "s" : ""} · {pendingItemCount(t)} ítem{pendingItemCount(t) !== 1 ? "s" : ""} · {fmt(t.pendingTotal)} pendiente
                           </p>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className={`text-xs font-semibold ${MIN_TEXT[level]}`}>{t.minutes} min</span>
                             {hasPrevious && <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 rounded-full px-1.5 py-0.5">Días anteriores</span>}
+                            {t.cobroLock && (
+                              <span className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 ${t.cobroLock.mine ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                                {t.cobroLock.mine ? "🔒 La estás cobrando" : `🔒 En cobro por ${t.cobroLock.byName}`}
+                              </span>
+                            )}
                           </div>
                         </button>
                       );

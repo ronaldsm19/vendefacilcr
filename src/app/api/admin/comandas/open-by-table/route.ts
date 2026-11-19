@@ -10,6 +10,7 @@ import { readComandaConfig } from "@/lib/comandaConfig";
 import { syncTableWithComandas } from "@/lib/tableSync";
 import { startOfTodayCR } from "@/lib/crDate";
 import { subtotalOf } from "@/lib/pricing";
+import { publicLock } from "@/lib/cobroLock";
 
 const OPEN_STATUSES = ["enviada", "servida"] as const;
 
@@ -124,6 +125,7 @@ export async function GET(request: NextRequest) {
       areaId: table ? String(table.areaId) : String(first.areaId),
       areaName: area?.name ?? first.areaName ?? "",
       tableStatus: table?.status ?? null,
+      cobroLock: publicLock(table?.cobroLock, session.userId, now),
       openCount,
       pendingTotal,
       oldestSentAt,
