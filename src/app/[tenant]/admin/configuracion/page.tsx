@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import {
   Upload, X, Loader2, Check, Plus, Trash2, Phone, Palette, GripVertical, ChevronUp, ChevronDown, AlertCircle,
   AlertTriangle,
@@ -31,6 +32,9 @@ import {
   SortableContext, verticalListSortingStrategy, useSortable, arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+
+const CONFIG_TABS = ["marca", "portada", "nosotros", "productos", "menu", "ticket", "comandas", "caja"] as const;
+type ConfigTab = (typeof CONFIG_TABS)[number];
 
 interface Category {
   _id: string;
@@ -411,7 +415,15 @@ export default function ConfiguracionPage() {
   const [posChargesError, setPosChargesError] = useState<string | null>(null);
 
   // ── Tab state ────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<"marca" | "portada" | "nosotros" | "productos" | "menu" | "ticket" | "comandas" | "caja">("marca");
+  const [activeTab, setActiveTab] = useState<ConfigTab>("marca");
+  // ?tab=portada abre esa pestaña: así llegan el buscador del panel y los primeros pasos de Inicio.
+  // Se ajusta durante el render para que también cambie si ya se estaba en Configuración.
+  const tabParam = useSearchParams().get("tab");
+  const [seenTabParam, setSeenTabParam] = useState<string | null>(null);
+  if (tabParam !== seenTabParam) {
+    setSeenTabParam(tabParam);
+    if (tabParam && (CONFIG_TABS as readonly string[]).includes(tabParam)) setActiveTab(tabParam as ConfigTab);
+  }
 
   // ── Categories state ─────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>([]);
@@ -1008,7 +1020,7 @@ export default function ConfiguracionPage() {
     <div className="flex min-h-full">
 
       {/* ── Sidebar tabs — desktop ── */}
-      <div className="hidden lg:flex flex-col w-56 shrink-0 border-r border-brand-muted bg-white sticky top-0 self-start h-screen">
+      <div className="hidden lg:flex flex-col w-56 shrink-0 border-r border-brand-muted bg-white sticky top-0 self-start h-[calc(100dvh-3.5rem)]">
         <div className="px-4 py-5 border-b border-brand-muted">
           <p className="text-xs font-semibold text-brand-dark/40 uppercase tracking-widest">Configuración</p>
         </div>

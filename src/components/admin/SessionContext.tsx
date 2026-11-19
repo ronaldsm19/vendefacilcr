@@ -14,6 +14,9 @@ export interface AdminSession {
   planLimits: boolean;
   tenantSlug: string;
   tenantName: string;
+  /** Para los primeros pasos de Inicio: si el negocio ya subió su logo y eligió sus colores. */
+  logoUrl?: string;
+  primaryColor?: string;
 }
 
 const SessionContext = createContext<AdminSession | null>(null);

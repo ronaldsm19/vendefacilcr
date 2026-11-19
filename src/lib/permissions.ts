@@ -185,7 +185,7 @@ export const ROUTE_FEATURES: Record<string, Feature> = {
 
 /** Nombre de cada sección, como sale en el menú del panel. */
 export const SECTION_LABELS: Record<string, string> = {
-  "":               "Dashboard",
+  "":               "Inicio",
   productos:        "Productos",
   inventario:       "Inventario",
   materiales:       "Materiales",

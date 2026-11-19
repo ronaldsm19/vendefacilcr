@@ -1,9 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import AdminSidebar from "@/components/admin/AdminSidebar";
+import AdminTopBar from "@/components/admin/AdminTopBar";
+import AdminCommand from "@/components/admin/AdminCommand";
+import { visibleNav } from "@/lib/adminNav";
+import { adminBrandVars } from "@/lib/adminBrand";
+import { ENNEA_COLORS } from "@/components/brand/EnneaMark";
 import ReminderToast from "@/components/admin/ReminderToast";
 import TenantNotices from "@/components/admin/TenantNotices";
 import { AdminSessionProvider, type AdminSession } from "@/components/admin/SessionContext";
@@ -83,8 +88,22 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const [session, setSession] = useState<AdminSession | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [suspended, setSuspended] = useState<SuspensionNotice | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const isLoginPage = pathname.endsWith("/admin/login");
+
+  // Ctrl+K (o Cmd+K) abre el buscador desde cualquier pantalla del panel.
+  useEffect(() => {
+    if (isLoginPage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isLoginPage]);
 
   // Cualquier 401 del panel significa que ya no hay sesión, venga de la pantalla que venga. Puede ser
   // que venció o que suspendieron el negocio: "quién soy" dice cuál, para mostrar el aviso correcto.
@@ -148,6 +167,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           planLimits: !!data.planLimits,
           tenantSlug: data.tenantSlug,
           tenantName: data.tenantName || pathname.split("/")[1],
+          logoUrl: data.logoUrl || "",
+          primaryColor: data.primaryColor || "",
         };
         if (s.role !== "admin" && !s.isPremium) {                 // tenant degradado con staff logueado
           await fetch("/api/admin/auth/logout", { method: "POST" });
@@ -172,18 +193,23 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   // Inject tenant CSS vars on <html> so Radix portals (modals, dropdowns)
   // also inherit the right colors — they render outside this component's div.
-  useEffect(() => {
+  // Lo que es igual para todos los negocios (el menú, el texto) va en el azul de Ennea; el color del
+  // negocio, ajustado para que se lea, queda en las variables --admin-* (ver adminBrand.ts).
+  // Antes de pintar: si no, el primer cuadro sale con los colores por defecto.
+  useLayoutEffect(() => {
     const root = document.documentElement;
     const gradient = `linear-gradient(135deg, ${branding.primaryColor} 0%, ${branding.secondaryColor} 50%, ${branding.accentColor} 100%)`;
-    root.style.setProperty("--color-brand-pink",   branding.primaryColor);
-    root.style.setProperty("--color-brand-orange",  branding.secondaryColor);
-    root.style.setProperty("--color-brand-yellow",  branding.accentColor);
-    root.style.setProperty("--gradient-brand",      gradient);
+    const vars: Record<string, string> = {
+      "--color-brand-pink":   branding.primaryColor,
+      "--color-brand-orange": branding.secondaryColor,
+      "--color-brand-yellow": branding.accentColor,
+      "--gradient-brand":     gradient,
+      "--color-brand-dark":   ENNEA_COLORS.navy,
+      ...adminBrandVars(branding.primaryColor),
+    };
+    for (const [name, value] of Object.entries(vars)) root.style.setProperty(name, value);
     return () => {
-      root.style.removeProperty("--color-brand-pink");
-      root.style.removeProperty("--color-brand-orange");
-      root.style.removeProperty("--color-brand-yellow");
-      root.style.removeProperty("--gradient-brand");
+      for (const name of Object.keys(vars)) root.style.removeProperty(name);
     };
   }, [branding]);
 
@@ -215,8 +241,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   if (!authChecked || !session) {
     return (
-      <div className="flex h-screen items-center justify-center" style={{ background: "#F8F0F5" }}>
-        <p className="text-brand-dark/30 text-sm">Verificando sesión...</p>
+      <div className="flex h-screen items-center justify-center bg-[#F6F7F9]">
+        <p className="text-brand-dark/40 text-sm">Verificando sesión...</p>
       </div>
     );
   }
@@ -225,6 +251,15 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const feature = featureForPath(pathname, base);
   const lockedPlan = feature ? planNeededFor(session, feature) : null;
   const section = pathname.slice(base.length).replace(/^\//, "").split("/")[0] ?? "";
+  const nav = visibleNav(session, base);
+  const sidebarProps = {
+    tenantName: branding.tenantName,
+    logoUrl: branding.logoUrl,
+    role: session.role,
+    plan: session.plan,
+    planLimits: session.planLimits,
+    userName: session.name,
+  };
 
   return (
     <AdminSessionProvider value={session}>
@@ -232,10 +267,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           una sola vez y lo leen tanto el menú (que se monta dos veces: escritorio y cajón) como la
           pantalla de turno. */}
       <PendingComandasProvider>
-      <div className="flex h-screen overflow-hidden bg-brand-muted/20">
+      <div className="flex h-screen overflow-hidden bg-[#F6F7F9]">
         {/* Desktop sidebar — el propio AdminSidebar maneja su altura y su scroll interno */}
         <div className="hidden lg:flex shrink-0 h-screen">
-          <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} plan={session.plan} planLimits={session.planLimits} userName={session.name} />
+          <AdminSidebar {...sidebarProps} onSearch={() => setSearchOpen(true)} />
         </div>
 
         {/* Mobile/tablet sidebar drawer */}
@@ -246,7 +281,11 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               onClick={() => setSidebarOpen(false)}
             />
             <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
-              <AdminSidebar tenantName={branding.tenantName} logoUrl={branding.logoUrl} role={session.role} plan={session.plan} planLimits={session.planLimits} userName={session.name} onClose={() => setSidebarOpen(false)} />
+              <AdminSidebar
+                {...sidebarProps}
+                onClose={() => setSidebarOpen(false)}
+                onSearch={() => { setSidebarOpen(false); setSearchOpen(true); }}
+              />
             </div>
           </>
         )}
@@ -256,8 +295,18 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           {/* Mobile/tablet top bar */}
           <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-brand-dark shrink-0 z-30">
             <MobileMenuButton onOpen={() => setSidebarOpen(true)} />
-            <p className="font-brand text-lg font-bold gradient-text">{branding.tenantName}</p>
+            <p className="flex-1 min-w-0 font-brand text-lg font-bold text-white truncate">{branding.tenantName}</p>
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              aria-label="Buscar en el panel"
+            >
+              <Search className="w-5 h-5" />
+            </button>
           </header>
+
+          <AdminTopBar nav={nav} base={base} role={session.role} />
 
           <TenantNotices />
 
@@ -275,6 +324,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
         </div>
 
         <ReminderToast />
+        <AdminCommand open={searchOpen} onClose={() => setSearchOpen(false)} nav={nav} base={base} />
         {sessionExpired && (
           <SessionExpiredDialog
             onLogin={() => router.replace(`/${pathname.split("/")[1]}/admin/login`)}
