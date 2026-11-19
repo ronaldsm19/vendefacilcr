@@ -57,7 +57,7 @@ export async function PUT(
   // no pisa el formato que se acaba de armar.
   delete body.label;
   if (body.soldBy !== undefined && !isSoldBy(body.soldBy)) {
-    return NextResponse.json({ error: "El producto se vende por unidad o por kilo" }, { status: 400 });
+    return NextResponse.json({ error: "El producto se vende por unidad, por kilo o a precio libre" }, { status: 400 });
   }
 
   // Sin permiso completo solo sobreviven estos tres. Se descarta el resto en vez de rechazar la
@@ -90,7 +90,8 @@ export async function PUT(
   try {
     product = await Product.findOneAndUpdate(
       { _id: id, tenantId: session.tenantId },
-      { ...body, price: body.price ? Number(body.price) : undefined },
+      // Precio 0 solo se guarda en uno de precio libre ("sin sugerido"); en el resto se ignora.
+      { ...body, price: body.price ? Number(body.price) : body.soldBy === "libre" && Number(body.price) === 0 ? 0 : undefined },
       { returnDocument: "after", runValidators: true }
     )
       // Igual que al leer: sin permiso completo el costo tampoco vuelve en la respuesta.
