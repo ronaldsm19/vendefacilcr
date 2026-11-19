@@ -39,7 +39,7 @@ export const NAV_HOME: NavItem = {
 export const NAV_GROUPS: NavGroup[] = [
   {
     id: "vender", label: "Vender", icon: ShoppingCart, items: [
-      { segment: "pos", label: "Punto de venta", icon: MonitorCheck, feature: "pos", desc: "Cobrar en el mostrador: elegís los productos, cobrás y sale el tiquete." },
+      { segment: "pos", label: "Punto de venta", icon: MonitorCheck, feature: "pos", desc: "Cobrar en el mostrador: elegís los productos, cobrás y sale el tiquete. Podés tener varias cuentas abiertas a la vez." },
       { segment: "salon", label: "Salón", icon: LayoutGrid, feature: "salon", desc: "Tus mesas: quién está sentado, qué pidió y cuánto lleva." },
       { segment: "comandas", label: "Comandas", icon: ClipboardList, feature: "comandas", desc: "Los pedidos que van a cocina y en qué estado están." },
       { segment: "pedidos", label: "Pedidos y ventas", icon: ShoppingBag, feature: "pedidos", desc: "Todo lo que se vendió: por WhatsApp, en caja o en mesa." },
@@ -101,7 +101,7 @@ export interface NavAction {
 }
 
 export const NAV_ACTIONS: NavAction[] = [
-  { label: "Cobrar una venta", segment: "pos", icon: MonitorCheck, keywords: "vender cobrar caja venta pos tiquete mostrador" },
+  { label: "Cobrar una venta", segment: "pos", icon: MonitorCheck, keywords: "vender cobrar caja venta pos tiquete mostrador cuenta cuentas otra cuenta varias pestaña" },
   { label: "Ver las comandas pendientes", segment: "comandas", icon: ClipboardList, keywords: "cocina pedidos mesa pendientes cobrar" },
   { label: "Agregar un producto", segment: "productos", icon: Plus, keywords: "nuevo producto crear menu precio foto" },
   { label: "Cambiar el logo o los colores", segment: "configuracion", tab: "marca", tabLabel: "Marca", icon: Palette, keywords: "logo color colores tema marca personalizar letra fuente" },

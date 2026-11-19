@@ -1366,14 +1366,14 @@ function PosPageInner() {
           {/* Nombre de esta caja/terminal (para el aviso "en cobro por … · Caja N") */}
           {isPremium && (
             <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-brand-muted text-sm text-brand-dark/70" title="Nombre de esta caja (se muestra a otras cajas al cobrar una mesa)">
-              <span className="text-brand-dark/40 text-xs">Caja</span>
+              <span className="text-brand-dark/60 text-xs">Caja</span>
               <input
                 type="text"
                 value={terminalLabel}
                 onChange={(e) => changeTerminalLabel(e.target.value)}
                 placeholder="(sin nombre)"
                 aria-label="Nombre de esta caja/terminal"
-                className="w-24 bg-transparent focus:outline-none placeholder:text-brand-dark/30"
+                className="w-24 bg-transparent focus:outline-none placeholder:text-brand-dark/45"
               />
             </label>
           )}
