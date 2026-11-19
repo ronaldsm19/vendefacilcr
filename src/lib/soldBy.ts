@@ -1,8 +1,10 @@
 /**
- * Cómo se cobra un producto: a precio fijo (un burrito, un café) o por kilo (un queso madurado
- * que se corta y se pesa). En los de kilo, `price` y `cost` son por kilo.
+ * Cómo se cobra un producto: a precio fijo (un burrito, un café), por kilo (un queso madurado
+ * que se corta y se pesa) o a precio libre (pulseras o artesanías que traen sin precio fijo: el
+ * cajero escribe el precio de cada pieza al venderla). En los de kilo, `price` y `cost` son por
+ * kilo; en los de precio libre, `price` es solo el sugerido que aparece escrito (0 = sin sugerido).
  */
-export const SOLD_BY = ["unidad", "kg"] as const;
+export const SOLD_BY = ["unidad", "kg", "libre"] as const;
 export type SoldBy = (typeof SOLD_BY)[number];
 
 export function isSoldBy(v: unknown): v is SoldBy {
@@ -12,6 +14,32 @@ export function isSoldBy(v: unknown): v is SoldBy {
 /** Lo que va después del precio al mostrarlo: "/kg" en los de kilo, nada en los de precio fijo. */
 export function priceSuffix(soldBy: SoldBy | undefined): string {
   return soldBy === "kg" ? "/kg" : "";
+}
+
+/** Precio para mostrar en catálogos del panel: "₡12 000/kg", "₡3 500" o "Precio libre". */
+export function catalogPriceLabel(price: number, soldBy: SoldBy | string | undefined): string {
+  if (soldBy === "libre") return "Precio libre";
+  return `₡${Math.round(price).toLocaleString("es-CR")}${soldBy === "kg" ? "/kg" : ""}`;
+}
+
+/** Precio más alto que se acepta escrito a mano: más que esto es un error de digitación. */
+export const MAX_OPEN_PRICE = 5_000_000;
+
+/**
+ * Valida el precio de una pieza de precio libre que llega de afuera (POS, comanda): colones enteros,
+ * mayor que cero. undefined = no viene; null = viene algo que no es un precio válido.
+ */
+export function normalizeOpenPrice(raw: unknown): number | null | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "number" || !Number.isInteger(raw)) return null;
+  return raw > 0 && raw <= MAX_OPEN_PRICE ? raw : null;
+}
+
+/** Lee un precio escrito a mano ("4500", "4 500", "₡4.500"); null si no es un precio válido. */
+export function parseOpenPrice(text: string): number | null {
+  const t = text.replace(/[₡\s.,]/g, "");
+  if (!/^\d+$/.test(t)) return null;
+  return normalizeOpenPrice(Number(t)) ?? null;
 }
 
 /** Precio de una pieza pesada, en colones enteros. */

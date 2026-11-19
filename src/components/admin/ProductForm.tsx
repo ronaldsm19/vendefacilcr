@@ -48,6 +48,8 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
     deliveryNote: initial?.deliveryNote ?? "",
     barcode:      initial?.barcode      ?? "",
   });
+  const openPrice = form.soldBy === "libre";
+  const priceLabel = form.soldBy === "kg" ? "Precio por kilo (₡) *" : openPrice ? "Precio sugerido (₡)" : "Precio de venta (₡) *";
   const [extras, setExtras]               = useState<{ name: string; price: string }[]>(
     initial?.extras?.map(e => ({ name: e.name, price: String(e.price) })) ?? []
   );
@@ -217,9 +219,10 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
             <p className="font-semibold text-brand-dark">{initial?.name}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-brand-dark mb-1">{form.soldBy === "kg" ? "Precio por kilo (₡) *" : "Precio de venta (₡) *"}</label>
+            <label className="block text-sm font-medium text-brand-dark mb-1">{priceLabel}</label>
             <input
-              type="number" required min={0}
+              type="number" required={!openPrice} min={0}
+              placeholder={openPrice ? "0" : undefined}
               value={form.price}
               onChange={(e) => setForm({ ...form, price: e.target.value })}
               className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
@@ -255,11 +258,11 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
         />
       </div>
 
-      {/* Precio fijo o por kilo */}
+      {/* Precio fijo, por kilo o libre */}
       <div>
         <p className="block text-sm font-medium text-brand-dark mb-1">Se vende</p>
-        <div className="flex gap-1.5" role="radiogroup" aria-label="Cómo se vende">
-          {([["unidad", "A precio fijo"], ["kg", "Por kilo"]] as const).map(([key, label]) => (
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Cómo se vende">
+          {([["unidad", "A precio fijo"], ["kg", "Por kilo"], ["libre", "Precio libre"]] as const).map(([key, label]) => (
             <button
               key={key}
               type="button"
@@ -277,16 +280,19 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
         <p className="text-xs text-brand-dark/50 mt-1">
           {form.soldBy === "kg"
             ? "El precio y el costo son por kilo. Al pesarlo, el precio de la pieza sale solo (p. ej. un queso madurado)."
-            : "Siempre cuesta lo mismo (p. ej. un burrito o un café)."}
+            : openPrice
+              ? "Cada pieza vale distinto (p. ej. pulseras o artesanías): en la caja se escribe el precio al venderla. No aparece en la tienda en línea."
+              : "Siempre cuesta lo mismo (p. ej. un burrito o un café)."}
         </p>
       </div>
 
       {/* Precios */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-brand-dark mb-1">{form.soldBy === "kg" ? "Precio por kilo (₡) *" : "Precio de venta (₡) *"}</label>
+          <label className="block text-sm font-medium text-brand-dark mb-1">{priceLabel}</label>
           <input
-            type="number" required min={0}
+            type="number" required={!openPrice} min={0}
+            placeholder={openPrice ? "0" : undefined}
             value={form.price}
             onChange={(e) => setForm({ ...form, price: e.target.value })}
             className="w-full border border-brand-muted rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"

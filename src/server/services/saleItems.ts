@@ -3,7 +3,7 @@ import { Product } from "@/models/Product";
 import type { IComandaItem } from "@/models/Comanda";
 import { ServiceError } from "@/server/errors";
 import { extraQty, extrasKey, lineTotal, normalizeExtras, type LineExtra } from "@/lib/pricing";
-import { normalizeWeightKg } from "@/lib/soldBy";
+import { normalizeOpenPrice, normalizeWeightKg } from "@/lib/soldBy";
 
 export interface SaleItemRecord {
   productId: string;
@@ -111,7 +111,12 @@ export async function checkCatalogPrices(
     if (p.soldBy !== "kg" && item.weightKg) {
       throw new ServiceError(409, `"${p.name}" ya no se vende por kilo: quitalo y agregalo de nuevo.`, "PRICE_CHANGED");
     }
-    if (p.price !== item.unitPrice) {
+    // Precio libre: el precio de la pieza lo escribe el cajero (validado acá); el resto, del catálogo.
+    const open = p.soldBy === "libre";
+    if (open && normalizeOpenPrice(item.unitPrice) == null) {
+      throw new ServiceError(400, `El precio de "${p.name}" no es válido: escribí un monto mayor que cero.`);
+    }
+    if (!open && p.price !== item.unitPrice) {
       throw new ServiceError(409, `El precio de "${p.name}" cambió de ${colones(item.unitPrice)} a ${colones(p.price)}.`, "PRICE_CHANGED");
     }
     const catalogExtras = normalizeExtras(p.extras) ?? [];
@@ -125,7 +130,7 @@ export async function checkCatalogPrices(
       }
       return { name: c.name, price: c.price, qty: extraQty(e) };
     });
-    return record({ productId: item.productId, productName: p.name, unitPrice: p.price, quantity: item.quantity, extras, weightKg: item.weightKg });
+    return record({ productId: item.productId, productName: p.name, unitPrice: open ? item.unitPrice : p.price, quantity: item.quantity, extras, weightKg: item.weightKg });
   });
 }
 
