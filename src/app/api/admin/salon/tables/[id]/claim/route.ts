@@ -20,9 +20,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (deniedPlan) return deniedPlan;
 
   const { id } = await params;
+
+  // Nombre de la terminal ("Caja N"), opcional, que manda el POS para el aviso "en cobro por … · Caja N".
+  let cajaLabel = "";
+  try {
+    const body = await request.json();
+    if (body && typeof body.cajaLabel === "string") cajaLabel = body.cajaLabel.trim().slice(0, 24);
+  } catch { /* sin cuerpo: sin etiqueta */ }
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + LEASE_MS);
-  const lock = { by: session.userId, byName: session.name ?? "Caja", at: now, expiresAt };
+  const byName = `${session.name ?? "Caja"}${cajaLabel ? ` · ${cajaLabel}` : ""}`;
+  const lock = { by: session.userId, byName, at: now, expiresAt };
 
   // Atómico: solo toma el candado si está libre, vencido, o ya es mío.
   const updated = await SalonTable.findOneAndUpdate(

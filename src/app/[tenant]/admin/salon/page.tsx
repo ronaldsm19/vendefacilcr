@@ -57,6 +57,8 @@ interface SalonTable {
   activeAvgMinutes?: number | null;
   oldestSentAt?: string | null;
   waiterNames?: string[];
+  /** Candado de cobro (Fase 3): una caja está cobrando esta mesa. null = nadie. */
+  cobroLock?: { byName: string; mine: boolean } | null;
 }
 
 interface SalonWall {
@@ -414,6 +416,12 @@ function TableList({ tables, onSelect, thresholds, now }: { tables: SalonTable[]
                 <span title={COMANDA_BADGE_TITLE} className="px-1.5 py-0.5 rounded-full text-[11px] font-bold"
                   style={{ background: badge.level === "alert" ? "#dc2626" : badge.level === "warn" ? "#f59e0b" : "#16a34a", color: badge.level === "warn" ? "#1a1a2e" : "#fff" }}>
                   {badge.minutes}′
+                </span>
+              )}
+              {t.cobroLock && (
+                <span title={t.cobroLock.mine ? "La estás cobrando" : `En cobro por ${t.cobroLock.byName}`}
+                  className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${t.cobroLock.mine ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
+                  🔒
                 </span>
               )}
               <div>
@@ -1496,6 +1504,11 @@ export default function SalonPage() {
                         Comandas: {actionTable.openCount} abierta{actionTable.openCount === 1 ? "" : "s"}
                         {actionTable.activeAvgMinutes != null && ` · ${actionTable.activeAvgMinutes}′ sin servir`}
                         {!!actionTable.waiterNames?.length && ` · ${actionTable.waiterNames.join(", ")}`}
+                      </p>
+                    )}
+                    {actionTable.cobroLock && (
+                      <p className={`text-sm font-semibold ${actionTable.cobroLock.mine ? "text-emerald-600" : "text-red-600"}`}>
+                        🔒 {actionTable.cobroLock.mine ? "La estás cobrando" : `En cobro por ${actionTable.cobroLock.byName}`}
                       </p>
                     )}
                     <Button className="w-full" onClick={() => router.push(`/${slug}/admin/salon/${actionTable._id}/comanda`)}>

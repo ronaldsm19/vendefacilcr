@@ -477,6 +477,15 @@ function PosPageInner() {
   const [activeTabId, setActiveTabId] = useState<string>("");
   const parkedDrafts = useRef<Record<string, SaleDraft>>({});
 
+  // ── Nombre de esta terminal/caja (Fase 3), local por navegador. Aparece en "en cobro por … · Caja N". ──
+  const [terminalLabel, setTerminalLabel] = useState("");
+  const TERMINAL_KEY = `pos_terminal_${tenantSlug}`;
+  function changeTerminalLabel(v: string) {
+    const clean = v.slice(0, 24);
+    setTerminalLabel(clean);
+    try { localStorage.setItem(TERMINAL_KEY, clean); } catch {}
+  }
+
   /** Lee el estado de la venta activa (lo de "arriba") como un SaleDraft. */
   function snapshotDraft(): SaleDraft {
     return {
@@ -590,7 +599,11 @@ function PosPageInner() {
 
   async function claimTable(tid: string): Promise<{ ok: boolean; lockedByName?: string }> {
     try {
-      const res = await fetch(`/api/admin/salon/tables/${tid}/claim`, { method: "POST" });
+      const res = await fetch(`/api/admin/salon/tables/${tid}/claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cajaLabel: terminalLabel }),
+      });
       if (res.ok) { heldLocks.current.add(tid); return { ok: true }; }
       const data = await res.json().catch(() => ({}));
       return { ok: false, lockedByName: data.lockedByName };
@@ -675,6 +688,8 @@ function PosPageInner() {
       try {
         const savedSection = localStorage.getItem("pos_section");
         if (savedSection) setActiveSection(savedSection);
+        const savedTerminal = localStorage.getItem(`pos_terminal_${pathname.split("/")[1]}`);
+        if (savedTerminal) setTerminalLabel(savedTerminal);
       } catch {}
       // `||` (no `??`): si tenantName viene como cadena vacía, igual caemos al
       // slug del tenant, para que el nombre del negocio nunca vaya vacío (el
@@ -1347,9 +1362,25 @@ function PosPageInner() {
       <div className="flex items-center justify-between gap-4 px-4 pt-4 pb-3 border-b border-brand-muted">
         <h1 className="font-brand text-xl font-bold text-brand-dark">Punto de venta</h1>
 
-        {/* Encargado */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-brand-muted text-sm text-brand-dark/70">
-          <UserCircle className="w-4 h-4" /> {session.name}
+        <div className="flex items-center gap-2">
+          {/* Nombre de esta caja/terminal (para el aviso "en cobro por … · Caja N") */}
+          {isPremium && (
+            <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-brand-muted text-sm text-brand-dark/70" title="Nombre de esta caja (se muestra a otras cajas al cobrar una mesa)">
+              <span className="text-brand-dark/40 text-xs">Caja</span>
+              <input
+                type="text"
+                value={terminalLabel}
+                onChange={(e) => changeTerminalLabel(e.target.value)}
+                placeholder="(sin nombre)"
+                aria-label="Nombre de esta caja/terminal"
+                className="w-24 bg-transparent focus:outline-none placeholder:text-brand-dark/30"
+              />
+            </label>
+          )}
+          {/* Encargado */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-brand-muted text-sm text-brand-dark/70">
+            <UserCircle className="w-4 h-4" /> {session.name}
+          </div>
         </div>
       </div>
 
