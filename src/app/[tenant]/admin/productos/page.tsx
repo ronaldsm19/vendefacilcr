@@ -14,7 +14,7 @@ import ImportProductsModal from "@/components/admin/ImportProductsModal";
 import BarcodeAssignDialog from "@/components/admin/BarcodeAssignDialog";
 import LabelEditor from "@/components/admin/LabelEditor";
 import type { ProductLabelFormat } from "@/lib/productLabel";
-import { priceSuffix } from "@/lib/soldBy";
+import { catalogPriceLabel } from "@/lib/soldBy";
 import { nextInternalCode } from "@/lib/barcode";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { can, productLimit } from "@/lib/permissions";
@@ -304,7 +304,7 @@ export default function AdminProductsPage() {
                     </td>
                   )}
                   <td className="px-4 py-3 font-semibold text-brand-dark">
-                    ₡{p.price.toLocaleString("es-CR")}{priceSuffix(p.soldBy)}
+                    {catalogPriceLabel(p.price, p.soldBy)}
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${

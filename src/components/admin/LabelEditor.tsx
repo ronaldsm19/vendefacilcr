@@ -69,7 +69,7 @@ export default function LabelEditor({
   // Datos de esta impresión para la fila Peso · Precio · Lote. El precio de un producto por kilo
   // sale solo del peso; uno de precio fijo propone su precio. Lo que se deje vacío queda en blanco.
   const [weightText, setWeightText] = useState("");
-  const [priceText, setPriceText] = useState(byKg ? "" : String(product.price));
+  const [priceText, setPriceText] = useState(byKg || (product.soldBy === "libre" && !product.price) ? "" : String(product.price));
   const [scaleMsg, setScaleMsg] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
   const [readingScale, setReadingScale] = useState(false);
   const labelRef = useRef<HTMLDivElement>(null);

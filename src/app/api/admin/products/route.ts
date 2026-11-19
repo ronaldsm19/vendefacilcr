@@ -49,9 +49,10 @@ export async function POST(request: NextRequest) {
 
   const { name, description, price, cost, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock, soldBy } = body;
   if (soldBy !== undefined && !isSoldBy(soldBy)) {
-    return NextResponse.json({ error: "El producto se vende por unidad o por kilo" }, { status: 400 });
+    return NextResponse.json({ error: "El producto se vende por unidad, por kilo o a precio libre" }, { status: 400 });
   }
-  if (!name || !price || !category) {
+  // Un producto de precio libre puede no tener precio sugerido (0).
+  if (!name || (!price && soldBy !== "libre") || !category) {
     return NextResponse.json({ error: "Faltan campos requeridos (nombre, precio, categoría)" }, { status: 400 });
   }
   if (station !== undefined && !isStation(station)) {
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     tenantId: session.tenantId,
     name, description,
     soldBy: soldBy ?? "unidad",
-    price: Number(price),
+    price: Number(price) || 0,
     cost:  cost !== undefined ? Number(cost) : 0,
     extras,
     image,
