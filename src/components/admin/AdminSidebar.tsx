@@ -98,7 +98,17 @@ export default function AdminSidebar({
         const raw = localStorage.getItem(`pos_cart_${tenant}`);
         if (!raw) { setPosCartCount(0); return; }
         const draft = JSON.parse(raw);
-        setPosCartCount(Array.isArray(draft.cart) ? draft.cart.length : 0);
+        if (Array.isArray(draft.cart)) {
+          // Formato viejo: un solo carrito.
+          setPosCartCount(draft.cart.length);
+        } else if (draft && draft.v === 2) {
+          // Formato nuevo: suma de la pestaña activa + las aparcadas.
+          const lenOf = (d: unknown) => (d && Array.isArray((d as { cart?: unknown[] }).cart) ? (d as { cart: unknown[] }).cart.length : 0);
+          const parked = draft.parked && typeof draft.parked === "object" ? Object.values(draft.parked) : [];
+          setPosCartCount(lenOf(draft.active) + parked.reduce((s: number, d) => s + lenOf(d), 0));
+        } else {
+          setPosCartCount(0);
+        }
       } catch {
         setPosCartCount(0);
       }
