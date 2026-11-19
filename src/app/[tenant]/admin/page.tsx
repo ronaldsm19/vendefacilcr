@@ -153,7 +153,8 @@ export default function AdminDashboard() {
         saleHint={saleItem ? locationOf(saleItem, nav.flat).join(" › ") : "Pedidos y ventas"}
       />
 
-      <h2 className="font-semibold text-brand-dark -mb-4">Este mes</h2>
+      {/* mb-3 reemplaza el margen de space-y-8 (Tailwind 4 lo pone abajo de cada bloque): título pegado a sus tarjetas. */}
+      <h2 className="font-semibold text-brand-dark mb-3">Este mes</h2>
 
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
