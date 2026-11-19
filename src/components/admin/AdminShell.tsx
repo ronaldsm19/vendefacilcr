@@ -32,12 +32,20 @@ import PlanLockedScreen from "@/components/admin/PlanLockedScreen";
  */
 const SESSION_PING_MS = 10 * 60 * 1000;
 
-/** Si un 401 de "quién soy" es porque el negocio está suspendido, el aviso que mandó el servidor. */
-async function suspensionFrom(res: Response): Promise<SuspensionNotice | null> {
+/**
+ * Por qué "quién soy" respondió 401: el negocio está suspendido (con el aviso que mandó el servidor),
+ * la sesión abierta es de otro negocio, o simplemente no hay sesión (null).
+ */
+async function denialFrom(res: Response): Promise<{ suspension: SuspensionNotice } | { otherTenant: true } | null> {
   if (res.status !== 401) return null;
   const data = await res.json().catch(() => null) as { code?: string; suspension?: SuspensionNotice } | null;
-  return data?.code === "TENANT_SUSPENDED" && data.suspension ? data.suspension : null;
+  if (data?.code === "TENANT_SUSPENDED" && data.suspension) return { suspension: data.suspension };
+  if (data?.code === "OTHER_TENANT") return { otherTenant: true };
+  return null;
 }
+
+/** El negocio de la dirección (/<negocio>/admin/...). */
+const slugOf = (pathname: string) => pathname.split("/")[1] ?? "";
 
 interface TenantBranding {
   tenantName: string;
@@ -105,14 +113,41 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     return () => window.removeEventListener("keydown", onKey);
   }, [isLoginPage]);
 
+  // El ingreso se abre dentro de este mismo shell (navegación del lado del cliente): al llegar ahí se
+  // borra lo de la sesión anterior. Si no, el aviso de sesión vencida (o la sesión y la marca de otro
+  // negocio) seguían en pantalla apenas uno volvía a entrar, hasta refrescar.
+  const [clearedAt, setClearedAt] = useState<string | null>(null);
+  if (isLoginPage && clearedAt !== pathname) {
+    setClearedAt(pathname);
+    setSessionExpired(false);
+    setSuspended(null);
+    setSession(null);
+    setBranding(DEFAULT_BRANDING);
+    setSearchOpen(false);
+  } else if (!isLoginPage && clearedAt !== null) {
+    setClearedAt(null);
+  }
+
+  // Lo que pasa cuando "quién soy" dice que no hay sesión para este negocio: suspendido, aviso; la
+  // sesión es de otro negocio (lo abrieron en otra pestaña), al ingreso de este, que explica cuál
+  // quedó abierta; vencida, el diálogo de sesión vencida.
+  const handleDenied = useCallback(async (res: Response) => {
+    // "Quién soy" respondió bien: la sesión sigue viva y el 401 fue de otra cosa. Antes igual salía
+    // "Tu sesión venció".
+    if (res.status !== 401) return;
+    const denial = await denialFrom(res);
+    if (denial && "suspension" in denial) setSuspended(denial.suspension);
+    else if (denial?.otherTenant) router.replace(`/${slugOf(window.location.pathname)}/admin/login`);
+    else setSessionExpired(true);
+  }, [router]);
+
   // Cualquier 401 del panel significa que ya no hay sesión, venga de la pantalla que venga. Puede ser
   // que venció o que suspendieron el negocio: "quién soy" dice cuál, para mostrar el aviso correcto.
   useEffect(() => watchUnauthorized(() => {
     void fetch("/api/admin/auth/me")
-      .then(suspensionFrom)
-      .then((notice) => (notice ? setSuspended(notice) : setSessionExpired(true)))
+      .then(handleDenied)
       .catch(() => setSessionExpired(true));
-  }), []);
+  }), [handleDenied]);
 
   // Lo que el panel no pudo hacer (respuestas con error, pedidos sin respuesta) va al registro de
   // errores del superadmin.
@@ -120,11 +155,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   const pingSession = useCallback(async () => {
     const res = await fetch("/api/admin/auth/me");
-    if (res.status !== 401) return;
-    const notice = await suspensionFrom(res);
-    if (notice) setSuspended(notice);
-    else setSessionExpired(true);
-  }, []);
+    if (res.status === 401) await handleDenied(res);
+  }, [handleDenied]);
   usePolling(pingSession, SESSION_PING_MS, authChecked && !isLoginPage && !suspended);
 
   // Close sidebar on navigation
@@ -140,15 +172,20 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     }
     fetch("/api/admin/auth/me").then(async (res) => {
       if (res.status === 401) {
-        const notice = await suspensionFrom(res);
-        if (notice) {
-          setSuspended(notice);
+        const denial = await denialFrom(res);
+        if (denial && "suspension" in denial) {
+          setSuspended(denial.suspension);
           return;
         }
-        const tenant = pathname.split("/")[1];
-        router.replace(`/${tenant}/admin/login`);
+        // Sin sesión, o con la de otro negocio: al ingreso de este.
+        router.replace(`/${slugOf(pathname)}/admin/login`);
       } else {
         const data = await res.json();
+        // Por las dudas, aunque el servidor ya lo revisa: nunca pintar un negocio en la dirección de otro.
+        if (String(data.tenantSlug ?? "").toLowerCase() !== slugOf(pathname).toLowerCase()) {
+          router.replace(`/${slugOf(pathname)}/admin/login`);
+          return;
+        }
         setBranding({
           tenantName:     data.tenantName     || pathname.split("/")[1],
           logoUrl:        data.logoUrl        || "",
@@ -239,7 +276,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     );
   }
 
-  if (!authChecked || !session) {
+  // Pasando de un negocio a otro sin recargar, la sesión guardada puede ser la del anterior: no se
+  // muestra mientras se vuelve a preguntar.
+  if (!authChecked || !session || String(session.tenantSlug ?? "").toLowerCase() !== slugOf(pathname).toLowerCase()) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F6F7F9]">
         <p className="text-brand-dark/40 text-sm">Verificando sesión...</p>
@@ -327,7 +366,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
         <AdminCommand open={searchOpen} onClose={() => setSearchOpen(false)} nav={nav} base={base} />
         {sessionExpired && (
           <SessionExpiredDialog
-            onLogin={() => router.replace(`/${pathname.split("/")[1]}/admin/login`)}
+            onLogin={() => { setSessionExpired(false); router.replace(`/${slugOf(pathname)}/admin/login`); }}
           />
         )}
       </div>
