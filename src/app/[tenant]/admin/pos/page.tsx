@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { sameBarcode } from "@/lib/barcode";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
+import { usePolling } from "@/hooks/usePolling";
+import { HEARTBEAT_MS } from "@/lib/cobroLock";
 import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { buildSalePayload, checkAgent, printReceipt } from "@/lib/printBridge";
@@ -113,6 +115,8 @@ interface OpenTable {
   tableId: string; tableLabel: string; tableShape: string; areaId: string; areaName: string;
   tableStatus: string | null; openCount: number; pendingTotal: number;
   oldestSentAt: string; minutes: number; comandas: OpenComanda[];
+  /** Candado de cobro (Fase 2): otra caja la está cobrando. null = libre para cobrar. */
+  cobroLock?: { byName: string; mine: boolean } | null;
 }
 
 function defaultPicks(t: OpenTable) {
@@ -544,8 +548,10 @@ function PosPageInner() {
     if (tabIds.length <= 1) return;
     const draft = id === activeTabId ? snapshotDraft() : parkedDrafts.current[id];
     if (draft && draft.cart.length > 0 && !window.confirm("Esta cuenta tiene productos sin cobrar. ¿Cerrarla y perder su avance?")) return;
+    const closedTableId = draft?.tableId;
     const idx = tabIds.indexOf(id);
     const remaining = tabIds.filter((x) => x !== id);
+    let activeDraftAfter: SaleDraft;
     if (id === activeTabId) {
       const neighbor = remaining[Math.min(idx, remaining.length - 1)];
       const d = parkedDrafts.current[neighbor] ?? emptyDraft();
@@ -553,9 +559,19 @@ function PosPageInner() {
       restoreDraft(d);
       clearTransientUI();
       setActiveTabId(neighbor);
+      activeDraftAfter = d;
+    } else {
+      activeDraftAfter = snapshotDraft();
     }
     delete parkedDrafts.current[id];
     setTabIds(remaining);
+    // Liberar el candado de la mesa cerrada si ninguna otra pestaña la sigue usando.
+    if (isPremium && closedTableId) {
+      const stillUsed = new Set<string>();
+      if (activeDraftAfter.tableId) stillUsed.add(activeDraftAfter.tableId);
+      for (const d of Object.values(parkedDrafts.current)) if (d.tableId) stillUsed.add(d.tableId);
+      if (!stillUsed.has(closedTableId)) releaseTable(closedTableId);
+    }
   }
 
   /** Etiqueta/metadata de una pestaña para la barra (de su draft activo o aparcado). */
@@ -566,6 +582,42 @@ function PosPageInner() {
     const count = d.cart.reduce((s, l) => s + l.quantity, 0);
     return { name, isMesa, count };
   }
+
+  // ── Candado de cobro entre terminales (Fase 2) ──────────────────────────────
+  // Mientras esta caja tiene una mesa abierta (en cualquier pestaña), la "reclama" para que otras
+  // cajas la vean "en cobro por …". Se renueva con heartbeat y se libera al cobrar/cerrar la cuenta.
+  const heldLocks = useRef<Set<string>>(new Set());
+
+  async function claimTable(tid: string): Promise<{ ok: boolean; lockedByName?: string }> {
+    try {
+      const res = await fetch(`/api/admin/salon/tables/${tid}/claim`, { method: "POST" });
+      if (res.ok) { heldLocks.current.add(tid); return { ok: true }; }
+      const data = await res.json().catch(() => ({}));
+      return { ok: false, lockedByName: data.lockedByName };
+    } catch { return { ok: false }; }
+  }
+
+  function releaseTable(tid: string) {
+    heldLocks.current.delete(tid);
+    fetch(`/api/admin/salon/tables/${tid}/release`, { method: "POST" }).catch(() => {});
+  }
+
+  /** Mesas que esta terminal tiene abiertas ahora (pestaña activa + aparcadas). */
+  function tablesInUse(): Set<string> {
+    const ids = new Set<string>();
+    if (tableId) ids.add(tableId);
+    for (const d of Object.values(parkedDrafts.current)) if (d.tableId) ids.add(d.tableId);
+    return ids;
+  }
+
+  /** Heartbeat: renueva el lease de las mesas en uso y libera las que ya no uso. */
+  async function reconcileLocks() {
+    const inUse = tablesInUse();
+    for (const id of Array.from(heldLocks.current)) if (!inUse.has(id)) releaseTable(id);
+    for (const id of inUse) await claimTable(id);
+  }
+
+  usePolling(reconcileLocks, HEARTBEAT_MS, isPremium && draftLoaded);
 
   // ── Persist draft cart (carrito, datos del pedido y qué cobros aplica esta venta; los porcentajes vienen siempre de la configuración) ─
   useEffect(() => {
@@ -580,11 +632,11 @@ function PosPageInner() {
       observaciones, mixedAmounts, pickupTime, deliveryAddress, deliveryPhone, deliveryFee,
       isPartialCharge, comandaSelections, applied, tabIds, activeTabId]);
 
-  async function loadOpenTables(focusTableId?: string): Promise<OpenTable[]> {
-    setTablesLoading(true);
+  async function loadOpenTables(focusTableId?: string, silent = false): Promise<OpenTable[]> {
+    if (!silent) setTablesLoading(true);
     try {
-      const res = await fetch("/api/admin/comandas/open-by-table");
-      if (!res.ok) { setOpenTables([]); return []; }
+      const res = await fetch("/api/admin/comandas/open-by-table", { cache: "no-store" });
+      if (!res.ok) { if (!silent) setOpenTables([]); return []; }
       const data = await res.json();
       const tables: OpenTable[] = data.tables ?? [];
       setOpenTables(tables);
@@ -598,9 +650,12 @@ function PosPageInner() {
       }
       return tables;
     } finally {
-      setTablesLoading(false);
+      if (!silent) setTablesLoading(false);
     }
   }
+
+  // Refresco en vivo del panel de Mesas (vista lista): mantiene al día los candados de otras cajas.
+  usePolling(() => loadOpenTables(undefined, true), 5000, isPremium && showTablesPanel && !activeTable);
 
   // ── Load data ────────────────────────────────────────────────────
   useEffect(() => {
@@ -923,11 +978,16 @@ function PosPageInner() {
   }
 
   function clearComandas() {
+    const cleared = tableId;
     setCart((prev) => prev.filter((l) => !l.comandaId));
     setComandaSelections([]);
     setTableId("");
     setSaleError(null);
     setIsPartialCharge(false);
+    // Liberar el candado de esa mesa si ninguna otra pestaña la usa.
+    if (isPremium && cleared && !Object.values(parkedDrafts.current).some((d) => d.tableId === cleared)) {
+      releaseTable(cleared);
+    }
   }
 
   /**
@@ -979,7 +1039,7 @@ function PosPageInner() {
     setTableNumber(v);
   }
 
-  function applySelection() {
+  async function applySelection() {
     if (!activeTable) return;
     const t = activeTable;
     const selections: ComandaSelection[] = [];
@@ -1007,6 +1067,13 @@ function PosPageInner() {
       }
     }
     if (selections.length === 0) return;
+    // Reclamar la mesa antes de cargarla: si otra caja la está cobrando, avisar y no cargarla.
+    const claim = await claimTable(t.tableId);
+    if (!claim.ok) {
+      setPanelNotice(`La está cobrando ${claim.lockedByName ?? "otra caja"}. Esperá a que termine o refrescá.`);
+      loadOpenTables(t.tableId);
+      return;
+    }
     const display = `${t.tableShape === "barstool" ? "Banqueta" : "Mesa"} ${t.tableLabel}`;
     setCart((prev) => [...prev.filter((l) => !l.comandaId), ...lines]);
     setComandaSelections(selections);
@@ -1204,6 +1271,8 @@ function PosPageInner() {
       setShowCartPanel(false);
       setComandaSelections([]);
       setTableId("");
+      // Cobrada: liberar el candado para que otra caja pueda retomar la mesa (si sobró algo pendiente).
+      if (isPremium && chargedTableId) releaseTable(chargedTableId);
       setLastTableNote(data.table?.status === "por_limpiar" ? `${prevTableNumber} quedó por limpiar` : null);
       setNextTableToCharge(null);
       if (isPremium) {
@@ -2285,11 +2354,17 @@ function PosPageInner() {
                     {openTables.map((t) => {
                       const level = badgeLevel(t.minutes, thresholds);
                       const hasPrevious = t.comandas.some((c) => c.isPrevious);
+                      const lockedByOther = !!(t.cobroLock && !t.cobroLock.mine);
                       return (
                         <button
                           key={t.tableId}
                           type="button"
+                          aria-disabled={lockedByOther}
                           onClick={() => {
+                            if (lockedByOther) {
+                              setPanelNotice(`La ${t.tableShape === "barstool" ? "banqueta" : "mesa"} ${t.tableLabel} la está cobrando ${t.cobroLock!.byName}.`);
+                              return;
+                            }
                             setActiveTable(t);
                             setPicked(defaultPicks(t));
                             setPanelAdded(null);
@@ -2299,7 +2374,11 @@ function PosPageInner() {
                                 : null
                             );
                           }}
-                          className="text-left rounded-xl border border-brand-muted p-3 hover:border-brand-pink/40 transition-colors"
+                          className={`text-left rounded-xl border p-3 transition-colors ${
+                            lockedByOther
+                              ? "border-red-200 bg-red-50/50 cursor-not-allowed"
+                              : "border-brand-muted hover:border-brand-pink/40"
+                          }`}
                         >
                           <p className="text-sm font-semibold text-brand-dark">
                             {t.tableShape === "barstool" ? "Banqueta" : "Mesa"} {t.tableLabel}
@@ -2308,9 +2387,14 @@ function PosPageInner() {
                           <p className="text-xs text-brand-dark/60 mt-0.5">
                             {t.openCount} comanda{t.openCount !== 1 ? "s" : ""} · {pendingItemCount(t)} ítem{pendingItemCount(t) !== 1 ? "s" : ""} · {fmt(t.pendingTotal)} pendiente
                           </p>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className={`text-xs font-semibold ${MIN_TEXT[level]}`}>{t.minutes} min</span>
                             {hasPrevious && <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 rounded-full px-1.5 py-0.5">Días anteriores</span>}
+                            {t.cobroLock && (
+                              <span className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 ${t.cobroLock.mine ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                                {t.cobroLock.mine ? "🔒 La estás cobrando" : `🔒 En cobro por ${t.cobroLock.byName}`}
+                              </span>
+                            )}
                           </div>
                         </button>
                       );
