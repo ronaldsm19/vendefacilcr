@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { buildSalePayload, checkAgent, printReceipt } from "@/lib/printBridge";
 import WeighDialog from "@/components/admin/WeighDialog";
-import { weightDetail } from "@/lib/soldBy";
+import OpenPriceDialog from "@/components/admin/OpenPriceDialog";
+import { catalogPriceLabel, weightDetail } from "@/lib/soldBy";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
 import AddToComandaPanel from "@/components/admin/AddToComandaPanel";
 import { useAdminSession } from "@/components/admin/SessionContext";
@@ -52,7 +53,7 @@ interface ProductRow {
   available: boolean;
   extras?: LineExtra[];
   barcode?: string;
-  soldBy?: "unidad" | "kg";
+  soldBy?: "unidad" | "kg" | "libre";
 }
 
 interface CartLine {
@@ -63,6 +64,8 @@ interface CartLine {
   extras?: LineExtra[];
   /** Pieza de un producto por kilo: su peso (unitPrice es el precio del kilo). */
   weightKg?: number;
+  /** Pieza de un producto de precio libre: unitPrice es el que escribió el cajero. */
+  openPrice?: boolean;
   // Solo en líneas que vienen de una comanda (bloqueadas)
   comandaId?: string;
   comandaNumber?: number;
@@ -70,9 +73,9 @@ interface CartLine {
   note?: string;
 }
 
-/** Mismo producto con extras distintos (o piezas de distinto peso) = líneas distintas. */
+/** Mismo producto con extras distintos (o piezas de distinto peso o precio) = líneas distintas. */
 function lineKey(l: CartLine) {
-  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : `${l.productId}|${l.weightKg ?? ""}|${extrasKey(l.extras)}`;
+  return l.comandaId ? `${l.comandaId}:${l.itemIndex}` : `${l.productId}|${l.weightKg ?? ""}|${l.unitPrice}|${extrasKey(l.extras)}`;
 }
 
 /** Extras de una línea, cada uno con su precio, debajo del nombre del producto. */
@@ -193,7 +196,7 @@ function ProductCard({
       )}
       <div className="p-3">
         <p className="font-bold text-base text-gray-900 leading-tight line-clamp-2">{product.name}</p>
-        <p className="text-sm font-semibold text-brand-pink mt-1">{fmt(product.price)}{product.soldBy === "kg" ? "/kg" : ""}</p>
+        <p className="text-sm font-semibold text-brand-pink mt-1">{catalogPriceLabel(product.price, product.soldBy)}</p>
       </div>
     </button>
   );
@@ -356,6 +359,7 @@ function PosPageInner() {
   const [qtyModal, setQtyModal]             = useState<ProductRow | null>(null);
   // Producto por kilo que se está pesando antes de agregarlo.
   const [weighing, setWeighing]             = useState<ProductRow | null>(null);
+  const [pricing, setPricing]               = useState<ProductRow | null>(null);
   const [qtyInput, setQtyInput]             = useState(1);
   const [qtyExtras, setQtyExtras]           = useState<string[]>([]);   // extras elegidos en el modal
   // Buscador del catálogo: por nombre o por código (también recibe lo que manda el lector).
@@ -625,6 +629,8 @@ function PosPageInner() {
   function openQtyModal(product: ProductRow) {
     // Un producto por kilo no lleva cantidad: se pesa la pieza.
     if (product.soldBy === "kg") { setWeighing(product); return; }
+    // Uno de precio libre tampoco: se escribe el precio de la pieza.
+    if (product.soldBy === "libre") { setPricing(product); return; }
     setQtyModal(product);
     setQtyInput(1);
     setQtyExtras([]);
@@ -670,6 +676,21 @@ function PosPageInner() {
     setWeighing(null);
   }
 
+  /** La pieza de precio libre entra como 1 unidad con su precio; dos al mismo precio se juntan. */
+  function addOpenPriced(unitPrice: number) {
+    if (!pricing) return;
+    const newLine: CartLine = {
+      productId: pricing._id, productName: pricing.name, unitPrice, quantity: 1, extras: [], openPrice: true,
+    };
+    const key = lineKey(newLine);
+    setCart((prev) =>
+      prev.some((l) => !l.comandaId && lineKey(l) === key)
+        ? prev.map((l) => (!l.comandaId && lineKey(l) === key ? { ...l, quantity: l.quantity + 1 } : l))
+        : [...prev, newLine]
+    );
+    setPricing(null);
+  }
+
   function showScanNotice(ok: boolean, text: string) {
     setScanNotice({ ok, text });
     if (scanNoticeTimer.current) clearTimeout(scanNoticeTimer.current);
@@ -689,6 +710,11 @@ function PosPageInner() {
     // Escanear un producto por kilo abre la báscula: falta saber cuánto pesa la pieza.
     if (product.soldBy === "kg") {
       setWeighing(product);
+      return true;
+    }
+    // Y uno de precio libre pide el precio de la pieza.
+    if (product.soldBy === "libre") {
+      setPricing(product);
       return true;
     }
     const newLine: CartLine = {
@@ -766,8 +792,8 @@ function PosPageInner() {
       let next: CartLine | null = l;
       if (!l.comandaId) {
         const p = byId.get(l.productId);
-        if (!p || (p.soldBy === "kg") !== !!l.weightKg) {
-          // Ya no existe, o cambió entre precio fijo y por kilo: hay que volver a agregarlo.
+        if (!p || (p.soldBy === "kg") !== !!l.weightKg || (p.soldBy === "libre") !== !!l.openPrice) {
+          // Ya no existe, o cambió cómo se vende (fijo, por kilo o libre): hay que volver a agregarlo.
           next = null;
         } else {
           const extras = (l.extras ?? []).flatMap((e) => {
@@ -775,7 +801,7 @@ function PosPageInner() {
             return c ? [{ name: c.name, price: c.price, qty: extraQty(e) }] : [];
           });
           if (extras.length !== (l.extras ?? []).length) dropped++;
-          next = { ...l, productName: p.name, unitPrice: p.price, extras };
+          next = { ...l, productName: p.name, unitPrice: l.openPrice ? l.unitPrice : p.price, extras };
         }
       }
       if (!next) { dropped++; continue; }
@@ -1937,6 +1963,7 @@ function PosPageInner() {
 
       {/* ── Modal de cantidad ── */}
       <WeighDialog product={weighing} onClose={() => setWeighing(null)} onConfirm={addWeighed} />
+      <OpenPriceDialog product={pricing} onClose={() => setPricing(null)} onConfirm={addOpenPriced} />
 
       <Dialog open={!!qtyModal} onOpenChange={(open) => !open && setQtyModal(null)}>
         <DialogContent className={qtyModal?.extras?.length ? "max-w-sm" : "max-w-xs"}>

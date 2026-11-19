@@ -18,6 +18,7 @@ import ComandaCard, { type ComandaRow } from "@/components/admin/ComandaCard";
 import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
 import ServeAllDialog from "@/components/admin/ServeAllDialog";
 import WeighDialog from "@/components/admin/WeighDialog";
+import OpenPriceDialog from "@/components/admin/OpenPriceDialog";
 import { weightDetail } from "@/lib/soldBy";
 import { orderCategories, type CategoryOrderEntry } from "@/lib/categories";
 import {
@@ -36,7 +37,7 @@ interface CatalogProduct {
   image?: string;
   extras?: LineExtra[];
   /** "kg": precio por kilo; cada pieza se pesa al comandarla. */
-  soldBy?: "unidad" | "kg";
+  soldBy?: "unidad" | "kg" | "libre";
 }
 
 interface LiveTable {
@@ -59,6 +60,8 @@ interface ComandaLine {
   extras: LineExtra[];   // aplican a toda la línea; platos con otros extras u otra nota van en otra línea
   /** Pieza de un producto por kilo: su peso. Cada pieza va en su propia línea. */
   weightKg?: number;
+  /** Pieza de un producto de precio libre: unitPrice es el que se escribió. Cada pieza va en su propia línea. */
+  openPrice?: boolean;
 }
 
 /** Un plato en la hoja inferior: sus extras (con porciones) y su nota. */
@@ -126,6 +129,7 @@ export default function TomarComandaPage() {
   const [sheetProductId, setSheetProductId] = useState<string | null>(null);
   // Producto por kilo que se está pesando antes de agregarlo.
   const [weighing, setWeighing] = useState<CatalogProduct | null>(null);
+  const [pricing, setPricing] = useState<CatalogProduct | null>(null);
   const [plates, setPlates] = useState<PlateDraft[]>([]);
   const [openPlateId, setOpenPlateId] = useState<string | null>(null);
   // Quitar algo con extras o notas pide confirmación mostrando qué se pierde.
@@ -136,7 +140,7 @@ export default function TomarComandaPage() {
     setLoading(true);
     const [liveRes, catalogRes, categoriesRes, nextRes, openRes] = await Promise.all([
       fetch("/api/admin/salon/live").then((r) => r.json()),
-      fetch("/api/admin/comandas/catalog").then((r) => r.json()),
+      fetch("/api/admin/comandas/catalog?precioLibre=1").then((r) => r.json()),
       fetch("/api/admin/categories").then((r) => r.json()).catch(() => ({})),
       fetch("/api/admin/comandas/next-number").then((r) => r.json()),
       fetch(`/api/admin/comandas?tableId=${tableId}&open=1&limit=50`).then((r) => r.json()),
@@ -247,13 +251,21 @@ export default function TomarComandaPage() {
       .finally(() => setEditLoading(false));
   }, [editId, isPremium]);
 
+  /**
+   * Pieza de precio libre: la que se agregó escribiendo el precio o, al editar una comanda ya enviada,
+   * la de un producto que en el catálogo es de precio libre.
+   */
+  const openPriceIds = new Set(catalog.filter((p) => p.soldBy === "libre").map((p) => p._id));
+  const isOpenLine = (l: ComandaLine) => !!l.openPrice || openPriceIds.has(l.productId);
   /** Línea "simple" de un producto: sin extras ni nota. Ahí van los + y − de la tarjeta. */
-  const isPlainLine = (l: ComandaLine) => l.extras.length === 0 && !l.note.trim() && !l.weightKg;
+  const isPlainLine = (l: ComandaLine) => l.extras.length === 0 && !l.note.trim() && !l.weightKg && !isOpenLine(l);
 
   // Sumar desde el catálogo va a la línea simple del producto; las personalizadas no se tocan.
   function incrementCatalog(p: CatalogProduct) {
     // Un producto por kilo no suma unidades: cada pieza se pesa y va en su propia línea.
     if (p.soldBy === "kg") { setWeighing(p); return; }
+    // Uno de precio libre tampoco: se escribe el precio de cada pieza.
+    if (p.soldBy === "libre") { setPricing(p); return; }
     setLines((prev) => {
       const idx = prev.findIndex((l) => l.productId === p._id && isPlainLine(l));
       if (idx === -1) {
@@ -271,6 +283,16 @@ export default function TomarComandaPage() {
       quantity: 1, note: "", extras: [], weightKg,
     }]);
     setWeighing(null);
+  }
+  /** Agrega la pieza de precio libre con el precio que se escribió. */
+  function addOpenPriced(unitPrice: number) {
+    const p = pricing;
+    if (!p) return;
+    setLines((prev) => [...prev, {
+      key: crypto.randomUUID(), productId: p._id, productName: p.name, unitPrice, station: p.station,
+      quantity: 1, note: "", extras: [], openPrice: true,
+    }]);
+    setPricing(null);
   }
   /** Resta una unidad de una línea; si era la última, la saca. */
   function decrementLine(key: string) {
@@ -306,7 +328,7 @@ export default function TomarComandaPage() {
   /** Abre la hoja con un plato por cada unidad de ese producto en la comanda. */
   function openSheet(productId: string) {
     // Las piezas pesadas no se editan plato por plato (cada una tiene su peso): se quitan y se vuelven a pesar.
-    if (lines.some((l) => l.productId === productId && l.weightKg)) return;
+    if (lines.some((l) => l.productId === productId && (l.weightKg || isOpenLine(l)))) return;
     const drafts = lines
       .filter((l) => l.productId === productId)
       .flatMap((l) => Array.from({ length: l.quantity }, () => ({
@@ -383,6 +405,8 @@ export default function TomarComandaPage() {
           productId: l.productId, quantity: l.quantity, note: l.note,
           extras: l.extras.map((e) => ({ name: e.name, qty: extraQty(e) })),
           ...(l.weightKg ? { weightKg: l.weightKg } : {}),
+          // Precio libre: el precio de la pieza viaja; en el resto lo pone el servidor desde el catálogo.
+          ...(isOpenLine(l) ? { unitPrice: l.unitPrice } : {}),
         })),
         notes: notesText.trim(),
       };
@@ -598,7 +622,7 @@ export default function TomarComandaPage() {
                             </span>
                             <span className="flex flex-col items-end gap-1 shrink-0">
                               <span className="text-xs font-semibold text-brand-pink">{fmt(lineTotal(l))}</span>
-                              {!l.weightKg && (<><Pencil className="w-3.5 h-3.5 text-brand-dark/40" aria-hidden /> <span className="sr-only">Editar extras y notas</span></>)}
+                              {!l.weightKg && !isOpenLine(l) && (<><Pencil className="w-3.5 h-3.5 text-brand-dark/40" aria-hidden /> <span className="sr-only">Editar extras y notas</span></>)}
                             </span>
                           </button>
                         </li>
@@ -730,7 +754,7 @@ export default function TomarComandaPage() {
                             </div>
                             <div className="px-2.5 pt-2 pb-2.5">
                               <p className="text-sm font-medium text-brand-dark leading-tight line-clamp-2 min-h-[2.5em]">{p.name}</p>
-                              <p className="text-xs font-semibold text-brand-pink mt-1 h-8 flex items-center">{fmt(p.price)}</p>
+                              <p className="text-xs font-semibold text-brand-pink mt-1 h-8 flex items-center">{p.soldBy === "libre" ? "Precio libre" : fmt(p.price)}</p>
                             </div>
                           </button>
                           {qty > 0 && (
@@ -996,6 +1020,7 @@ export default function TomarComandaPage() {
       )}
 
       <WeighDialog product={weighing} onClose={() => setWeighing(null)} onConfirm={addWeighed} />
+      <OpenPriceDialog product={pricing} onClose={() => setPricing(null)} onConfirm={addOpenPriced} />
 
       {showServeAll && (
         <ServeAllDialog

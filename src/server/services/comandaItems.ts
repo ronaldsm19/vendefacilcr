@@ -4,7 +4,7 @@ import { effectiveStation } from "@/lib/station";
 import type { IComandaItem } from "@/models/Comanda";
 import type { LineExtra } from "@/lib/pricing";
 import { ServiceError } from "@/server/errors";
-import { formatKg, normalizeWeightKg } from "@/lib/soldBy";
+import { formatKg, normalizeOpenPrice, normalizeWeightKg } from "@/lib/soldBy";
 import { ensureExtrasMigrated, resolveChosenExtras } from "@/server/services/productExtras";
 
 export interface ComandaItemInput {
@@ -15,6 +15,8 @@ export interface ComandaItemInput {
   extras?: unknown;
   /** Peso de la pieza en kilos: obligatorio en los productos por kilo, prohibido en los demás. */
   weightKg?: unknown;
+  /** Precio de la pieza en colones: obligatorio en los productos de precio libre, prohibido en los demás. */
+  unitPrice?: unknown;
 }
 
 /** Forma de los ítems que manda el celular al crear o editar una comanda. Lanza ServiceError (400). */
@@ -33,6 +35,9 @@ export function validateComandaItemsInput(items: unknown): asserts items is Coma
     }
     if (normalizeWeightKg(item.weightKg) === null) {
       throw new ServiceError(400, "Peso inválido: va en kilos, mayor que cero (p. ej. 0.350)");
+    }
+    if (normalizeOpenPrice(item.unitPrice) === null) {
+      throw new ServiceError(400, "Precio inválido: va en colones, mayor que cero");
     }
   }
 }
@@ -67,10 +72,18 @@ export async function snapshotComandaItems(
     if (p.soldBy !== "kg" && weightKg) {
       throw new ServiceError(400, `"${p.name}" no se vende por kilo (${formatKg(weightKg)}). Recargá el catálogo.`);
     }
+    // Precio libre: el precio de cada pieza lo escribe quien comanda; en los demás sale del catálogo.
+    const openPrice = normalizeOpenPrice(i.unitPrice);
+    if (p.soldBy === "libre" && !openPrice) {
+      throw new ServiceError(400, `"${p.name}" es de precio libre: indicá cuánto cuesta esta pieza.`);
+    }
+    if (p.soldBy !== "libre" && openPrice) {
+      throw new ServiceError(400, `"${p.name}" ya no es de precio libre. Recargá el catálogo.`);
+    }
     return {
       productId: String(i.productId),
       productName: p.name as string,
-      unitPrice: p.price as number,
+      unitPrice: openPrice ?? (p.price as number),
       quantity: i.quantity as number,
       station: effectiveStation(p as { station?: string; menuSection?: string }),
       note: typeof i.note === "string" ? i.note.trim() : "",

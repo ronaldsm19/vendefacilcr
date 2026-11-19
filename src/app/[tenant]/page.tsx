@@ -60,7 +60,8 @@ async function getTenant(slug: string) {
 async function getProducts(tenantId: string): Promise<(SeedProduct & { _id?: string })[]> {
   try {
     await ensureExtrasMigrated(tenantId);
-    const products = await Product.find({ tenantId, available: true })
+    // Los de precio libre (cada pieza vale distinto) se venden solo en la caja: no van a la tienda.
+    const products = await Product.find({ tenantId, available: true, soldBy: { $ne: "libre" } })
       // El código de barras es interno del negocio: no viaja a la tienda pública.
       .select("-toppings -cost -barcode -label")
       .sort({ createdAt: -1 })

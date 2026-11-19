@@ -5,6 +5,7 @@ import { Check, Minus, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { lineTotal, type LineExtra } from "@/lib/pricing";
 import WeighDialog from "@/components/admin/WeighDialog";
+import OpenPriceDialog from "@/components/admin/OpenPriceDialog";
 import { formatKg } from "@/lib/soldBy";
 
 /**
@@ -20,7 +21,7 @@ export interface AddableProduct {
   category: string;
   extras?: LineExtra[];
   /** "kg": precio por kilo; la pieza se pesa antes de agregarla. */
-  soldBy?: "unidad" | "kg";
+  soldBy?: "unidad" | "kg" | "libre";
 }
 
 interface Line {
@@ -30,6 +31,8 @@ interface Line {
   quantity: number;
   extras: LineExtra[];
   weightKg?: number;
+  /** Pieza de precio libre: `price` es el que se escribió. */
+  openPrice?: boolean;
 }
 
 interface AddToComandaPanelProps {
@@ -50,8 +53,8 @@ function norm(s: string) {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
-function lineKey(productId: string, extras: LineExtra[], weightKg?: number) {
-  return `${productId}|${weightKg ?? ""}|${extras.map((e) => e.name).sort().join(",")}`;
+function lineKey(productId: string, extras: LineExtra[], weightKg?: number, openPrice?: number) {
+  return `${productId}|${weightKg ?? ""}|${openPrice ?? ""}|${extras.map((e) => e.name).sort().join(",")}`;
 }
 
 export default function AddToComandaPanel({ comandaId, comandaNumber, products, onCancel, onAdded }: AddToComandaPanelProps) {
@@ -63,6 +66,7 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [weighing, setWeighing] = useState<AddableProduct | null>(null);
+  const [pricing, setPricing] = useState<AddableProduct | null>(null);
 
   const q = norm(query.trim());
   const results = products.filter((p) => norm(p.name).includes(q) || norm(p.category).includes(q));
@@ -74,6 +78,8 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
   function pick(p: AddableProduct) {
     // Un producto por kilo se pesa: entra como una pieza con su peso.
     if (p.soldBy === "kg") { setWeighing(p); setError(""); return; }
+    // Uno de precio libre pide el precio de la pieza.
+    if (p.soldBy === "libre") { setPricing(p); setError(""); return; }
     setSelected(p);
     setQty(1);
     setExtraNames([]);
@@ -105,6 +111,19 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
     setQuery("");
   }
 
+  function addOpenPriced(unitPrice: number) {
+    const p = pricing;
+    if (!p) return;
+    const key = lineKey(p._id, [], undefined, unitPrice);
+    setLines((prev) =>
+      prev.some((l) => l.openPrice && lineKey(l.productId, l.extras, undefined, l.price) === key)
+        ? prev.map((l) => (l.openPrice && lineKey(l.productId, l.extras, undefined, l.price) === key ? { ...l, quantity: Math.min(99, l.quantity + 1) } : l))
+        : [...prev, { productId: p._id, name: p.name, price: unitPrice, quantity: 1, extras: [], openPrice: true }]
+    );
+    setPricing(null);
+    setQuery("");
+  }
+
   async function submit() {
     if (lines.length === 0) return;
     setSaving(true);
@@ -117,6 +136,7 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
           items: lines.map((l) => ({
             productId: l.productId, quantity: l.quantity, extras: l.extras.map((e) => e.name),
             ...(l.weightKg ? { weightKg: l.weightKg } : {}),
+            ...(l.openPrice ? { unitPrice: l.price } : {}),
           })),
         }),
       });
@@ -136,6 +156,7 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
   return (
     <>
       <WeighDialog product={weighing} onClose={() => setWeighing(null)} onConfirm={addWeighed} />
+      <OpenPriceDialog product={pricing} onClose={() => setPricing(null)} onConfirm={addOpenPriced} />
       <div>
         <p className="text-sm font-semibold text-brand-dark">Agregar a la comanda #{comandaNumber}</p>
         <p className="text-xs text-brand-dark/50">
@@ -217,7 +238,7 @@ export default function AddToComandaPanel({ comandaId, comandaNumber, products, 
                     <span className="block truncate text-brand-dark">{p.name}</span>
                     {p.category && <span className="block truncate text-xs text-brand-dark/40">{p.category}</span>}
                   </span>
-                  <span className="shrink-0 font-semibold text-brand-pink">{fmt(p.price)}{p.soldBy === "kg" ? "/kg" : ""}</span>
+                  <span className="shrink-0 font-semibold text-brand-pink">{p.soldBy === "libre" ? "Precio libre" : `${fmt(p.price)}${p.soldBy === "kg" ? "/kg" : ""}`}</span>
                 </button>
               ))
             )}
