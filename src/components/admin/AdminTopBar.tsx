@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ChevronRight, ExternalLink, Plus } from "lucide-react";
 import type { Role } from "@/lib/permissions";
 import { activeItem, isActiveItem, locationOf, type VisibleNav } from "@/lib/adminNav";
+import HelpButton from "@/components/admin/help/HelpButton";
 
 /**
  * Barra de arriba en la computadora: dónde está uno ("Vender › Punto de venta"), el enlace a la tienda
@@ -34,6 +35,7 @@ export default function AdminTopBar({ nav, base, role }: { nav: VisibleNav; base
           })}
         </ol>
       </nav>
+      <HelpButton base={base} />
       {role !== "mesero" && (
         <a
           href={`/${slug}`}

@@ -14,6 +14,7 @@ const PAGES: { label: string; href: string }[] = [
   { label: "Cobros", href: "/superadmin/cobros" },
   { label: "Pagos", href: "/superadmin/pagos" },
   { label: "Avisos", href: "/superadmin/avisos" },
+  { label: "Videos de ayuda", href: "/superadmin/ayuda" },
   { label: "Actividad", href: "/superadmin/actividad" },
   { label: "Errores", href: "/superadmin/errores" },
 ];

@@ -37,7 +37,8 @@ export type Feature =
   | "usuarios"
   | "comandas"             // reservado para Fase 3
   | "jornada"             // control de jornada laboral (marcaje + reportes)
-  | "planilla";           // pagos al personal según sus horas
+  | "planilla"            // pagos al personal según sus horas
+  | "ayuda";              // videos de ayuda que carga Ennea
 
 export const PERMISSIONS: Record<Feature, Role[]> = {
   dashboard:          ["admin"],
@@ -70,6 +71,8 @@ export const PERMISSIONS: Record<Feature, Role[]> = {
   comandas:           ["admin", "cajero", "mesero"],
   jornada:            ["admin", "cajero"],
   planilla:           ["admin"],
+  // Los videos de ayuda los ve todo el personal; cada quien, los de las secciones de su rol.
+  ayuda:              ["admin", "cajero", "mesero"],
 };
 
 /**
@@ -181,6 +184,7 @@ export const ROUTE_FEATURES: Record<string, Feature> = {
   comandas:         "comandas",
   jornada:          "jornada",
   planilla:         "planilla",
+  ayuda:            "ayuda",
 };
 
 /** Nombre de cada sección, como sale en el menú del panel. */
@@ -198,6 +202,7 @@ export const SECTION_LABELS: Record<string, string> = {
   "cierre-de-caja": "Cierre de caja",
   jornada:          "Jornada laboral",
   planilla:         "Planilla",
+  ayuda:            "Ayuda",
   salon:            "Salón",
   comandas:         "Comandas",
   usuarios:         "Usuarios",

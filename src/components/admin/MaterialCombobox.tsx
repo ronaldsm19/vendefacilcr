@@ -80,6 +80,9 @@ export default function MaterialCombobox({ materials, value, onChange }: Materia
         left:     rect.left,
         width:    rect.width,
         zIndex:   9999,
+        // La lista vive en <body>, fuera del diálogo de la receta, y el diálogo (Radix) le pone
+        // pointer-events: none a todo lo de afuera: sin esto no se podía tocar ningún material.
+        pointerEvents: "auto",
         maxHeight: 220,
         overflowY: "auto",
       }}

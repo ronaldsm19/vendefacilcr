@@ -14,6 +14,7 @@ import {
   Bug,
   Wallet,
   Megaphone,
+  CirclePlay,
   LogOut,
   Search,
   X,
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/superadmin/cobros",     label: "Cobros",      icon: Wallet },
   { href: "/superadmin/pagos",      label: "Pagos",       icon: CreditCard },
   { href: "/superadmin/avisos",     label: "Avisos",      icon: Megaphone },
+  { href: "/superadmin/ayuda",      label: "Videos de ayuda", icon: CirclePlay },
   { href: "/superadmin/actividad",  label: "Actividad",   icon: Activity },
   { href: "/superadmin/errores",    label: "Errores",     icon: Bug },
 ];
