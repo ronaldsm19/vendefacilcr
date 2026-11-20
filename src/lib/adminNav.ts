@@ -1,5 +1,5 @@
 import {
-  BookCheck, BookOpen, Boxes, ClipboardList, Clock, Contact, CreditCard, FlaskConical, House,
+  BookCheck, BookOpen, Boxes, CircleHelp, ClipboardList, Clock, Contact, CreditCard, FlaskConical, House,
   LayoutGrid, MonitorCheck, Package, Palette, PiggyBank, Plus, Receipt, Settings, ShoppingBag,
   ShoppingCart, Tag, TrendingUp, UserCircle, Users, UsersRound, Wallet, Warehouse,
   type LucideIcon,
@@ -79,6 +79,7 @@ export const NAV_SETTINGS: NavItem = {
 export const NAV_ACCOUNT: NavItem[] = [
   { segment: "perfil", label: "Perfil", icon: UserCircle, feature: "perfil", desc: "Tus datos y tu contraseña." },
   { segment: "mensualidad", label: "Mensualidad", icon: CreditCard, feature: "mensualidad", desc: "Lo que le pagás a Ennea, cómo pagar y tus comprobantes." },
+  { segment: "ayuda", label: "Ayuda", icon: CircleHelp, feature: "ayuda", desc: "Videos cortos que explican cómo se hace cada cosa en el panel." },
 ];
 
 export const ACCOUNT_LABEL = "Mi cuenta";
@@ -115,6 +116,7 @@ export const NAV_ACTIONS: NavAction[] = [
   { label: "Ver las horas del personal", segment: "jornada", icon: Clock, keywords: "horas marcas entrada salida asistencia" },
   { label: "Pagar la mensualidad", segment: "mensualidad", icon: CreditCard, keywords: "pago mensualidad comprobante sinpe plan factura" },
   { label: "Cambiar mi contraseña", segment: "perfil", icon: UserCircle, keywords: "contrasena clave perfil seguridad" },
+  { label: "Ver los videos de ayuda", segment: "ayuda", icon: CircleHelp, keywords: "ayuda video videos tutorial como se hace duda preguntas frecuentes aprender" },
 ];
 
 export interface VisibleItem extends NavItem {

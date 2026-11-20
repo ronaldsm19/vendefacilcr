@@ -11,6 +11,7 @@ import { adminBrandVars } from "@/lib/adminBrand";
 import { ENNEA_COLORS } from "@/components/brand/EnneaMark";
 import ReminderToast from "@/components/admin/ReminderToast";
 import TenantNotices from "@/components/admin/TenantNotices";
+import HelpButton from "@/components/admin/help/HelpButton";
 import { AdminSessionProvider, type AdminSession } from "@/components/admin/SessionContext";
 import { PendingComandasProvider, usePendingComandas } from "@/components/admin/PendingComandasContext";
 import SessionExpiredDialog from "@/components/admin/SessionExpiredDialog";
@@ -335,6 +336,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-brand-dark shrink-0 z-30">
             <MobileMenuButton onOpen={() => setSidebarOpen(true)} />
             <p className="flex-1 min-w-0 font-brand text-lg font-bold text-white truncate">{branding.tenantName}</p>
+            <HelpButton base={`/${pathname.split("/")[1]}/admin`} variant="icon" />
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
