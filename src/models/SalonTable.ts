@@ -18,6 +18,17 @@ export interface ISalonTable {
   dirtyAt: Date | null;      // set al pasar a "por_limpiar"
   cleanedAt: Date | null;    // set al pasar de "por_limpiar" a "libre"
   cleanedBy: string;         // session.name de quien limpió
+  /**
+   * Candado suave de cobro (Fase 2 POS multi-cuenta): mientras una caja está cobrando esta mesa,
+   * las demás la ven "en cobro por …" y no la pueden cobrar. Es un lease: se renueva con heartbeat
+   * y expira solo si la caja se cae (ver src/lib/cobroLock.ts). null = libre para cobrar.
+   */
+  cobroLock?: {
+    by: string;        // userId de quien cobra
+    byName: string;    // nombre que se muestra ("en cobro por …")
+    at: Date;          // cuándo lo tomó
+    expiresAt: Date;   // vence si no se renueva
+  } | null;
 }
 
 const SalonTableSchema = new Schema(
@@ -35,6 +46,13 @@ const SalonTableSchema = new Schema(
     dirtyAt:    { type: Date, default: null },
     cleanedAt:  { type: Date, default: null },
     cleanedBy:  { type: String, default: "" },
+    cobroLock:  {
+      type: new Schema(
+        { by: String, byName: String, at: Date, expiresAt: Date },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   { timestamps: true }
 );

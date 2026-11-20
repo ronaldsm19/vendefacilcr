@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Tenant } from "@/models/Tenant";
 import { StaffUser } from "@/models/StaffUser";
-import { getSessionPayload, signJwt, setSessionCookie, clearSessionCookie } from "@/lib/auth";
+import { getSessionPayload, signJwt, setSessionCookie, clearSessionCookie, expectedTenantSlug } from "@/lib/auth";
 import { isPremiumPlan } from "@/lib/permissions";
 import { suspensionNotice } from "@/lib/suspension";
 import { DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@/lib/ticket";
@@ -14,12 +14,24 @@ function loggedOut(): NextResponse {
 export async function GET(request: NextRequest) {
   // Sin el chequeo de negocio activo de getSession: este endpoint tiene que poder decir que el
   // negocio está suspendido, no solo que no hay sesión.
-  const session = await getSessionPayload(request);
+  const session = await getSessionPayload(request, { anyTenant: true });
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
 
   await connectToDatabase();
+
+  // La sesión abierta es de otro negocio (la cookie es una sola para todo el sitio). No se cierra:
+  // sigue sirviendo en su propio panel. El panel de este negocio manda a ingresar y dice cuál está abierta.
+  const expected = expectedTenantSlug(request);
+  if (expected && expected !== session.tenantSlug.toLowerCase()) {
+    const other = await Tenant.findById(session.tenantId).select("name slug").lean() as { name?: string; slug?: string } | null;
+    return NextResponse.json({
+      error: "La sesión abierta es de otro negocio",
+      code: "OTHER_TENANT",
+      other: { name: other?.name ?? session.tenantSlug, slug: other?.slug ?? session.tenantSlug },
+    }, { status: 401 });
+  }
   const tenant = await Tenant.findById(session.tenantId)
     .select("name logoUrl theme plan planLimits whatsappNumber passwordChanged ticketConfig status suspendedReason suspendedMessage")
     .lean() as {

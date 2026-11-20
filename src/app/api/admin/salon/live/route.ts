@@ -10,6 +10,7 @@ import { getSession } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
 import { isTableStatus } from "@/lib/tableStatus";
 import { readComandaConfig } from "@/lib/comandaConfig";
+import { publicLock } from "@/lib/cobroLock";
 
 /**
  * El agente de la PC toma cada comanda en pocos segundos (consulta cada 2,5 s). Una que lleva
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
   const [areas, tables, tenant, comandaRows, oldestPendingPrint, pendingPrintCount] = await Promise.all([
     TableArea.find({ tenantId: session.tenantId }).sort({ order: 1 }).select("name color order").lean(),
     SalonTable.find({ tenantId: session.tenantId })
-      .select("areaId label shape seats x y status statusNote occupiedAt dirtyAt")
+      .select("areaId label shape seats x y status statusNote occupiedAt dirtyAt cobroLock")
       .lean(),
     Tenant.findById(session.tenantId).select("comandaConfig plan printAgentLastSeenAt").lean() as Promise<{
       comandaConfig?: { warnMinutes?: number; alertMinutes?: number };
@@ -111,6 +112,7 @@ export async function GET(request: NextRequest) {
         activeAvgMinutes: stats?.activeAvgMinutes ?? null,
         oldestSentAt: stats?.oldestSentAt ?? null,
         waiterNames: stats?.waiterNames ?? [],
+        cobroLock: publicLock(t.cobroLock, session.userId, now),
       };
     }),
   });

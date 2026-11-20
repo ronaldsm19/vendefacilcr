@@ -7,8 +7,8 @@
  * el marcaje de jornada: PIN correcto, mensaje de error, y la cajera creyendo que era su PIN.
  *
  * En vez de tocar cada `fetch` del panel, se envuelve el global una sola vez y se avisa a quien
- * escuche (la sesión vencida, el registro de errores). No cambia la respuesta ni el pedido: si el
- * pedido falla, el error se relanza igual.
+ * escuche (la sesión vencida, el registro de errores). No cambia la respuesta: si el pedido falla,
+ * el error se relanza igual. Al pedido solo le agrega el negocio de la página (ver withTenant).
  */
 
 export interface AdminFetchResult {
@@ -57,11 +57,44 @@ function notify(result: AdminFetchResult) {
   }
 }
 
+/** Igual que TENANT_HEADER de src/lib/auth.ts (ese archivo es del servidor). */
+const TENANT_HEADER = "x-ennea-tenant";
+
+/** El negocio del panel que está abierto (/<negocio>/admin/...), o null fuera del panel. */
+function pageTenant(): string | null {
+  const match = /^\/([^/]+)\/admin(?:\/|$)/.exec(window.location.pathname);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Le agrega al pedido el negocio de la página. La cookie de sesión es una sola para todo el sitio:
+ * sin esto, con dos negocios abiertos en dos pestañas, la del primero guardaba en el segundo.
+ */
+function withTenant(args: Parameters<typeof fetch>): Parameters<typeof fetch> {
+  const slug = pageTenant();
+  if (!slug) return args;
+  const [input, init] = args;
+  if (typeof Request !== "undefined" && input instanceof Request && !init) {
+    const headers = new Headers(input.headers);
+    if (!headers.has(TENANT_HEADER)) headers.set(TENANT_HEADER, slug);
+    return [new Request(input, { headers })];
+  }
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+  if (!headers.has(TENANT_HEADER)) headers.set(TENANT_HEADER, slug);
+  return [input, { ...init, headers }];
+}
+
 function patch() {
   const original = window.fetch;
-  window.fetch = async function (...args: Parameters<typeof fetch>) {
-    const path = pathOf(args[0]);
-    if (!path.startsWith(ADMIN_API)) return original.apply(this, args);
+  window.fetch = async function (...rawArgs: Parameters<typeof fetch>) {
+    const path = pathOf(rawArgs[0]);
+    if (!path.startsWith(ADMIN_API)) return original.apply(this, rawArgs);
+    const args = withTenant(rawArgs);
     const method = methodOf(args[0], args[1]);
     const started = performance.now();
     try {

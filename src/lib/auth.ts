@@ -79,14 +79,30 @@ export async function verifyJwt(token: string): Promise<AdminPayload | null> {
  * abierta mientras falla en el teléfono.
  */
 export async function getSessionPayload(
-  request: NextRequest
+  request: NextRequest,
+  { anyTenant = false }: { anyTenant?: boolean } = {},
 ): Promise<AdminPayload | null> {
   const bearer = bearerToken(request);
-  if (bearer !== null) return verifyJwt(bearer);
-
-  const token = request.cookies.get(COOKIE_NAME)?.value;
+  const token = bearer !== null ? bearer : request.cookies.get(COOKIE_NAME)?.value;
   if (!token) return null;
-  return verifyJwt(token);
+  const payload = await verifyJwt(token);
+  if (!payload || anyTenant) return payload;
+  // La cookie es una sola para todo el sitio: con la sesión de un negocio abierta, el panel de otro
+  // (otra pestaña, otra dirección) no puede leer ni guardar nada con ella.
+  const expected = expectedTenantSlug(request);
+  return expected && expected !== payload.tenantSlug.toLowerCase() ? null : payload;
+}
+
+/**
+ * Encabezado con el negocio que el panel tiene abierto (lo pone src/lib/sessionWatch.ts en cada
+ * pedido a /api/admin desde /<negocio>/admin). La app móvil no lo manda.
+ */
+export const TENANT_HEADER = "x-ennea-tenant";
+
+/** El negocio que dice estar mirando el panel, o null si el pedido no lo indica. */
+export function expectedTenantSlug(request: NextRequest): string | null {
+  const value = request.headers.get(TENANT_HEADER)?.trim().toLowerCase();
+  return value ? value : null;
 }
 
 /**
