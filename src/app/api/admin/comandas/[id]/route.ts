@@ -8,6 +8,8 @@ import { enqueueComandaPrint, changedStations } from "@/lib/printQueue";
 import { withKitchenNotes } from "@/lib/kitchenText";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { snapshotComandaItems, validateComandaItemsInput } from "@/server/services/comandaItems";
+import { hasPaidItems, paidUnits, pendingView, planComandaEdit } from "@/lib/comandaEdit";
+import { remapComandaClaims } from "@/server/services/comandaClaims";
 
 export async function GET(
   request: NextRequest,
@@ -69,9 +71,6 @@ export async function PUT(
   if (comanda.status !== "enviada" && comanda.status !== "servida") {
     return NextResponse.json({ error: "La comanda ya no está abierta" }, { status: 409 });
   }
-  if (comanda.items.some((i: IComandaItem) => i.paidQty > 0)) {
-    return NextResponse.json({ error: "La comanda tiene ítems cobrados y no se puede editar" }, { status: 409 });
-  }
   if (version === undefined) {
     return NextResponse.json({ error: "version requerida" }, { status: 400 });
   }
@@ -80,7 +79,14 @@ export async function PUT(
   try { snapshotItems = await snapshotComandaItems(session.tenantId, items); }
   catch (err) { return serviceErrorResponse(err); }
 
-  const $set: Record<string, unknown> = { items: snapshotItems };
+  // Con algo ya cobrado (cuenta dividida), lo cobrado queda fijo y `items` reemplaza solo lo que
+  // falta por cobrar. Sin nada cobrado es el reemplazo de siempre.
+  const oldItems = comanda.items as IComandaItem[];
+  const partlyPaid = hasPaidItems(oldItems);
+  const paidBefore = paidUnits(oldItems);
+  const plan = planComandaEdit<IComandaItem>(oldItems, snapshotItems);
+
+  const $set: Record<string, unknown> = { items: plan.items };
   if (customerName !== undefined) $set.customerName = customerName.trim();
   if (notes !== undefined) $set.notes = notes.trim();
 
@@ -90,7 +96,8 @@ export async function PUT(
       tenantId: session.tenantId,
       version,
       status: { $in: ["enviada", "servida"] },
-      "items.paidQty": { $not: { $gt: 0 } },
+      // Si entre leer y guardar alguien cobró (o se eliminó una venta), lo cobrado cambió: no se pisa.
+      $expr: { $eq: [{ $sum: "$items.paidQty" }, paidBefore] },
     },
     { $set, $inc: { version: 1 } },
     { new: true }
@@ -100,11 +107,29 @@ export async function PUT(
     return NextResponse.json({ error: "La comanda fue modificada por otra persona. Recargá e intentá de nuevo." }, { status: 409 });
   }
 
-  // Se comparan con el texto de cocina (extras + nota), así cambiar solo un extra también reimprime.
-  const stationsToPrint = changedStations(withKitchenNotes(comanda).items, withKitchenNotes(updated).items);
+  if (plan.moved && (comanda.saleIds ?? []).length > 0) {
+    try {
+      await remapComandaClaims(session.tenantId, id, comanda.saleIds as string[], plan.indexMap);
+    } catch (err) {
+      console.error("[comandas PUT] No se pudieron actualizar las ventas de la comanda", err);
+      // Se deja la comanda como estaba: las ventas siguen apuntando a las posiciones viejas.
+      await Comanda.updateOne(
+        { _id: id, tenantId: session.tenantId, version: updated.version },
+        { $set: { items: oldItems, customerName: comanda.customerName, notes: comanda.notes }, $inc: { version: 1 } }
+      ).catch(() => {});
+      return NextResponse.json({ error: "No se pudo guardar el cambio. Intentá de nuevo." }, { status: 500 });
+    }
+  }
+
+  // A cocina y barra solo les importa lo que falta por salir: con algo ya cobrado se compara y se
+  // imprime solo lo pendiente (lo cobrado ya se sirvió). Se compara con el texto de cocina
+  // (extras + nota), así cambiar solo un extra también reimprime.
+  const before = partlyPaid ? { ...comanda, items: pendingView(oldItems) } : comanda;
+  const toPrint = partlyPaid ? { ...updated, items: snapshotItems } : updated;
+  const stationsToPrint = changedStations(withKitchenNotes(before).items, withKitchenNotes(toPrint).items);
   after(async () => {
     if (stationsToPrint.length === 0) return; // solo cambiaron datos que no le importan a cocina/bebidas (cliente, notas)
-    try { await enqueueComandaPrint(withKitchenNotes(updated), { stations: stationsToPrint }); }
+    try { await enqueueComandaPrint(withKitchenNotes(toPrint), { stations: stationsToPrint }); }
     catch (err) { console.error("[printQueue] comanda editada", err); }
   });
 

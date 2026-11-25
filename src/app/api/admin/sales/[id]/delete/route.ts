@@ -83,6 +83,9 @@ export async function POST(
   // detalle exacto de qué índice/cantidad cobraron); para esas se usa un best-effort por producto.
   const saleIdStr = String(sale._id);
   const reverted: { comandaId: string; incNeg: Record<string, number> }[] = [];
+  // Mesas donde están HOY las comandas de la venta: si la comanda se pasó de mesa después del
+  // cobro, la que hay que recalcular es la mesa nueva, no solo la de la venta.
+  const comandaTableIds = new Set<string>();
   let warning: string | undefined;
 
   if (sale.comandaIds?.length > 0) {
@@ -130,6 +133,7 @@ export async function POST(
 
         await Comanda.updateOne({ _id: comanda._id, tenantId: session.tenantId }, update);
         reverted.push({ comandaId, incNeg });
+        if (comanda.tableId) comandaTableIds.add(String(comanda.tableId));
       }
     } catch (err) {
       console.error("[sales delete] Error revirtiendo comandas:", err);
@@ -163,8 +167,9 @@ export async function POST(
 
   // (3) Recalcular estado de la mesa — mejor esfuerzo, no invalida el borrado (mismo criterio
   // que POST /api/admin/sales al cerrar comandas/mesa tras registrar una venta).
-  if (sale.tableId) {
-    await syncTableWithComandas(session.tenantId, sale.tableId).catch((err) => {
+  if (sale.tableId) comandaTableIds.add(String(sale.tableId));
+  for (const tableId of comandaTableIds) {
+    await syncTableWithComandas(session.tenantId, tableId).catch((err) => {
       console.error("[sales delete] Error sincronizando la mesa:", err);
     });
   }
