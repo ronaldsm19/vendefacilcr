@@ -1255,8 +1255,8 @@ function PosPageInner() {
     const sig = kitchenNow;
     const data = await postKitchen(kitchenRequest(cart, kitchen, [...kitchenChanged]));
     if (!data) return;
+    // El aviso verde "En cocina · orden #N" de la cuenta ya lo dice: no hace falta otro mensaje.
     setKitchen({ number: data.number, version: data.version, sig });
-    setKitchenMsg({ ok: true, text: `Enviado a ${kitchenStationsText(data.stations)} · orden #${data.number}` });
   }
 
   async function sendAfterSaleToKitchen() {
