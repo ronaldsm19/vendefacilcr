@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { Product } from "@/models/Product";
 import type { IComandaItem } from "@/models/Comanda";
 import { ServiceError } from "@/server/errors";
-import { extraQty, extrasKey, lineTotal, normalizeExtras, type LineExtra } from "@/lib/pricing";
+import { extraQty, extrasKey, lineTotal, normalizeExtras, serviceBaseOf, type LineExtra } from "@/lib/pricing";
 import { normalizeOpenPrice, normalizeWeightKg } from "@/lib/soldBy";
 
 export interface SaleItemRecord {
@@ -14,6 +14,18 @@ export interface SaleItemRecord {
   /** Producto por kilo: peso de cada pieza; unitPrice es el precio del kilo. */
   weightKg?: number;
   lineTotal: number;      // (base + extras) × cantidad, calculado acá con src/lib/pricing.ts
+}
+
+/**
+ * Parte del subtotal que paga servicio: se descuentan las líneas de productos marcados "no cobra
+ * servicio". Se mira el catálogo de hoy, no lo que diga la pantalla.
+ */
+export async function serviceBaseFor(tenantId: string, items: SaleItemRecord[]): Promise<number> {
+  const ids = Array.from(new Set(items.map((i) => i.productId).filter((id) => mongoose.isValidObjectId(id))));
+  const exemptDocs = ids.length > 0
+    ? await Product.find({ _id: { $in: ids }, tenantId, noService: true }).select("_id").lean() as Array<{ _id: unknown }>
+    : [];
+  return serviceBaseOf(items, new Set(exemptDocs.map((p) => String(p._id))));
 }
 
 /** Ítem tal como llega del POS: si viene de una comanda, dice de cuál y de qué posición. */

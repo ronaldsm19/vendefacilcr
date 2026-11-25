@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ComandaRow } from "@/components/admin/ComandaCard";
 import { notifyComandasUpdated } from "@/components/admin/PendingComandasContext";
+import { hasPaidItems, pendingView } from "@/lib/comandaEdit";
+import { weighedName } from "@/lib/soldBy";
 
 interface CancelComandaDialogProps {
   comanda: ComandaRow;
@@ -16,6 +18,9 @@ export default function CancelComandaDialog({ comanda, onClose, onDone }: Cancel
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Con algo ya cobrado no se anula la comanda entera: se quita solo lo que falta por cobrar.
+  const partlyPaid = hasPaidItems(comanda.items);
+  const pending = pendingView(comanda.items);
 
   async function handleCancel() {
     setSaving(true);
@@ -28,7 +33,7 @@ export default function CancelComandaDialog({ comanda, onClose, onDone }: Cancel
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "No se pudo anular la comanda");
+        setError(data.error ?? (partlyPaid ? "No se pudo quitar lo pendiente" : "No se pudo anular la comanda"));
         return;
       }
       notifyComandasUpdated();
@@ -41,9 +46,24 @@ export default function CancelComandaDialog({ comanda, onClose, onDone }: Cancel
   return (
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>¿Anular comanda #{comanda.number}?</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{partlyPaid ? `¿Quitar lo pendiente de la comanda #${comanda.number}?` : `¿Anular comanda #${comanda.number}?`}</DialogTitle>
+        </DialogHeader>
         <div className="px-6 pb-6 pt-2 space-y-4">
-          <p className="text-sm text-brand-dark/60">No se imprime nada y no se cobra. Esta acción no se puede deshacer.</p>
+          {partlyPaid ? (
+            <>
+              <p className="text-sm text-brand-dark/60">
+                Lo que ya se cobró queda igual. Se quita lo que falta por cobrar y la comanda se cierra. No se imprime nada.
+              </p>
+              <ul className="text-sm bg-gray-50 rounded-xl px-3 py-2 space-y-0.5">
+                {pending.map((i, idx) => (
+                  <li key={idx} className="text-brand-dark">{i.quantity} × {weighedName(i.productName, i.weightKg)}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-sm text-brand-dark/60">No se imprime nada y no se cobra. Esta acción no se puede deshacer.</p>
+          )}
           <textarea
             placeholder="Razón (opcional)"
             maxLength={200}
@@ -55,7 +75,7 @@ export default function CancelComandaDialog({ comanda, onClose, onDone }: Cancel
           {error && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{error}</p>}
           <div className="flex gap-3">
             <Button variant="destructive" className="flex-1" disabled={saving} onClick={handleCancel}>
-              Anular
+              {partlyPaid ? "Quitar lo pendiente" : "Anular"}
             </Button>
             <Button variant="cancel" className="flex-1" onClick={onClose}>Volver</Button>
           </div>

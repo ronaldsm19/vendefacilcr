@@ -12,12 +12,13 @@ import {
 import { useRouter, usePathname } from "next/navigation";
 import {
   Plus, Minus, Maximize2, Trash2, X, Eye, Settings2, Loader2, CalendarCheck, Users, Clock,
-  ArrowRight, ArrowDown, Map as MapIcon, List as ListIcon, UtensilsCrossed,
+  ArrowRight, ArrowDown, ArrowRightLeft, Map as MapIcon, List as ListIcon, UtensilsCrossed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import PendingComandasBanner from "@/components/admin/PendingComandasBanner";
+import MoveTableDialog from "@/components/admin/MoveTableDialog";
 import PrintAlertBanner, { type PrintAlert } from "@/components/admin/PrintAlertBanner";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -495,6 +496,8 @@ export default function SalonPage() {
   const [actionTableId, setActionTableId] = useState<string | null>(null);
   const [showReserve, setShowReserve]   = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
+  // Cambio de mesa: de qué mesa se están pasando las comandas (abre el diálogo para elegir la nueva).
+  const [moveFrom, setMoveFrom] = useState<{ id: string; label: string } | null>(null);
   const [actionError, setActionError]   = useState<string | null>(null);
   const [reserveForm, setReserveForm]   = useState({
     customerName: "", partySize: 2, dateTime: "", phone: "", notes: "",
@@ -1457,6 +1460,15 @@ export default function SalonPage() {
         </DialogContent>
       </Dialog>
 
+      {moveFrom && (
+        <MoveTableDialog
+          fromTableId={moveFrom.id}
+          fromLabel={moveFrom.label}
+          onClose={() => setMoveFrom(null)}
+          onDone={() => { setMoveFrom(null); refreshLive(); }}
+        />
+      )}
+
       {/* Table Action Modal */}
       <Dialog open={!!actionTable} onOpenChange={(v) => { if (!v) { setActionTableId(null); setShowReserve(false); setActionError(null); } }}>
         <DialogContent className={cn(
@@ -1517,6 +1529,12 @@ export default function SalonPage() {
                     {!!actionTable.openCount && (
                       <Button variant="secondary" className="w-full" onClick={() => router.push(`/${slug}/admin/salon/${actionTable._id}/comanda`)}>
                         Ver comandas ({actionTable.openCount})
+                      </Button>
+                    )}
+                    {!!actionTable.openCount && (
+                      <Button variant="secondary" className="w-full"
+                        onClick={() => { setMoveFrom({ id: actionTable._id, label: actionTable.label }); setActionTableId(null); }}>
+                        <ArrowRightLeft className="w-4 h-4 mr-1" /> Cambiar de mesa
                       </Button>
                     )}
                   </div>

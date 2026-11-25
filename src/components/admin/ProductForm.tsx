@@ -45,6 +45,8 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
     available:    initial?.available    ?? true,
     featured:     initial?.featured     ?? false,
     delivery:     initial?.delivery     ?? false,
+    // En pantalla va en positivo ("cobra servicio"); en el producto se guarda al revés (noService).
+    chargesService: !(initial?.noService ?? false),
     deliveryNote: initial?.deliveryNote ?? "",
     barcode:      initial?.barcode      ?? "",
   });
@@ -183,6 +185,7 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
       extras: parsedExtras,
       images: extraImages,
       delivery: form.delivery,
+      noService: !form.chargesService,
       deliveryNote: form.deliveryNote,
       menuSection: form.menuSection as "panaderia" | "bebidas" | "",
       offers: offers
@@ -398,6 +401,22 @@ export default function ProductForm({ initial, onSave, onCancel, saving, showSta
 
       {/* Disponible */}
       {disponibleCheck}
+
+      <div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox" id="chargesService"
+            checked={form.chargesService}
+            onChange={(e) => setForm({ ...form, chargesService: e.target.checked })}
+            className="rounded"
+          />
+          <label htmlFor="chargesService" className="text-sm text-brand-dark">Cobra 10% de servicio</label>
+        </div>
+        <p className="text-xs text-brand-dark/50 mt-1 pl-6">
+          Solo aplica si tenés el servicio activo en Configuración → Caja. Quitale la marca a lo que se vende
+          sin atención en mesa, como los productos de la tienda.
+        </p>
+      </div>
 
       <div className="flex items-center gap-2">
         <input

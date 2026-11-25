@@ -8,6 +8,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import ServiceByCategory from "@/components/admin/caja/ServiceByCategory";
 import TicketPreview from "@/components/admin/TicketPreview";
 import PrintQueueSection from "@/components/admin/PrintQueueSection";
 import SectionsManager from "@/components/admin/SectionsManager";
@@ -2394,6 +2395,8 @@ export default function ConfiguracionPage() {
             </div>
           </section>
         </form>
+
+        {posCharges.serviceEnabled && !loadingPosCharges && <ServiceByCategory rate={posCharges.serviceRate} />}
 
         <form onSubmit={handleSaveSaleDeletePassword}>
           <section className="bg-white rounded-2xl border border-brand-muted p-4 sm:p-6 space-y-6">

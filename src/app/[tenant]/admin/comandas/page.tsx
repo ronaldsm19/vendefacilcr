@@ -9,11 +9,12 @@ import PeriodFilter, { getRange, type PeriodMode } from "@/components/admin/Peri
 import Pagination from "@/components/admin/Pagination";
 import ComandaCard, { type ComandaRow } from "@/components/admin/ComandaCard";
 import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
+import MoveTableDialog from "@/components/admin/MoveTableDialog";
 import { useAdminSession } from "@/components/admin/SessionContext";
 import { usePolling } from "@/hooks/usePolling";
 import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaConfig";
 import { comandaMinutes, badgeLevel, BADGE_COLORS, type ComandaThresholds } from "@/lib/comandaTime";
-import { AlertTriangle, CheckCheck, Ban, Pencil, Eye, Printer, Check, MonitorCheck } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, CheckCheck, Ban, Pencil, Eye, Printer, Check, MonitorCheck } from "lucide-react";
 
 const STATUS_PILL: Record<ComandaRow["status"], string> = {
   enviada: "bg-blue-50 text-blue-700",
@@ -87,6 +88,7 @@ export default function AdminComandasPage() {
 
   const [selected, setSelected] = useState<ComandaRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ComandaRow | null>(null);
+  const [moveTarget, setMoveTarget] = useState<ComandaRow | null>(null);
   const [reprintingId, setReprintingId] = useState<string | null>(null);
   const [reprintMsg, setReprintMsg] = useState<{ type: "success" | "warning" | "error"; text: string } | null>(null);
 
@@ -155,6 +157,7 @@ export default function AdminComandasPage() {
 
   function handleCancelDone() {
     setCancelTarget(null);
+    setSelected(null);
     load();
   }
 
@@ -313,11 +316,10 @@ export default function AdminComandasPage() {
                         )}
                         {tab === "pendientes" ? (
                           <>
-                            {!hasPaidItems(c) && (
-                              <Button size="icon-sm" variant="destructive" onClick={() => setCancelTarget(c)} title="Anular" aria-label="Anular">
-                                <Ban className="w-4 h-4" />
-                              </Button>
-                            )}
+                            <Button size="icon-sm" variant="destructive" onClick={() => setCancelTarget(c)}
+                              title={hasPaidItems(c) ? "Quitar lo pendiente" : "Anular"} aria-label={hasPaidItems(c) ? "Quitar lo pendiente" : "Anular"}>
+                              <Ban className="w-4 h-4" />
+                            </Button>
                             <Button asChild size="sm" variant="outline">
                               <Link href={`/${tenantSlug}/admin/pos?tableId=${c.tableId}`}>
                                 <MonitorCheck className="w-3.5 h-3.5" /> Cobrar en POS
@@ -335,8 +337,9 @@ export default function AdminComandasPage() {
                                 <CheckCheck className="w-4 h-4" />
                               </button>
                             )}
-                            {isOpenStatus(c) && !hasPaidItems(c) && (
-                              <Button size="icon-sm" variant="destructive" onClick={() => setCancelTarget(c)} title="Anular" aria-label="Anular">
+                            {isOpenStatus(c) && (
+                              <Button size="icon-sm" variant="destructive" onClick={() => setCancelTarget(c)}
+                                title={hasPaidItems(c) ? "Quitar lo pendiente" : "Anular"} aria-label={hasPaidItems(c) ? "Quitar lo pendiente" : "Anular"}>
                                 <Ban className="w-4 h-4" />
                               </Button>
                             )}
@@ -366,7 +369,7 @@ export default function AdminComandasPage() {
                   compact
                   onOpen={() => setSelected(c)}
                   onServe={tab === "historial" && c.status === "enviada" ? () => handleServe(c._id) : undefined}
-                  onCancel={isOpenStatus(c) && !hasPaidItems(c) ? () => setCancelTarget(c) : undefined}
+                  onCancel={isOpenStatus(c) ? () => setCancelTarget(c) : undefined}
                 />
                 {tab === "pendientes" && (
                   <Button asChild size="sm" variant="secondary" className="w-full">
@@ -416,13 +419,16 @@ export default function AdminComandasPage() {
                     <CheckCheck className="w-3.5 h-3.5" /> Servida
                   </Button>
                 )}
-                {isOpenStatus(selected) && !hasPaidItems(selected) && (
+                {isOpenStatus(selected) && (
                   <>
                     <Button size="sm" variant="secondary" onClick={() => handleEdit(selected)}>
                       <Pencil className="w-3.5 h-3.5" /> Editar
                     </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setMoveTarget(selected)}>
+                      <ArrowRightLeft className="w-3.5 h-3.5" /> Cambiar de mesa
+                    </Button>
                     <Button size="sm" variant="destructive" onClick={() => setCancelTarget(selected)}>
-                      <Ban className="w-3.5 h-3.5" /> Anular
+                      <Ban className="w-3.5 h-3.5" /> {hasPaidItems(selected) ? "Quitar lo pendiente" : "Anular"}
                     </Button>
                   </>
                 )}
@@ -439,6 +445,17 @@ export default function AdminComandasPage() {
 
       {cancelTarget && (
         <CancelComandaDialog comanda={cancelTarget} onClose={() => setCancelTarget(null)} onDone={handleCancelDone} />
+      )}
+
+      {moveTarget && (
+        <MoveTableDialog
+          fromTableId={String(moveTarget.tableId)}
+          fromLabel={moveTarget.tableLabel}
+          comandaId={moveTarget._id}
+          comandaNumber={moveTarget.number}
+          onClose={() => setMoveTarget(null)}
+          onDone={() => { setMoveTarget(null); setSelected(null); load(); }}
+        />
       )}
     </div>
   );

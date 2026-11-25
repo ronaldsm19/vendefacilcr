@@ -5,8 +5,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
   Loader2, Plus, Minus, X, Check, ShoppingCart, Printer, UserCircle,
-  Utensils, ChevronLeft, RefreshCw, AlertCircle, FileText, Search, ScanBarcode,
+  Utensils, ChevronLeft, RefreshCw, AlertCircle, FileText, Search, ScanBarcode, ChefHat,
 } from "lucide-react";
+import { effectiveStation, type ProductStation } from "@/lib/station";
 import { sameBarcode } from "@/lib/barcode";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
 import { usePolling } from "@/hooks/usePolling";
@@ -34,7 +35,7 @@ import {
   categorySectionMap, readSections, sectionOfCategory, visibleSections, type BusinessSection,
 } from "@/lib/sections";
 import {
-  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty, appliesService,
+  computeSaleTotals, readPosCharges, subtotalOf, serviceBaseOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty, appliesService,
   DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra, type AppliedCharges,
 } from "@/lib/pricing";
 import {
@@ -56,6 +57,10 @@ interface ProductRow {
   extras?: LineExtra[];
   barcode?: string;
   soldBy?: "unidad" | "kg" | "libre";
+  /** true = a este producto no se le cobra el servicio (10 %). */
+  noService?: boolean;
+  station?: string;
+  menuSection?: string;
 }
 
 interface CartLine {
@@ -218,6 +223,18 @@ const MAX_TABS = 6;
 let tabSeqCounter = 0;
 function newTabId() { return `t${Date.now().toString(36)}${(tabSeqCounter++).toString(36)}`; }
 
+type KitchenStation = "cocina" | "bebidas";
+/**
+ * Lo último que esta cuenta mandó a cocina y a barra (pedidos sin mesa: mostrador, para llevar).
+ * `sig` es la firma de lo enviado por estación: si la cuenta cambia, la firma deja de coincidir y
+ * se ofrece mandar los cambios con el mismo número de orden.
+ */
+interface KitchenState {
+  number: number;
+  version: number;
+  sig: Record<KitchenStation, string>;
+}
+
 /** Todo el estado de UNA venta en proceso, para poder guardarla/restaurarla al cambiar de pestaña. */
 interface SaleDraft {
   cart: CartLine[];
@@ -236,6 +253,7 @@ interface SaleDraft {
   comandaSelections: ComandaSelection[];
   isPartialCharge: boolean;
   applied: Required<AppliedCharges>;
+  kitchen?: KitchenState | null;
 }
 
 function emptyDraft(): SaleDraft {
@@ -243,7 +261,7 @@ function emptyDraft(): SaleDraft {
     cart: [], tipAmount: 0, customerName: "", tableNumber: "", observaciones: "",
     paymentMethod: "efectivo", mixedAmounts: { efectivo: 0, sinpe: 0, tarjeta: 0 },
     orderType: "LOCAL", pickupTime: "", deliveryAddress: "", deliveryPhone: "", deliveryFee: 0,
-    tableId: "", comandaSelections: [], isPartialCharge: false, applied: { ...APPLY_ALL },
+    tableId: "", comandaSelections: [], isPartialCharge: false, applied: { ...APPLY_ALL }, kitchen: null,
   };
 }
 
@@ -270,6 +288,7 @@ function ChargeLines({
   applied,
   onAppliedChange,
   totals,
+  serviceBase,
   tipAmount,
   onTipChange,
   tipInputClassName,
@@ -279,6 +298,8 @@ function ChargeLines({
   applied: Required<AppliedCharges>;
   onAppliedChange: (next: Required<AppliedCharges>) => void;
   totals: SaleTotals;
+  /** Parte del subtotal que paga servicio (menor que el subtotal si hay productos que no lo llevan). */
+  serviceBase: number;
   tipAmount: number;
   onTipChange: (n: number) => void;
   tipInputClassName: string;
@@ -299,7 +320,14 @@ function ChargeLines({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ChargeSwitch checked={applied.service} onChange={(v) => onAppliedChange({ ...applied, service: v })} label={`Cobrar servicio ${charges.serviceRate}% en esta venta`} />
-            <span className={row(applied.service)}>Servicio ({charges.serviceRate}%)</span>
+            <span className={row(applied.service)}>
+              Servicio ({charges.serviceRate}%)
+              {applied.service && serviceBase < totals.subtotal && (
+                <span className="block text-[11px] text-brand-dark/45 leading-tight">
+                  {serviceBase > 0 ? `solo sobre ${fmt(serviceBase)}` : "estos productos no lo llevan"}
+                </span>
+              )}
+            </span>
           </div>
           <span className={`text-sm font-semibold ${applied.service ? "" : "text-gray-300"}`}>{fmt(totals.serviceAmount)}</span>
         </div>
@@ -383,6 +411,9 @@ function PosPageInner() {
 
   // ── Data state ──────────────────────────────────────────────────
   const [products, setProducts]       = useState<ProductRow[]>([]);
+  // Productos que no pagan servicio (los de la tienda, por ejemplo). Incluye los no disponibles:
+  // una línea de comanda puede ser de un producto que se agotó después.
+  const [noServiceIds, setNoServiceIds] = useState<Set<string>>(new Set());
   const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
   const [sections, setSections]       = useState<BusinessSection[]>([]);
   const [tableGroups, setTableGroups] = useState<TableGroup[]>([]);
@@ -447,6 +478,14 @@ function PosPageInner() {
   const [panelAdded, setPanelAdded] = useState<string | null>(null);
   const [lastTableNote, setLastTableNote] = useState<string | null>(null);
   const [isPartialCharge, setIsPartialCharge] = useState(false);
+  // ── Pedido a cocina sin mesa (mostrador, para llevar, a domicilio) ──
+  const [kitchen, setKitchen] = useState<KitchenState | null>(null);
+  const [kitchenSending, setKitchenSending] = useState(false);
+  const [kitchenMsg, setKitchenMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Venta recién cobrada que no se había mandado a cocina: se ofrece mandarla desde el aviso de venta.
+  const [afterSaleKitchen, setAfterSaleKitchen] = useState<Record<string, unknown> | null>(null);
+  // Estación de cada producto (incluye los no disponibles), para saber qué va a cocina o a barra.
+  const [stationById, setStationById] = useState<Map<string, ProductStation>>(new Map());
   const [nextTableToCharge, setNextTableToCharge] = useState<OpenTable | null>(null);
 
   // ── Sale state ───────────────────────────────────────────────────
@@ -491,7 +530,7 @@ function PosPageInner() {
     return {
       cart, tipAmount, customerName, tableNumber, observaciones, paymentMethod,
       mixedAmounts, orderType, pickupTime, deliveryAddress, deliveryPhone, deliveryFee,
-      tableId, comandaSelections, isPartialCharge, applied,
+      tableId, comandaSelections, isPartialCharge, applied, kitchen,
     };
   }
 
@@ -512,6 +551,7 @@ function PosPageInner() {
     setTableId(d.tableId ?? "");
     setComandaSelections(d.comandaSelections ?? []);
     setIsPartialCharge(d.isPartialCharge ?? false);
+    setKitchen(d.kitchen ?? null);
     setApplied(d.applied ? { iva: d.applied.iva !== false, service: d.applied.service !== false, tip: d.applied.tip !== false } : { ...APPLY_ALL });
   }
 
@@ -524,6 +564,7 @@ function PosPageInner() {
     setShowCartPanel(false);
     setInvoiceCustomer(null);
     setInvoiceSentTo(null);
+    setKitchenMsg(null);
   }
 
   /** Cambia a otra pestaña: aparca la actual y restaura la destino. */
@@ -584,12 +625,12 @@ function PosPageInner() {
   }
 
   /** Etiqueta/metadata de una pestaña para la barra (de su draft activo o aparcado). */
-  function tabInfo(id: string): { name: string; isMesa: boolean; count: number } {
+  function tabInfo(id: string): { name: string; isMesa: boolean; count: number; customer: string; inKitchen: boolean } {
     const d = id === activeTabId ? snapshotDraft() : (parkedDrafts.current[id] ?? emptyDraft());
     const isMesa = Boolean(d.tableId) || Boolean(d.tableNumber.trim());
     const name = d.tableNumber.trim() || "Mostrador";
     const count = d.cart.reduce((s, l) => s + l.quantity, 0);
-    return { name, isMesa, count };
+    return { name, isMesa, count, customer: d.customerName.trim(), inKitchen: !!d.kitchen };
   }
 
   // ── Candado de cobro entre terminales (Fase 2) ──────────────────────────────
@@ -643,7 +684,7 @@ function PosPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, paymentMethod, tipAmount, orderType, draftLoaded, tableId, tableNumber, customerName,
       observaciones, mixedAmounts, pickupTime, deliveryAddress, deliveryPhone, deliveryFee,
-      isPartialCharge, comandaSelections, applied, tabIds, activeTabId]);
+      isPartialCharge, comandaSelections, applied, kitchen, tabIds, activeTabId]);
 
   async function loadOpenTables(focusTableId?: string, silent = false): Promise<OpenTable[]> {
     if (!silent) setTablesLoading(true);
@@ -683,6 +724,8 @@ function PosPageInner() {
         fetch("/api/admin/salon/tables").then((r) => r.json()).catch(() => ({})),
       ]);
       setProducts((productsRes.products ?? []).filter((p: ProductRow) => p.available));
+      setNoServiceIds(new Set((productsRes.products ?? []).filter((p: ProductRow) => p.noService).map((p: ProductRow) => p._id)));
+      setStationById(new Map((productsRes.products ?? []).map((p: ProductRow) => [p._id, effectiveStation(p)])));
       setCategoryOrder(categoriesRes.categories ?? []);
       setSections(readSections(categoriesRes.sections));
       try {
@@ -826,7 +869,8 @@ function PosPageInner() {
     );
 
   // Misma fórmula que usa el servidor al guardar la venta (src/lib/pricing.ts).
-  const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), charges, orderType, tipAmount, deliveryFee, applied });
+  const serviceBase  = serviceBaseOf(cart, noServiceIds);
+  const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), serviceBase, charges, orderType, tipAmount, deliveryFee, applied });
   const { subtotal, total } = totals;
   const mixedSum     = mixedAmounts.efectivo + mixedAmounts.sinpe + mixedAmounts.tarjeta;
   const mixedRemainder = total - mixedSum;
@@ -1015,6 +1059,8 @@ function PosPageInner() {
     if (!res.ok) return;
     const all: ProductRow[] = (await res.json()).products ?? [];
     setProducts(all.filter((p) => p.available));
+    setNoServiceIds(new Set(all.filter((p) => p.noService).map((p) => p._id)));
+    setStationById(new Map(all.map((p) => [p._id, effectiveStation(p)])));
     const byId = new Map(all.map((p) => [p._id, p]));
     const merged = new Map<string, CartLine>();
     let dropped = 0;
@@ -1145,6 +1191,125 @@ function PosPageInner() {
     setPanelAdded(`Se agregó a la comanda #${c.number}: ${summary}. No se imprimió en cocina ni en barra.`);
   }
 
+  // ── Pedido a cocina sin mesa ──────────────────────────────────────────────────
+  // En una cuenta de mostrador, para llevar o a domicilio el cliente pide y paga después: con
+  // "Enviar a cocina" salen los tiquetes de cocina y barra y la cuenta queda abierta para cobrarla.
+  const kitchenStationOf = (l: CartLine): KitchenStation | null => {
+    if (l.comandaId) return null;
+    const st = stationById.get(l.productId);
+    return st === "cocina" || st === "bebidas" ? st : null;
+  };
+  const kitchenSigOf = (lines: CartLine[], station: KitchenStation) =>
+    lines.filter((l) => kitchenStationOf(l) === station).map((l) => `${lineKey(l)}:${l.quantity}`).sort().join("|");
+  const kitchenNow: Record<KitchenStation, string> = { cocina: kitchenSigOf(cart, "cocina"), bebidas: kitchenSigOf(cart, "bebidas") };
+  // Estaciones con algo en la cuenta que todavía no salió (o que cambió desde el último envío).
+  const kitchenChanged = (["cocina", "bebidas"] as const).filter((st) => kitchenNow[st] !== "" && kitchenNow[st] !== (kitchen?.sig[st] ?? ""));
+  const isCounterAccount = !tableId && comandaSelections.length === 0;
+  const canSendKitchen = isPremium && isCounterAccount && kitchenChanged.length > 0;
+  const kitchenStationsText = (list: string[]) =>
+    list.map((s) => (s === "bebidas" ? "barra" : "cocina")).join(" y ") || "cocina";
+
+  function kitchenRequest(lines: CartLine[], k: KitchenState | null, stations: KitchenStation[]) {
+    return {
+      items: lines.filter((l) => kitchenStationOf(l)).map((l) => ({
+        productId: l.productId,
+        quantity: l.quantity,
+        extras: (l.extras ?? []).map((e) => ({ name: e.name, qty: extraQty(e) })),
+        ...(l.weightKg ? { weightKg: l.weightKg } : {}),
+        ...(l.openPrice ? { unitPrice: l.unitPrice } : {}),
+      })),
+      orderType,
+      customerName,
+      pickupTime: orderType === "PICKUP" ? pickupTime : "",
+      notes: observaciones,
+      ...(k ? { number: k.number, version: k.version + 1 } : {}),
+      stations,
+    };
+  }
+
+  async function postKitchen(payload: Record<string, unknown>): Promise<{ number: number; version: number; stations: string[] } | null> {
+    setKitchenSending(true);
+    setKitchenMsg(null);
+    try {
+      const res = await fetch("/api/admin/pos/kitchen-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setKitchenMsg({ ok: false, text: data.error ?? "No se pudo mandar a cocina" });
+        return null;
+      }
+      return data;
+    } catch {
+      setKitchenMsg({ ok: false, text: "No se pudo mandar a cocina. Revisá tu conexión." });
+      return null;
+    } finally {
+      setKitchenSending(false);
+    }
+  }
+
+  async function sendToKitchen() {
+    if (!canSendKitchen || kitchenSending) return;
+    const sig = kitchenNow;
+    const data = await postKitchen(kitchenRequest(cart, kitchen, [...kitchenChanged]));
+    if (!data) return;
+    // El aviso verde "En cocina · orden #N" de la cuenta ya lo dice: no hace falta otro mensaje.
+    setKitchen({ number: data.number, version: data.version, sig });
+  }
+
+  async function sendAfterSaleToKitchen() {
+    if (!afterSaleKitchen || kitchenSending) return;
+    const data = await postKitchen(afterSaleKitchen);
+    if (!data) return;
+    setAfterSaleKitchen(null);
+    setKitchenMsg({ ok: true, text: `Enviado a ${kitchenStationsText(data.stations)} · orden #${data.number}` });
+  }
+
+  /** Botón y estado de "Enviar a cocina" de la cuenta, encima de "Registrar venta". */
+  function renderKitchenBlock() {
+    if (!isPremium) return null;
+    return (
+      <>
+        {isCounterAccount && canSendKitchen && (
+          <Button type="button" variant="secondary" className="w-full gap-2" disabled={kitchenSending} onClick={sendToKitchen}>
+            {kitchenSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChefHat className="w-4 h-4" />}
+            {kitchen ? "Enviar cambios a cocina" : "Enviar a cocina"}
+          </Button>
+        )}
+        {isCounterAccount && kitchen && !canSendKitchen && cart.length > 0 && (
+          <p className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs text-emerald-700">
+            <ChefHat className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>En cocina · orden #{kitchen.number}. La cuenta queda abierta: cobrala cuando el cliente pague.</span>
+          </p>
+        )}
+        {kitchenMsg && (
+          <p role="status" className={`flex items-start gap-2 rounded-xl px-3 py-2 text-xs border ${
+            kitchenMsg.ok ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-600"
+          }`}>
+            {kitchenMsg.ok ? <Check className="w-3.5 h-3.5 shrink-0 mt-0.5" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+            <span>{kitchenMsg.text}</span>
+          </p>
+        )}
+      </>
+    );
+  }
+
+  /** Después de cobrar una venta sin mesa que no se había mandado a cocina. */
+  function renderAfterSaleKitchen() {
+    if (!afterSaleKitchen) return null;
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 space-y-2">
+        <p className="text-xs text-amber-800">Esta venta no se mandó a cocina. Si hay que prepararla, mandala ahora.</p>
+        <Button type="button" variant="secondary" className="w-full gap-2" disabled={kitchenSending} onClick={sendAfterSaleToKitchen}>
+          {kitchenSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChefHat className="w-4 h-4" />}
+          Enviar a cocina
+        </Button>
+      </div>
+    );
+  }
+
   function openPaymentModal() {
     if (cart.length === 0) return;
     setAmountPaid(0);
@@ -1240,6 +1405,12 @@ function PosPageInner() {
       const prevTableNumber = tableNumber;
       const cameFromComandas = comandaSelections.length > 0;
       const chargedTableId = tableId;
+      // Venta sin mesa con algo para cocina o barra que no se mandó: se ofrece mandarla ahora.
+      const unsentKitchen = canSendKitchen ? kitchenRequest(cart, kitchen, [...kitchenChanged]) : null;
+      setAfterSaleKitchen(unsentKitchen);
+      if (unsentKitchen) setTimeout(() => setAfterSaleKitchen(null), 120000);
+      setKitchen(null);
+      setKitchenMsg(null);
       const saleNumber = String(s._id).slice(-6).toUpperCase();
       setLastSaleNum(saleNumber);
       const ticketData: SaleTicketData = {
@@ -1391,7 +1562,8 @@ function PosPageInner() {
             const info = tabInfo(id);
             const active = id === activeTabId;
             // Las cuentas de mesa muestran su mesa; las de mostrador se numeran para distinguirlas.
-            const label = info.isMesa ? info.name : (i === 0 ? "Mostrador" : `Cuenta ${i + 1}`);
+            // Una cuenta sin mesa con el nombre del cliente (un pedido para llevar que espera el pago) muestra ese nombre.
+            const label = info.isMesa ? info.name : info.customer || (i === 0 ? "Mostrador" : `Cuenta ${i + 1}`);
             return (
               <div
                 key={id}
@@ -1407,6 +1579,7 @@ function PosPageInner() {
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${info.isMesa ? "bg-brand-pink" : "bg-brand-orange"}`} />
                 <span className="max-w-[130px] truncate">{label}</span>
+                {info.inKitchen && !info.isMesa && <ChefHat className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-label="En cocina" />}
                 {info.count > 0 && (
                   <span className={`text-xs font-semibold ${active ? "text-brand-pink" : "text-brand-dark/40"}`}>{info.count}</span>
                 )}
@@ -1749,6 +1922,7 @@ function PosPageInner() {
               applied={applied}
               onAppliedChange={setApplied}
               totals={totals}
+              serviceBase={serviceBase}
               tipAmount={tipAmount}
               onTipChange={setTipAmount}
               tipInputClassName="w-20 text-right border border-gray-200 rounded-lg px-2 py-0.5 text-sm font-semibold focus:outline-none focus:border-brand-pink"
@@ -1768,6 +1942,8 @@ function PosPageInner() {
 
             {/* Error de venta */}
             {renderSaleError()}
+
+            {renderKitchenBlock()}
 
             {/* Register button */}
             <Button
@@ -1798,6 +1974,7 @@ function PosPageInner() {
                 {autoPrintError}
               </div>
             )}
+            {renderAfterSaleKitchen()}
             {nextTableToCharge && (
               <Button type="button" variant="secondary" className="w-full" onClick={chargeNextPerson}>
                 Cobrar a la siguiente persona
@@ -2045,6 +2222,7 @@ function PosPageInner() {
               applied={applied}
               onAppliedChange={setApplied}
               totals={totals}
+              serviceBase={serviceBase}
               tipAmount={tipAmount}
               onTipChange={setTipAmount}
               tipInputClassName="w-24 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none focus:border-brand-pink"
@@ -2059,6 +2237,7 @@ function PosPageInner() {
               <PaymentMethodPicker value={paymentMethod} onChange={choosePaymentMethod} />
             </div>
             {renderSaleError()}
+            {renderKitchenBlock()}
             <Button className="w-full py-3 text-base" disabled={cart.length === 0 || saving} onClick={openPaymentModal}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {saving ? "Registrando..." : "Registrar venta"}
@@ -2081,6 +2260,7 @@ function PosPageInner() {
                 {autoPrintError}
               </div>
             )}
+            {renderAfterSaleKitchen()}
             {nextTableToCharge && (
               <Button type="button" variant="secondary" className="w-full" onClick={chargeNextPerson}>
                 Cobrar a la siguiente persona

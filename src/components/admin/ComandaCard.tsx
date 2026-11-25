@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { weighedName } from "@/lib/soldBy";
-import { CheckCheck, Ban, Pencil, Eye } from "lucide-react";
+import { CheckCheck, Ban, Pencil, Eye, ArrowRightLeft } from "lucide-react";
 import type { IComanda } from "@/models/Comanda";
 import { comandaMinutes, badgeLevel, BADGE_COLORS, type ComandaThresholds } from "@/lib/comandaTime";
 import { extraLabel, extraQty } from "@/lib/pricing";
@@ -34,10 +34,12 @@ interface ComandaCardProps {
   onCancel?: () => void;
   onEdit?: () => void;
   onOpen?: () => void;
+  /** Cambiar la comanda de mesa (la gente se pasó a otra). */
+  onMove?: () => void;
   compact?: boolean;
 }
 
-export default function ComandaCard({ comanda, thresholds, now, onServe, onCancel, onEdit, onOpen, compact }: ComandaCardProps) {
+export default function ComandaCard({ comanda, thresholds, now, onServe, onCancel, onEdit, onOpen, onMove, compact }: ComandaCardProps) {
   const isOpen = comanda.status === "enviada" || comanda.status === "servida";
   const hasPaidItems = comanda.items.some((i) => i.paidQty > 0);
   const minutes = comandaMinutes(comanda, now);
@@ -75,7 +77,14 @@ export default function ComandaCard({ comanda, thresholds, now, onServe, onCance
         <div className="space-y-1 pt-1">
           {comanda.items.map((item, i) => (
             <div key={i} className="text-sm">
-              <span className="text-brand-dark">{item.quantity} × {weighedName(item.productName, item.weightKg)}</span>
+              <span className={item.paidQty >= item.quantity ? "text-brand-dark/40" : "text-brand-dark"}>
+                {item.quantity} × {weighedName(item.productName, item.weightKg)}
+              </span>
+              {item.paidQty > 0 && (
+                <span className="ml-2 text-[11px] font-medium text-emerald-700 bg-emerald-50 rounded-full px-1.5 py-0.5">
+                  {item.paidQty >= item.quantity ? "Pagado" : `Pagado ${item.paidQty} de ${item.quantity}`}
+                </span>
+              )}
               {item.extras?.map((e) => (
                 <p key={e.name} className="text-xs text-brand-dark/60 pl-4">
                   + {extraLabel(e)} <span className="text-brand-dark/40">₡{(e.price * extraQty(e)).toLocaleString("es-CR")}</span>
@@ -95,15 +104,15 @@ export default function ComandaCard({ comanda, thresholds, now, onServe, onCance
         <p className="text-xs text-red-500">Razón: {comanda.cancelReason}</p>
       )}
 
-      {(onServe || onCancel || onEdit || onOpen) && (
+      {(onServe || onCancel || onEdit || onOpen || onMove) && (
         <div className="flex flex-wrap gap-2 pt-2">
           {onOpen && (
             <Button size="sm" variant="secondary" onClick={onOpen}>
               <Eye className="w-3.5 h-3.5" /> Ver
             </Button>
           )}
-          {onEdit && isOpen && !hasPaidItems && (
-            <Button size="sm" variant="secondary" onClick={onEdit} title={hasPaidItems ? "Tiene ítems cobrados" : undefined}>
+          {onEdit && isOpen && (
+            <Button size="sm" variant="secondary" onClick={onEdit} title={hasPaidItems ? "Lo ya cobrado no cambia: se edita lo que falta por cobrar" : undefined}>
               <Pencil className="w-3.5 h-3.5" /> Editar
             </Button>
           )}
@@ -112,9 +121,14 @@ export default function ComandaCard({ comanda, thresholds, now, onServe, onCance
               <CheckCheck className="w-3.5 h-3.5" /> Servida
             </Button>
           )}
-          {onCancel && isOpen && !hasPaidItems && (
+          {onMove && isOpen && (
+            <Button size="sm" variant="secondary" onClick={onMove}>
+              <ArrowRightLeft className="w-3.5 h-3.5" /> Cambiar de mesa
+            </Button>
+          )}
+          {onCancel && isOpen && (
             <Button size="sm" variant="destructive" onClick={onCancel}>
-              <Ban className="w-3.5 h-3.5" /> Anular
+              <Ban className="w-3.5 h-3.5" /> {hasPaidItems ? "Quitar lo pendiente" : "Anular"}
             </Button>
           )}
         </div>

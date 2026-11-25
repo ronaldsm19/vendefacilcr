@@ -7,7 +7,7 @@ import { getSession, requireFeature } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
 import { dayRangeCR } from "@/lib/crDate";
 import { splitPayments } from "@/lib/payments";
-import { checkCardReconciliation } from "@/lib/cardReconciliation";
+import { checkCardReconciliation, checkSinpeReconciliation } from "@/lib/cardReconciliation";
 import { sectionsSummaryFromSales } from "@/server/services/sections";
 
 export async function GET(request: NextRequest) {
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   const { closeDate, salesTotal, paymentBreakdown,
           expensesTotal, profit, productsSummary, arqueo,
           openingAmount, withdrawals, withdrawalsTotal, cashLeft, salesList, notes,
-          cardReconciliation } = body;
+          cardReconciliation, sinpeReconciliation } = body;
 
   // Cuadre del datáfono. Lo esperado se recalcula de las ventas del día: si saliera del cuerpo de
   // la petición, mandar tarjeta en 0 sería suficiente para saltarse el control. Solo se exige
@@ -50,7 +50,8 @@ export async function POST(request: NextRequest) {
     tenantId: session.tenantId,
     saleDate: { $gte: from, $lt: to },
   }).select("total paymentMethod mixedPayment items.productId items.lineTotal items.quantity").lean();
-  const cardExpected = splitPayments(todaySales).tarjeta;
+  const split = splitPayments(todaySales);
+  const cardExpected = split.tarjeta;
 
   let cardCheck: ReturnType<typeof checkCardReconciliation> | null = null;
   if (cardExpected > 0) {
@@ -61,6 +62,15 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+  }
+
+  // Cuadre de SINPE contra el banco: opcional. Si no viene el total del banco, se cierra igual.
+  const sinpeCheck = checkSinpeReconciliation(split.sinpe, sinpeReconciliation, session.name);
+  if (!sinpeCheck.ok) {
+    return NextResponse.json(
+      { error: sinpeCheck.error, code: sinpeCheck.code, sinpeExpected: split.sinpe },
+      { status: 400 }
+    );
   }
 
   // La caja inicial sale de la caja abierta, no de la pantalla: si alguien la corrigió desde otro
@@ -96,6 +106,7 @@ export async function POST(request: NextRequest) {
     sectionsSummary:  sectionsSummary  ?? [],
     ...(arqueo ? { arqueo } : {}),
     ...(cardCheck?.ok ? { cardReconciliation: cardCheck.value } : {}),
+    ...(sinpeCheck.value ? { sinpeReconciliation: sinpeCheck.value } : {}),
     openingAmount:    open ? open.openingAmount : (openingAmount ?? 0),
     openingCorrections: open?.openingCorrections ?? [],
     withdrawals:      withdrawals      ?? [],

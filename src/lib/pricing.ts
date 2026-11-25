@@ -74,6 +74,14 @@ export function subtotalOf(lines: PricedLine[]): number {
 }
 
 /**
+ * Subtotal de las líneas que pagan servicio. `exempt` trae los ids de los productos marcados
+ * "no cobra servicio" (Producto → Cobra 10 % de servicio). Una línea sin producto conocido lo paga.
+ */
+export function serviceBaseOf(lines: (PricedLine & { productId?: string })[], exempt: ReadonlySet<string>): number {
+  return lines.reduce((sum, l) => (l.productId && exempt.has(l.productId) ? sum : sum + lineTotal(l)), 0);
+}
+
+/**
  * Total de una línea de la tienda o de un pedido manual, donde el producto puede tener ofertas por
  * volumen ("4 por ₡5400"). La oferta reemplaza solo el precio BASE de esa cantidad exacta; los
  * extras se cobran siempre por unidad encima.
@@ -173,6 +181,11 @@ export interface AppliedCharges {
 
 export interface SaleTotalsInput {
   subtotal: number;
+  /**
+   * Parte del subtotal que paga servicio: las líneas de productos que lo cobran (los de la tienda,
+   * por ejemplo, pueden no llevarlo). Sin dato, todo el subtotal, como siempre.
+   */
+  serviceBase?: number;
   charges: PosCharges;
   orderType: OrderType;
   tipAmount?: number;
@@ -217,11 +230,12 @@ export function appliesService(charges: PosCharges, orderType: OrderType): boole
  * aparece ni en el resumen ni en el tiquete). El monto de la propina lo escribe el cajero; si la
  * propina no se aplica, vale cero. Los `*Enabled` del resultado dicen qué se cobró en ESTA venta.
  */
-export function computeSaleTotals({ subtotal, charges, orderType, tipAmount, deliveryFee, applied }: SaleTotalsInput): SaleTotals {
+export function computeSaleTotals({ subtotal, serviceBase, charges, orderType, tipAmount, deliveryFee, applied }: SaleTotalsInput): SaleTotals {
   const ivaEnabled = charges.ivaEnabled && applied?.iva !== false;
   const ivaAmount = ivaEnabled ? Math.round((subtotal * charges.ivaRate) / 100) : 0;
   const serviceEnabled = appliesService(charges, orderType) && applied?.service !== false;
-  const serviceAmount = serviceEnabled ? Math.round((subtotal * charges.serviceRate) / 100) : 0;
+  const base = serviceBase === undefined ? subtotal : Math.min(Math.max(serviceBase, 0), subtotal);
+  const serviceAmount = serviceEnabled ? Math.round((base * charges.serviceRate) / 100) : 0;
   const tipEnabled = charges.tipEnabled && applied?.tip !== false;
   const tip = tipEnabled ? nonNegative(tipAmount) : 0;
   const delivery = orderType === "EXPRESS" ? nonNegative(deliveryFee) : 0;

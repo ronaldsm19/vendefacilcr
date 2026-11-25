@@ -13,7 +13,7 @@ import { IOrder } from "@/models/Order";
 import { Plus, CheckCircle, Trash2, Phone, Pencil, Search, MonitorCheck, Loader2, Minus, X, Printer, FileText, Check, AlertCircle, Mail } from "lucide-react";
 import { saleTicket, DEFAULT_TICKET_CONFIG, type SaleTicketData, type TicketConfigData } from "@/lib/ticket";
 import { checkAgent, printReceipt, buildSalePayload } from "@/lib/printBridge";
-import { computeSaleTotals, extraLabel, extraQty, isOrderType, lineTotal, subtotalOf, type LineExtra } from "@/lib/pricing";
+import { computeSaleTotals, extraLabel, extraQty, isOrderType, lineTotal, serviceBaseOf, subtotalOf, type LineExtra } from "@/lib/pricing";
 import PaymentMethodPicker, { PaymentMethodChip, PaymentMethodLabel } from "@/components/admin/PaymentMethodPicker";
 import { SPLIT_METHODS, isPaymentMethod } from "@/lib/payments";
 import SaleInvoiceDialog, { invoiceBadge, type SaleInvoiceTarget } from "@/components/admin/SaleInvoiceDialog";
@@ -72,7 +72,7 @@ interface FullSale {
   notes?: string;
   saleDate?: string;
 }
-interface ProductOption { _id: string; name: string; price: number; soldBy?: "unidad" | "kg" | "libre"; }
+interface ProductOption { _id: string; name: string; price: number; soldBy?: "unidad" | "kg" | "libre"; noService?: boolean; }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -793,6 +793,7 @@ export default function AdminOrdersPage() {
             // Mismo cálculo que hace el servidor al guardar: cobros y envío de la venta original.
             const t = computeSaleTotals({
               subtotal: subtotalOf(editSale.items),
+              serviceBase: serviceBaseOf(editSale.items, new Set(saleProducts.filter((p) => p.noService).map((p) => p._id))),
               charges: {
                 ivaEnabled: editSale.ivaEnabled, ivaRate: editSale.ivaRate,
                 serviceEnabled: editSale.serviceEnabled, serviceRate: editSale.serviceRate,
