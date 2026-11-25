@@ -97,3 +97,57 @@ export function cardDifferenceLabel(difference: number): string {
   if (difference === 0) return "Cuadra con el datáfono";
   return difference > 0 ? "Sobra en el datáfono" : "Falta en el datáfono";
 }
+
+// ── Cuadre de SINPE ─────────────────────────────────────────────────────────────────────────────
+// Igual que el del datáfono, pero contra lo que entró por SINPE según el banco, y OPCIONAL: no
+// todos los negocios revisan el banco al cerrar, así que dejarlo vacío no bloquea el cierre. Si se
+// llena y no cuadra, sí hay que anotar el motivo (casi siempre una venta que se anotó con otra
+// forma de pago, o un SINPE que no se registró).
+
+export type SinpeReconciliation = CardReconciliation;
+
+/** El total del banco no cuadra con el sistema y no se explicó la diferencia. */
+export const SINPE_NOTE_REQUIRED = "SINPE_NOTE_REQUIRED";
+/** Vino un total que no es un monto válido. */
+export const SINPE_REPORTED_INVALID = "SINPE_REPORTED_INVALID";
+
+export type SinpeCheck =
+  | { ok: true; value: SinpeReconciliation | null }
+  | { ok: false; code: string; error: string };
+
+/**
+ * Valida el cuadre de SINPE. Sin total digitado devuelve `value: null` (no se revisó, y está bien).
+ * `expected` lo calcula quien llama a partir de las ventas, nunca lo manda la pantalla.
+ */
+export function checkSinpeReconciliation(
+  expected: number,
+  input: CardReconciliationInput | null | undefined,
+  checkedBy: string
+): SinpeCheck {
+  if (!input || input.reported === undefined || input.reported === null || input.reported === "") {
+    return { ok: true, value: null };
+  }
+  const reported = Number(input.reported);
+  if (!Number.isFinite(reported) || reported < 0) {
+    return { ok: false, code: SINPE_REPORTED_INVALID, error: "El total de SINPE del banco no es un monto válido." };
+  }
+  const difference = round2(reported - round2(expected));
+  const note = String(input.note ?? "").trim().slice(0, MAX_CARD_NOTE);
+  if (difference !== 0 && note === "") {
+    return {
+      ok: false,
+      code: SINPE_NOTE_REQUIRED,
+      error: "El SINPE del banco no cuadra con el sistema. Anotá por qué antes de cerrar.",
+    };
+  }
+  return {
+    ok: true,
+    value: { expected: round2(expected), reported: round2(reported), difference, note, checkedBy, checkedAt: new Date() },
+  };
+}
+
+/** Texto corto del estado del cuadre de SINPE, para la pantalla y el ticket. */
+export function sinpeDifferenceLabel(difference: number): string {
+  if (difference === 0) return "Cuadra con el banco";
+  return difference > 0 ? "Entró más SINPE del anotado" : "Entró menos SINPE del anotado";
+}

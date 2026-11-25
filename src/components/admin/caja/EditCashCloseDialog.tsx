@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { CASH_DENOMINATIONS, MAX_DENOMINATION_COUNT, expectedCash } from "@/lib/cashCount";
-import { cardDifferenceLabel, MAX_CARD_NOTE, type CardReconciliation } from "@/lib/cardReconciliation";
+import { cardDifferenceLabel, sinpeDifferenceLabel, MAX_CARD_NOTE, type CardReconciliation } from "@/lib/cardReconciliation";
 
 export interface EditableCashClose {
   _id: string;
@@ -20,6 +20,7 @@ export interface EditableCashClose {
   notes?: string;
   arqueo?: { denominaciones?: { valor: number; cantidad: number }[] };
   cardReconciliation?: Omit<CardReconciliation, "checkedAt"> & { checkedAt: string };
+  sinpeReconciliation?: Omit<CardReconciliation, "checkedAt"> & { checkedAt: string };
 }
 
 interface EditCashCloseDialogProps {
@@ -52,6 +53,8 @@ export default function EditCashCloseDialog({ close, canEditCashLeft, onClose, o
   const [notes, setNotes] = useState(close.notes ?? "");
   const [cardReported, setCardReported] = useState(String(close.cardReconciliation?.reported ?? ""));
   const [cardNote, setCardNote] = useState(close.cardReconciliation?.note ?? "");
+  const [sinpeReported, setSinpeReported] = useState(String(close.sinpeReconciliation?.reported ?? ""));
+  const [sinpeNote, setSinpeNote] = useState(close.sinpeReconciliation?.note ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -76,8 +79,23 @@ export default function EditCashCloseDialog({ close, canEditCashLeft, onClose, o
   const cardChanged = !!card && cardValid && (cardReportedNum !== card.reported || cardNote.trim() !== (card.note ?? "").trim());
   const cardBlocked = !!card && (!cardValid || cardNeedsNote);
 
-  const hasChanges = countsChanged || cashLeftChanged || notesChanged || cardChanged;
-  const canSave = hasChanges && !!password && (!canEditCashLeft || cashLeftValid) && !cardBlocked && !saving;
+  // Cuadre de SINPE: opcional. Se puede agregar aquí aunque el día se haya cerrado sin revisarlo
+  // (muchas veces el banco se revisa al día siguiente).
+  const sinpe = close.sinpeReconciliation;
+  const sinpeExpected = sinpe?.expected ?? close.paymentBreakdown?.sinpe ?? 0;
+  const sinpeShown = !!sinpe || sinpeExpected > 0;
+  const sinpeEmpty = sinpeReported.trim() === "";
+  const sinpeReportedNum = sinpeEmpty ? NaN : Number(sinpeReported);
+  const sinpeValid = Number.isFinite(sinpeReportedNum) && sinpeReportedNum >= 0;
+  const sinpeDiff = sinpeValid ? Math.round((sinpeReportedNum - sinpeExpected) * 100) / 100 : 0;
+  const sinpeNeedsNote = sinpeValid && sinpeDiff !== 0 && sinpeNote.trim() === "";
+  const sinpeChanged = sinpeShown && sinpeValid
+    && (sinpeReportedNum !== sinpe?.reported || sinpeNote.trim() !== (sinpe?.note ?? "").trim());
+  // Vacío solo bloquea si ya había un cuadre guardado (no se puede borrar, solo corregir).
+  const sinpeBlocked = sinpeShown && ((!sinpeEmpty && !sinpeValid) || sinpeNeedsNote || (!!sinpe && sinpeEmpty));
+
+  const hasChanges = countsChanged || cashLeftChanged || notesChanged || cardChanged || sinpeChanged;
+  const canSave = hasChanges && !!password && (!canEditCashLeft || cashLeftValid) && !cardBlocked && !sinpeBlocked && !saving;
 
   function setCount(valor: number, raw: string) {
     const n = Math.min(MAX_DENOMINATION_COUNT, Math.max(0, parseInt(raw) || 0));
@@ -100,6 +118,7 @@ export default function EditCashCloseDialog({ close, canEditCashLeft, onClose, o
           ...(cashLeftChanged ? { cashLeft: cashLeftAmount } : {}),
           ...(notesChanged ? { notes } : {}),
           ...(cardChanged ? { cardReconciliation: { reported: cardReportedNum, note: cardNote } } : {}),
+          ...(sinpeChanged ? { sinpeReconciliation: { reported: sinpeReportedNum, note: sinpeNote } } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -226,6 +245,52 @@ export default function EditCashCloseDialog({ close, canEditCashLeft, onClose, o
                     maxLength={MAX_CARD_NOTE}
                     value={cardNote}
                     onChange={(e) => setCardNote(e.target.value)}
+                    className="w-full border border-brand-muted rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-brand-pink resize-none"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {sinpeShown && (
+            <div className="rounded-xl border border-brand-muted p-3 space-y-2">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-brand-dark">Cuadre de SINPE <span className="text-[10px] uppercase tracking-wider text-brand-dark/40">Opcional</span></p>
+                  <p className="text-xs text-brand-dark/50">SINPE en el sistema: {fmt(sinpeExpected)}</p>
+                </div>
+                <div className="w-32 shrink-0">
+                  <label htmlFor="edit-close-sinpe" className="block text-[10px] uppercase tracking-wider text-brand-dark/40 mb-1">
+                    Total en el banco
+                  </label>
+                  <input
+                    id="edit-close-sinpe"
+                    type="number" min={0} step={1} inputMode="numeric"
+                    value={sinpeReported} placeholder="0"
+                    onChange={(e) => setSinpeReported(e.target.value)}
+                    className="w-full border border-brand-muted rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-brand-pink"
+                  />
+                </div>
+              </div>
+              {sinpeValid && (
+                <div className={`flex justify-between items-center text-xs font-semibold rounded-lg px-3 py-2 ${
+                  sinpeDiff === 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                }`}>
+                  <span>{sinpeDiff === 0 ? "✓ Cuadra con el sistema" : `⚠ ${sinpeDifferenceLabel(sinpeDiff)}`}</span>
+                  <span className="tabular-nums">{sinpeDiff !== 0 && `${sinpeDiff > 0 ? "+" : ""}${fmt(sinpeDiff)}`}</span>
+                </div>
+              )}
+              {sinpeValid && sinpeDiff !== 0 && (
+                <div>
+                  <label htmlFor="edit-close-sinpe-note" className="block text-[11px] font-medium text-brand-dark mb-1">
+                    ¿Por qué no cuadra? *
+                  </label>
+                  <textarea
+                    id="edit-close-sinpe-note"
+                    rows={2}
+                    maxLength={MAX_CARD_NOTE}
+                    value={sinpeNote}
+                    onChange={(e) => setSinpeNote(e.target.value)}
                     className="w-full border border-brand-muted rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-brand-pink resize-none"
                   />
                 </div>
