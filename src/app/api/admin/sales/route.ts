@@ -9,7 +9,7 @@ import { getSession, requireFeature } from "@/lib/auth";
 import { requirePlan, requirePremium } from "@/lib/plan";
 import { syncTableWithComandas } from "@/lib/tableSync";
 import { computeSaleTotals, isOrderType, readAppliedCharges, readPosCharges, subtotalOf } from "@/lib/pricing";
-import { checkCatalogPrices, checkComandaLines, parseSaleItems, type SaleItemRecord } from "@/server/services/saleItems";
+import { checkCatalogPrices, checkComandaLines, parseSaleItems, serviceBaseFor, type SaleItemRecord } from "@/server/services/saleItems";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { stockUnits } from "@/lib/soldBy";
 import { countInvoiceForCustomer, invoiceSnapshotFor, sendSaleInvoice, type InvoiceSnapshot } from "@/server/services/saleInvoice";
@@ -201,6 +201,7 @@ export async function POST(request: NextRequest) {
   if (!tenantCfg) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
   const totals = computeSaleTotals({
     subtotal: subtotalOf(saleItems),
+    serviceBase: await serviceBaseFor(session.tenantId, saleItems),
     charges: readPosCharges(tenantCfg.posConfig),
     orderType,
     tipAmount,

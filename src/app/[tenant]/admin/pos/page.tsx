@@ -34,7 +34,7 @@ import {
   categorySectionMap, readSections, sectionOfCategory, visibleSections, type BusinessSection,
 } from "@/lib/sections";
 import {
-  computeSaleTotals, readPosCharges, subtotalOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty, appliesService,
+  computeSaleTotals, readPosCharges, subtotalOf, serviceBaseOf, lineTotal, effectiveUnitPrice, extrasKey, extraLabel, extraQty, appliesService,
   DEFAULT_POS_CHARGES, type OrderType, type PosCharges, type SaleTotals, type LineExtra, type AppliedCharges,
 } from "@/lib/pricing";
 import {
@@ -56,6 +56,10 @@ interface ProductRow {
   extras?: LineExtra[];
   barcode?: string;
   soldBy?: "unidad" | "kg" | "libre";
+  /** true = a este producto no se le cobra el servicio (10 %). */
+  noService?: boolean;
+  station?: string;
+  menuSection?: string;
 }
 
 interface CartLine {
@@ -270,6 +274,7 @@ function ChargeLines({
   applied,
   onAppliedChange,
   totals,
+  serviceBase,
   tipAmount,
   onTipChange,
   tipInputClassName,
@@ -279,6 +284,8 @@ function ChargeLines({
   applied: Required<AppliedCharges>;
   onAppliedChange: (next: Required<AppliedCharges>) => void;
   totals: SaleTotals;
+  /** Parte del subtotal que paga servicio (menor que el subtotal si hay productos que no lo llevan). */
+  serviceBase: number;
   tipAmount: number;
   onTipChange: (n: number) => void;
   tipInputClassName: string;
@@ -299,7 +306,14 @@ function ChargeLines({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ChargeSwitch checked={applied.service} onChange={(v) => onAppliedChange({ ...applied, service: v })} label={`Cobrar servicio ${charges.serviceRate}% en esta venta`} />
-            <span className={row(applied.service)}>Servicio ({charges.serviceRate}%)</span>
+            <span className={row(applied.service)}>
+              Servicio ({charges.serviceRate}%)
+              {applied.service && serviceBase < totals.subtotal && (
+                <span className="block text-[11px] text-brand-dark/45 leading-tight">
+                  {serviceBase > 0 ? `solo sobre ${fmt(serviceBase)}` : "estos productos no lo llevan"}
+                </span>
+              )}
+            </span>
           </div>
           <span className={`text-sm font-semibold ${applied.service ? "" : "text-gray-300"}`}>{fmt(totals.serviceAmount)}</span>
         </div>
@@ -383,6 +397,9 @@ function PosPageInner() {
 
   // ── Data state ──────────────────────────────────────────────────
   const [products, setProducts]       = useState<ProductRow[]>([]);
+  // Productos que no pagan servicio (los de la tienda, por ejemplo). Incluye los no disponibles:
+  // una línea de comanda puede ser de un producto que se agotó después.
+  const [noServiceIds, setNoServiceIds] = useState<Set<string>>(new Set());
   const [categoryOrder, setCategoryOrder] = useState<CategoryOrderEntry[]>([]);
   const [sections, setSections]       = useState<BusinessSection[]>([]);
   const [tableGroups, setTableGroups] = useState<TableGroup[]>([]);
@@ -683,6 +700,7 @@ function PosPageInner() {
         fetch("/api/admin/salon/tables").then((r) => r.json()).catch(() => ({})),
       ]);
       setProducts((productsRes.products ?? []).filter((p: ProductRow) => p.available));
+      setNoServiceIds(new Set((productsRes.products ?? []).filter((p: ProductRow) => p.noService).map((p: ProductRow) => p._id)));
       setCategoryOrder(categoriesRes.categories ?? []);
       setSections(readSections(categoriesRes.sections));
       try {
@@ -826,7 +844,8 @@ function PosPageInner() {
     );
 
   // Misma fórmula que usa el servidor al guardar la venta (src/lib/pricing.ts).
-  const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), charges, orderType, tipAmount, deliveryFee, applied });
+  const serviceBase  = serviceBaseOf(cart, noServiceIds);
+  const totals       = computeSaleTotals({ subtotal: subtotalOf(cart), serviceBase, charges, orderType, tipAmount, deliveryFee, applied });
   const { subtotal, total } = totals;
   const mixedSum     = mixedAmounts.efectivo + mixedAmounts.sinpe + mixedAmounts.tarjeta;
   const mixedRemainder = total - mixedSum;
@@ -1015,6 +1034,7 @@ function PosPageInner() {
     if (!res.ok) return;
     const all: ProductRow[] = (await res.json()).products ?? [];
     setProducts(all.filter((p) => p.available));
+    setNoServiceIds(new Set(all.filter((p) => p.noService).map((p) => p._id)));
     const byId = new Map(all.map((p) => [p._id, p]));
     const merged = new Map<string, CartLine>();
     let dropped = 0;
@@ -1749,6 +1769,7 @@ function PosPageInner() {
               applied={applied}
               onAppliedChange={setApplied}
               totals={totals}
+              serviceBase={serviceBase}
               tipAmount={tipAmount}
               onTipChange={setTipAmount}
               tipInputClassName="w-20 text-right border border-gray-200 rounded-lg px-2 py-0.5 text-sm font-semibold focus:outline-none focus:border-brand-pink"
@@ -2045,6 +2066,7 @@ function PosPageInner() {
               applied={applied}
               onAppliedChange={setApplied}
               totals={totals}
+              serviceBase={serviceBase}
               tipAmount={tipAmount}
               onTipChange={setTipAmount}
               tipInputClassName="w-24 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm font-semibold focus:outline-none focus:border-brand-pink"

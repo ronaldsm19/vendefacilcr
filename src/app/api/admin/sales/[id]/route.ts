@@ -5,7 +5,7 @@ import { Sale } from "@/models/Sale";
 import { Product } from "@/models/Product";
 import { getSession, requireFeature } from "@/lib/auth";
 import { computeSaleTotals, isOrderType, normalizeExtras, subtotalOf } from "@/lib/pricing";
-import { checkCatalogPrices, parseSaleItems, saleLineKey, type SaleItemRecord } from "@/server/services/saleItems";
+import { checkCatalogPrices, parseSaleItems, saleLineKey, serviceBaseFor, type SaleItemRecord } from "@/server/services/saleItems";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { stockUnits } from "@/lib/soldBy";
 
@@ -84,6 +84,7 @@ export async function PUT(
 
   const totals = computeSaleTotals({
     subtotal: subtotalOf(saleItems),
+    serviceBase: await serviceBaseFor(session.tenantId, saleItems),
     charges: {
       ivaEnabled:     existing.ivaEnabled ?? false,
       ivaRate:        existing.ivaRate ?? 13,
