@@ -26,6 +26,8 @@ export interface IProduct {
   available: boolean;
   featured: boolean;       // destacado en "Más vendidos"
   delivery: boolean;       // si tiene envío disponible
+  /** true = a este producto NO se le cobra el servicio (10 %), aunque el negocio lo tenga activo. */
+  noService?: boolean;
   deliveryNote: string;    // nota de horarios/costo de envío
   offers: { qty: number; price: number }[];  // ofertas por volumen
   menuSection: "panaderia" | "bebidas" | "";
@@ -113,6 +115,12 @@ const ProductSchema = new Schema(
       default: false,
     },
     delivery: {
+      type: Boolean,
+      default: false,
+    },
+    // Al revés a propósito ("no cobra"): los productos que ya existen no tienen el campo y siguen
+    // cobrando servicio como siempre.
+    noService: {
       type: Boolean,
       default: false,
     },

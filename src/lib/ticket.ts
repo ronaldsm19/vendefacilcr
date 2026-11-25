@@ -371,6 +371,7 @@ export interface CashCloseTicketData {
   profit: number;
   arqueo?: { totalContado: number; totalEsperado: number; diferencia: number };
   cardReconciliation?: { expected: number; reported: number; difference: number; note?: string };
+  sinpeReconciliation?: { expected: number; reported: number; difference: number; note?: string };
   productsSummary?: { productName: string; unitsSold: number }[];
   /** Ventas por sección del negocio; solo si el negocio usa secciones. */
   sectionsSummary?: { name: string; revenue: number }[];
@@ -446,6 +447,13 @@ export function buildCashCloseRows(d: CashCloseTicketData, cfg: TicketConfigData
   rows.push({ t: "lr", left: "  C.Inicial", right: money(openingAmount) });
   rows.push({ t: "lr", left: "  Efectivo", right: money(d.paymentBreakdown.efectivo) });
   rows.push({ t: "lr", left: "  SINPE", right: money(d.paymentBreakdown.sinpe) });
+  // Cuadre de SINPE contra el banco (opcional): queda impreso junto al total de SINPE.
+  if (d.sinpeReconciliation) {
+    const { reported, difference, note } = d.sinpeReconciliation;
+    rows.push({ t: "lr", left: "  SINPE banco", right: money(reported) });
+    rows.push({ t: "lr", left: "  Dif. SINPE", right: `${difference > 0 ? "+" : ""}${money(difference)}` });
+    if (note) rows.push({ t: "left", text: clip(`    ${note}`, 34), size: 7 });
+  }
   rows.push({ t: "lr", left: "  Tarjeta", right: money(d.paymentBreakdown.tarjeta) });
   // El cuadre del datáfono queda impreso junto al total de tarjeta: es el papel que la dueña
   // compara contra el rollo del datáfono cuando revisa el día.

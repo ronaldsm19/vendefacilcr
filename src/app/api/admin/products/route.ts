@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   await connectToDatabase();
   const body = await request.json();
 
-  const { name, description, price, cost, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock, soldBy } = body;
+  const { name, description, price, cost, image, images, category, menuSection, station, available, featured, delivery, deliveryNote, stock, soldBy, noService } = body;
   if (soldBy !== undefined && !isSoldBy(soldBy)) {
     return NextResponse.json({ error: "El producto se vende por unidad, por kilo o a precio libre" }, { status: 400 });
   }
@@ -84,6 +84,7 @@ export async function POST(request: NextRequest) {
     available: available ?? true,
     featured: featured ?? false,
     delivery: delivery ?? false,
+    noService: noService === true,
     deliveryNote: deliveryNote ?? "",
     stock: typeof stock === "number" ? stock : 0,
     barcode,

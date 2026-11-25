@@ -16,6 +16,8 @@ import { DEFAULT_COMANDA_CONFIG, type ComandaConfigData } from "@/lib/comandaCon
 import type { ProductStation } from "@/lib/station";
 import ComandaCard, { type ComandaRow } from "@/components/admin/ComandaCard";
 import CancelComandaDialog from "@/components/admin/CancelComandaDialog";
+import MoveTableDialog from "@/components/admin/MoveTableDialog";
+import { paidView, pendingView } from "@/lib/comandaEdit";
 import ServeAllDialog from "@/components/admin/ServeAllDialog";
 import WeighDialog from "@/components/admin/WeighDialog";
 import OpenPriceDialog from "@/components/admin/OpenPriceDialog";
@@ -120,6 +122,9 @@ export default function TomarComandaPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [versionConflict, setVersionConflict] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<ComandaRow | null>(null);
+  const [moveTarget, setMoveTarget] = useState<ComandaRow | null>(null);
+  // Al editar una comanda con algo ya cobrado: lo cobrado se muestra fijo y se edita lo pendiente.
+  const [paidLines, setPaidLines] = useState<ComandaRow["items"]>([]);
   const [showServeAll, setShowServeAll] = useState(false);
 
   // Toma con una mano: lo elegido arriba (plegable), hoja inferior para editar un producto plato
@@ -215,6 +220,7 @@ export default function TomarComandaPage() {
       setEditVersion(null);
       setEditNumber(null);
       setEditBlocked(null);
+      setPaidLines([]);
       return;
     }
     setEditLoading(true);
@@ -225,17 +231,17 @@ export default function TomarComandaPage() {
         if (!d.comanda) { setEditBlocked("No se pudo cargar la comanda."); return; }
         const c: ComandaRow = d.comanda;
         const isOpen = c.status === "enviada" || c.status === "servida";
-        const hasPaid = c.items.some((i) => i.paidQty > 0);
-        if (!isOpen || hasPaid) {
-          setEditBlocked(hasPaid ? "La comanda tiene ítems cobrados y no se puede editar." : "La comanda ya no está abierta.");
+        if (!isOpen) {
+          setEditBlocked("La comanda ya no está abierta.");
           return;
         }
+        setPaidLines(paidView(c.items));
         setEditBlocked(null);
         setEditVersion(c.version);
         setEditNumber(c.number);
         setCustomerName(c.customerName ?? "");
         setNotesText(c.notes ?? "");
-        setLines(c.items.map((i) => ({
+        setLines(pendingView(c.items).map((i) => ({
           key: crypto.randomUUID(),
           productId: i.productId,
           productName: i.productName,
@@ -390,13 +396,32 @@ export default function TomarComandaPage() {
     router.push(`/${slug}/admin/salon/${tableId}/comanda`);
   }
 
+  /** Editando una comanda con algo cobrado y sin nada pendiente: se quita lo pendiente y se cierra. */
+  const dropsPending = !!editId && paidLines.length > 0 && lines.length === 0;
+
   async function handleSubmit() {
-    if (lines.length === 0 || saving) return;
+    if ((lines.length === 0 && !dropsPending) || saving) return;
     setSaving(true);
     setErrorMsg("");
     setSuccessMsg("");
     setVersionConflict(false);
     try {
+      if (dropsPending) {
+        const res = await fetch(`/api/admin/comandas/${editId}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) { setErrorMsg(data.error ?? "No se pudo quitar lo pendiente"); return; }
+        setSuccessMsg(`Comanda #${data.comanda.number}: se quitó lo pendiente`);
+        notifyComandasUpdated();
+        resetForm();
+        await refreshOpen();
+        setTab("open");
+        exitEdit();
+        return;
+      }
       const payload = {
         tableId,
         customerName: customerName.trim(),
@@ -450,7 +475,8 @@ export default function TomarComandaPage() {
     const d = await fetch(`/api/admin/comandas/${editId}`).then((r) => r.json());
     if (d.comanda) {
       setEditVersion(d.comanda.version);
-      setLines(d.comanda.items.map((i: ComandaRow["items"][number]) => ({
+      setPaidLines(paidView(d.comanda.items as ComandaRow["items"]));
+      setLines(pendingView(d.comanda.items as ComandaRow["items"]).map((i: ComandaRow["items"][number]) => ({
         key: crypto.randomUUID(),
         productId: i.productId,
         productName: i.productName,
@@ -707,6 +733,19 @@ export default function TomarComandaPage() {
                     Esta mesa está marcada por limpiar
                   </div>
                 )}
+                {editId && paidLines.length > 0 && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm">
+                    <p className="font-semibold text-emerald-800">Ya cobrado · no se cambia</p>
+                    <ul className="mt-1 space-y-0.5 text-emerald-800/80">
+                      {paidLines.map((i, idx) => (
+                        <li key={idx}>{i.quantity} × {i.productName}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5 text-xs text-emerald-800/70">
+                      Arriba está lo que falta por cobrar: podés cambiarlo, quitarlo o agregar más. Solo lo nuevo sale en cocina.
+                    </p>
+                  </div>
+                )}
                 {successMsg && (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-emerald-700">{successMsg}</div>
                 )}
@@ -811,6 +850,7 @@ export default function TomarComandaPage() {
                   onEdit={() => router.push(`/${slug}/admin/salon/${tableId}/comanda?edit=${c._id}`)}
                   onServe={c.status === "enviada" ? () => handleServe(c._id) : undefined}
                   onCancel={() => setCancelTarget(c)}
+                  onMove={() => setMoveTarget(c)}
                 />
               ))
             )}
@@ -820,10 +860,10 @@ export default function TomarComandaPage() {
 
       {tab === "new" && !editBlocked && !editLoading && (
         <div className="shrink-0 bg-white border-t border-brand-muted px-4 py-3">
-          <Button className="w-full" disabled={lines.length === 0 || saving} onClick={handleSubmit}>
+          <Button className="w-full" disabled={(lines.length === 0 && !dropsPending) || saving} onClick={handleSubmit}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : (
               <>
-                {editId ? "Guardar cambios" : "Enviar comanda"}
+                {dropsPending ? "Quitar lo pendiente y cerrar" : editId ? "Guardar cambios" : "Enviar comanda"}
                 {lines.length > 0 && <span className="font-bold">· {fmt(totalAmount)}</span>}
               </>
             )}
@@ -1016,6 +1056,17 @@ export default function TomarComandaPage() {
           comanda={cancelTarget}
           onClose={() => setCancelTarget(null)}
           onDone={() => { setCancelTarget(null); refreshOpen(); }}
+        />
+      )}
+
+      {moveTarget && table && (
+        <MoveTableDialog
+          fromTableId={tableId}
+          fromLabel={table.label}
+          comandaId={moveTarget._id}
+          comandaNumber={moveTarget.number}
+          onClose={() => setMoveTarget(null)}
+          onDone={(toTableId) => { setMoveTarget(null); router.push(`/${slug}/admin/salon/${toTableId}/comanda`); }}
         />
       )}
 

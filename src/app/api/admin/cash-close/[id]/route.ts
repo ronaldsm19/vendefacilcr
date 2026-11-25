@@ -6,7 +6,7 @@ import { AccessLog } from "@/models/AccessLog";
 import { getSession, requireFeature, requireRole } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
 import { buildArqueo, expectedCash } from "@/lib/cashCount";
-import { checkCardReconciliation, type CardReconciliation } from "@/lib/cardReconciliation";
+import { checkCardReconciliation, checkSinpeReconciliation, type CardReconciliation, type SinpeReconciliation } from "@/lib/cardReconciliation";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { verifyAuthorizationPassword } from "@/server/services/authorizationPassword";
 import mongoose from "mongoose";
@@ -15,10 +15,11 @@ interface CloseLean {
   _id: unknown;
   closeNumber?: number;
   openingAmount?: number;
-  paymentBreakdown?: { efectivo?: number };
+  paymentBreakdown?: { efectivo?: number; sinpe?: number };
   withdrawalsTotal?: number;
   cashLeft?: number;
   cardReconciliation?: CardReconciliation;
+  sinpeReconciliation?: SinpeReconciliation;
 }
 
 /**
@@ -45,10 +46,10 @@ export async function PUT(
 
   await connectToDatabase();
   const body = await request.json().catch(() => ({}));
-  const { arqueo, cashLeft, notes, password, cardReconciliation } = body as Record<string, unknown>;
+  const { arqueo, cashLeft, notes, password, cardReconciliation, sinpeReconciliation } = body as Record<string, unknown>;
 
   const existing = await CashClose.findOne({ _id: id, tenantId: session.tenantId })
-    .select("closeNumber openingAmount paymentBreakdown withdrawalsTotal cashLeft cardReconciliation")
+    .select("closeNumber openingAmount paymentBreakdown withdrawalsTotal cashLeft cardReconciliation sinpeReconciliation")
     .lean() as CloseLean | null;
   if (!existing) return NextResponse.json({ error: "Cierre no encontrado" }, { status: 404 });
 
@@ -79,6 +80,14 @@ export async function PUT(
     );
     if (!check.ok) return NextResponse.json({ error: check.error, code: check.code }, { status: 400 });
     update.cardReconciliation = check.value;
+  }
+  // El cuadre de SINPE es opcional y muchas veces se hace al día siguiente, cuando ya se revisó el
+  // banco: se puede agregar o corregir aquí. Lo esperado es el SINPE que el sistema guardó ese día.
+  if (sinpeReconciliation !== undefined) {
+    const expected = existing.sinpeReconciliation?.expected ?? existing.paymentBreakdown?.sinpe ?? 0;
+    const check = checkSinpeReconciliation(expected, sinpeReconciliation as { reported?: unknown; note?: unknown }, session.name);
+    if (!check.ok) return NextResponse.json({ error: check.error, code: check.code }, { status: 400 });
+    if (check.value) update.sinpeReconciliation = check.value;
   }
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "No hay cambios para guardar" }, { status: 400 });

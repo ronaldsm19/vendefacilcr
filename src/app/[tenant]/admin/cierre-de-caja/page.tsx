@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Printer, Check, RefreshCw, Pencil, CreditCard } from "lucide-react";
+import { Loader2, Printer, Check, RefreshCw, Pencil, CreditCard, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cashCloseTicket, DEFAULT_TICKET_CONFIG, type TicketConfigData } from "@/lib/ticket";
 import { buildCashClosePayload, printCierre } from "@/lib/printBridge";
 import { CASH_DENOMINATIONS as DENOMS, expectedCash } from "@/lib/cashCount";
-import { cardDifferenceLabel, MAX_CARD_NOTE, type CardReconciliation } from "@/lib/cardReconciliation";
+import { cardDifferenceLabel, sinpeDifferenceLabel, MAX_CARD_NOTE, type CardReconciliation } from "@/lib/cardReconciliation";
 import { PaymentMethodLabel } from "@/components/admin/PaymentMethodPicker";
 import { SPLIT_METHODS, isPaymentMethod } from "@/lib/payments";
 import ThermalPrintButton from "@/components/admin/ThermalPrintButton";
@@ -79,6 +79,7 @@ interface CashCloseRow {
     diferencia: number;
   };
   cardReconciliation?: Omit<CardReconciliation, "checkedAt"> & { checkedAt: string };
+  sinpeReconciliation?: Omit<CardReconciliation, "checkedAt"> & { checkedAt: string };
   openingAmount?: number;
   openingCorrections?: OpeningCorrection[];
   withdrawals?: CashWithdrawal[];
@@ -172,6 +173,8 @@ export default function CierreDeCajaPage() {
   const [notes, setNotes]                   = useState("");
   const [cardReported, setCardReported]     = useState("");
   const [cardNote, setCardNote]             = useState("");
+  const [sinpeReported, setSinpeReported]   = useState("");
+  const [sinpeNote, setSinpeNote]           = useState("");
   const [todayCloseId, setTodayCloseId]     = useState<string | null>(null);
   const [closingWithdrawDone, setClosingWithdrawDone] = useState(false);
   const [correctingOpening, setCorrectingOpening] = useState(false);
@@ -226,11 +229,23 @@ export default function CierreDeCajaPage() {
   const cardDiff = cardFilled ? Math.round((cardReportedNum - cardExpected) * 100) / 100 : 0;
   const cardNeedsNote = cardFilled && cardDiff !== 0 && cardNote.trim() === "";
   const cardReady = !cardRequired || (cardFilled && !cardNeedsNote);
+
+  // ── Cuadre de SINPE (opcional) ────────────────────────────────────
+  // Se ofrece cuando el día tuvo ventas por SINPE. Dejarlo vacío no bloquea el cierre; si se llena
+  // y no cuadra con el banco, hay que anotar por qué (misma regla que valida el servidor).
+  const sinpeExpected = today?.paymentBreakdown.sinpe ?? 0;
+  const sinpeOffered = sinpeExpected > 0;
+  const sinpeReportedNum = sinpeReported.trim() === "" ? NaN : Number(sinpeReported);
+  const sinpeFilled = Number.isFinite(sinpeReportedNum) && sinpeReportedNum >= 0;
+  const sinpeDiff = sinpeFilled ? Math.round((sinpeReportedNum - sinpeExpected) * 100) / 100 : 0;
+  const sinpeNeedsNote = sinpeOffered && sinpeFilled && sinpeDiff !== 0 && sinpeNote.trim() === "";
+  const closeReady = cardReady && !sinpeNeedsNote;
   const blockReason =
     !session.open ? "Primero abrí la caja"
     : !today?.sales.length ? "No hay ventas para cerrar"
     : cardRequired && !cardFilled ? "Falta comparar el cierre del datáfono"
     : cardNeedsNote ? "Explicá la diferencia del datáfono"
+    : sinpeNeedsNote ? "Explicá la diferencia del SINPE"
     : "";
 
   const defaultCashLeft = withdrawalsList.length > 0 ? withdrawalsList[withdrawalsList.length - 1].leftAmount : totalContado;
@@ -327,7 +342,7 @@ export default function CierreDeCajaPage() {
   }
 
   async function handleClose() {
-    if (!today || !cardReady) return;
+    if (!today || !closeReady) return;
     setCloseError("");
     setClosing(true);
     try {
@@ -358,6 +373,7 @@ export default function CierreDeCajaPage() {
           salesList: today.sales.map((s) => ({ ticketNumber: s.ticketNumber ?? 0, total: s.total })),
           notes,
           ...(cardRequired ? { cardReconciliation: { reported: cardReportedNum, note: cardNote } } : {}),
+          ...(sinpeOffered && sinpeFilled ? { sinpeReconciliation: { reported: sinpeReportedNum, note: sinpeNote } } : {}),
         }),
       });
       if (!res.ok) {
@@ -371,6 +387,8 @@ export default function CierreDeCajaPage() {
       setNotes("");
       setCardReported("");
       setCardNote("");
+      setSinpeReported("");
+      setSinpeNote("");
       setCashLeftTouched(false);
       await loadData();
     } catch {
@@ -400,6 +418,7 @@ export default function CierreDeCajaPage() {
       arqueo: todayClose?.arqueo
         ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
       cardReconciliation: todayClose?.cardReconciliation,
+      sinpeReconciliation: todayClose?.sinpeReconciliation,
       openingAmount: todayClose?.openingAmount ?? session.open?.openingAmount ?? 0,
       withdrawals: todayClose?.withdrawals ?? session.open?.withdrawals ?? [],
       withdrawalsTotal: todayClose?.withdrawalsTotal ?? withdrawalsTotal,
@@ -422,6 +441,7 @@ export default function CierreDeCajaPage() {
       profit: c.profit,
       arqueo: c.arqueo,
       cardReconciliation: c.cardReconciliation,
+      sinpeReconciliation: c.sinpeReconciliation,
       openingAmount: c.openingAmount,
       withdrawals: c.withdrawals,
       withdrawalsTotal: c.withdrawalsTotal,
@@ -500,6 +520,7 @@ export default function CierreDeCajaPage() {
                     productsSummary: today!.productsSummary,
                     arqueo: todayClose?.arqueo ?? (totalContado > 0 ? { totalContado, totalEsperado: efectivoEsperado, diferencia } : undefined),
                     cardReconciliation: todayClose?.cardReconciliation,
+                    sinpeReconciliation: todayClose?.sinpeReconciliation,
                     openingAmount: todayClose?.openingAmount ?? 0,
                     withdrawals: todayClose?.withdrawals ?? [],
                     withdrawalsTotal: todayClose?.withdrawalsTotal ?? withdrawalsTotal,
@@ -529,7 +550,7 @@ export default function CierreDeCajaPage() {
             {!closedToday && (
               <Button
                 onClick={handleClose}
-                disabled={closing || !today?.sales.length || !session.open || !cardReady}
+                disabled={closing || !today?.sales.length || !session.open || !closeReady}
                 title={blockReason || undefined}
                 className="gap-2 text-sm"
               >
@@ -902,6 +923,70 @@ export default function CierreDeCajaPage() {
                   </div>
                 )}
 
+                {/* ── Cuadre de SINPE (opcional) ── */}
+                {sinpeOffered && (
+                  <div className={`rounded-xl border p-3 space-y-2 ${
+                    !sinpeFilled ? "border-brand-muted bg-gray-50"
+                    : sinpeDiff === 0 ? "border-emerald-200 bg-emerald-50"
+                    : "border-red-200 bg-red-50"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-brand-dark/60 shrink-0" />
+                      <h3 className="text-sm font-semibold text-brand-dark">Cuadre de SINPE</h3>
+                      <span className="text-[10px] uppercase tracking-wider text-brand-dark/40">Opcional</span>
+                    </div>
+                    <p className="text-[11px] text-brand-dark/60">
+                      Revisá en el banco cuánto entró hoy por SINPE y escribilo. Si lo dejás vacío, el día se cierra igual.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-brand-dark/40">SINPE en el sistema</p>
+                        <p className="text-base font-bold tabular-nums text-brand-dark">{fmt(sinpeExpected)}</p>
+                      </div>
+                      <div>
+                        <label htmlFor="sinpe-reported" className="block text-[10px] uppercase tracking-wider text-brand-dark/40 mb-1">
+                          Total en el banco
+                        </label>
+                        <input
+                          id="sinpe-reported"
+                          type="number" min={0} step={1} inputMode="numeric"
+                          value={sinpeReported} placeholder="0"
+                          onChange={(e) => setSinpeReported(e.target.value)}
+                          className="w-full border border-brand-muted bg-white rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-brand-pink"
+                        />
+                      </div>
+                    </div>
+
+                    {sinpeFilled && (
+                      <div className={`flex justify-between items-center text-xs font-semibold rounded-lg px-3 py-2 ${
+                        sinpeDiff === 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                      }`}>
+                        <span>{sinpeDiff === 0 ? "✓ Cuadra con el sistema" : `⚠ ${sinpeDifferenceLabel(sinpeDiff)}`}</span>
+                        <span className="tabular-nums">
+                          {sinpeDiff !== 0 && `${sinpeDiff > 0 ? "+" : ""}${fmt(sinpeDiff)}`}
+                        </span>
+                      </div>
+                    )}
+
+                    {sinpeFilled && sinpeDiff !== 0 && (
+                      <div>
+                        <label htmlFor="sinpe-note" className="block text-[11px] font-medium text-brand-dark mb-1">
+                          ¿Por qué no cuadra? *
+                        </label>
+                        <textarea
+                          id="sinpe-note"
+                          rows={2}
+                          maxLength={MAX_CARD_NOTE}
+                          value={sinpeNote}
+                          placeholder="Ej: una venta por SINPE se anotó en efectivo, o no se registró"
+                          onChange={(e) => setSinpeNote(e.target.value)}
+                          className="w-full border border-brand-muted bg-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-brand-pink resize-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Dejo en caja + Observaciones */}
                 <div className="grid grid-cols-2 gap-3 pt-1 border-t border-brand-muted/50">
                   <div>
@@ -928,7 +1013,7 @@ export default function CierreDeCajaPage() {
                 {/* Botón de cierre — dentro del panel en desktop */}
                 <Button
                   onClick={handleClose}
-                  disabled={closing || !today?.sales.length || !session.open || !cardReady}
+                  disabled={closing || !today?.sales.length || !session.open || !closeReady}
                   title={blockReason || undefined}
                   className="w-full gap-2"
                 >
@@ -1065,6 +1150,24 @@ export default function CierreDeCajaPage() {
                 )}
               </div>
             )}
+            {todayClose.sinpeReconciliation && (
+              <div className={`rounded-xl px-3 py-2 text-xs border ${
+                todayClose.sinpeReconciliation.difference === 0
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-red-200 bg-red-50 text-red-700"
+              }`}>
+                <p className="font-semibold">
+                  SINPE en el banco: {fmt(todayClose.sinpeReconciliation.reported)} · Sistema: {fmt(todayClose.sinpeReconciliation.expected)}
+                  {todayClose.sinpeReconciliation.difference !== 0 && (
+                    <> · {sinpeDifferenceLabel(todayClose.sinpeReconciliation.difference)}{" "}
+                      {todayClose.sinpeReconciliation.difference > 0 ? "+" : ""}{fmt(todayClose.sinpeReconciliation.difference)}</>
+                  )}
+                </p>
+                {todayClose.sinpeReconciliation.note && (
+                  <p className="mt-0.5 italic opacity-80">{todayClose.sinpeReconciliation.note}</p>
+                )}
+              </div>
+            )}
             <OpeningCorrectionsList items={todayClose.openingCorrections ?? []} />
             {todayClose.notes && (
               <p className="text-xs text-brand-dark/50 italic border-t border-brand-muted/50 pt-2">{todayClose.notes}</p>
@@ -1105,6 +1208,12 @@ export default function CierreDeCajaPage() {
                           {c.cardReconciliation.difference !== 0 && ` (${c.cardReconciliation.difference > 0 ? "+" : ""}${fmt(c.cardReconciliation.difference)})`}
                         </p>
                       )}
+                      {c.sinpeReconciliation && (
+                        <p className={`text-xs mt-0.5 ${c.sinpeReconciliation.difference === 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          SINPE banco: {fmt(c.sinpeReconciliation.reported)}
+                          {c.sinpeReconciliation.difference !== 0 && ` (${c.sinpeReconciliation.difference > 0 ? "+" : ""}${fmt(c.sinpeReconciliation.difference)})`}
+                        </p>
+                      )}
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <ThermalPrintButton
@@ -1123,6 +1232,7 @@ export default function CierreDeCajaPage() {
                           productsSummary: [],
                           arqueo: c.arqueo,
                           cardReconciliation: c.cardReconciliation,
+                          sinpeReconciliation: c.sinpeReconciliation,
                           openingAmount: c.openingAmount,
                           withdrawals: c.withdrawals,
                           withdrawalsTotal: c.withdrawalsTotal,
