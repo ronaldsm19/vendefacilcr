@@ -36,7 +36,7 @@ const ExpenseItemSchema = new Schema(
 
 const ExpenseSchema = new Schema(
   {
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: false, index: true },
     title:        { type: String, required: true, trim: true },
     items:        { type: [ExpenseItemSchema], default: [] },
     total:        { type: Number, required: true, min: 0 },

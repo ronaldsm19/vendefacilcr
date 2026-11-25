@@ -34,7 +34,7 @@ const StaffPaySchema = new Schema(
 
 const StaffUserSchema = new Schema(
   {
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     name:     { type: String, required: true, trim: true, maxlength: 60 },
     username: { type: String, required: true, trim: true, lowercase: true, match: USERNAME_RE },
     pinHash:  { type: String, required: true },

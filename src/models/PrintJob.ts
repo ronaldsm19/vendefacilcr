@@ -22,7 +22,7 @@ export interface IPrintJob {
 
 const PrintJobSchema = new Schema(
   {
-    tenantId:  { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:  { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     type:      { type: String, enum: ["comanda", "venta", "cierre"], required: true },
     payload:   { type: Schema.Types.Mixed, required: true },
     status:    { type: String, enum: ["pending", "printing", "done", "failed"], default: "pending" },

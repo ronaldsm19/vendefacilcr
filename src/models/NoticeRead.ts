@@ -18,7 +18,7 @@ export interface INoticeRead {
 const NoticeReadSchema = new Schema<INoticeRead>(
   {
     noticeId: { type: Schema.Types.ObjectId, ref: "TenantNotice", required: true },
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     userId: { type: String, required: true },
     userName: { type: String, default: "" },
     role: { type: String, default: "" },

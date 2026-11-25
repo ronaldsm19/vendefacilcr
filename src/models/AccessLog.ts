@@ -15,7 +15,7 @@ export interface IAccessLog {
 
 const AccessLogSchema = new Schema(
   {
-    tenantId:   { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:   { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     tenantSlug: { type: String, required: true },
     userEmail:  { type: String, default: "" },
     ip:         { type: String, required: true },

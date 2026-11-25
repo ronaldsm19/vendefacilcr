@@ -12,7 +12,7 @@ export interface ICategory {
 
 const CategorySchema = new Schema(
   {
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: false, index: true },
     label:    { type: String, required: true, trim: true },
     order:    { type: Number, default: 0 },
     sectionId: { type: String, default: "" },

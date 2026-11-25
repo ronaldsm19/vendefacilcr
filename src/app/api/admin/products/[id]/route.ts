@@ -9,6 +9,7 @@ import { ensureExtrasMigrated } from "@/server/services/productExtras";
 import { barcodeConflict, resolveBarcode } from "@/server/services/productBarcodes";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { isSoldBy } from "@/lib/soldBy";
+import { safeUpdate } from "@/lib/safeUpdate";
 
 export async function GET(
   request: NextRequest,
@@ -43,19 +44,15 @@ export async function PUT(
 
   const { id } = await params;
   await connectToDatabase();
-  const body = await request.json();
+  // Campos que el cuerpo nunca puede cambiar: el negocio dueño, la identidad, los toppings
+  // obsoletos (reemplazados por extras) y cualquier operador ($set…), que antes pasaba de largo.
+  // La etiqueta se guarda solo desde su editor (PUT .../label): así una ficha abierta desde antes
+  // no pisa el formato que se acaba de armar.
+  const body = safeUpdate(await request.json().catch(() => null), ["toppings", "label"]);
 
   if (body.station !== undefined && !isStation(body.station)) {
     return NextResponse.json({ error: "Estación inválida" }, { status: 400 });
   }
-  // Campos que el cuerpo nunca puede cambiar: el negocio dueño, la identidad y los toppings
-  // obsoletos (reemplazados por extras).
-  delete body.tenantId;
-  delete body._id;
-  delete body.toppings;
-  // La etiqueta se guarda solo desde su editor (PUT .../label): así una ficha abierta desde antes
-  // no pisa el formato que se acaba de armar.
-  delete body.label;
   if (body.soldBy !== undefined && !isSoldBy(body.soldBy)) {
     return NextResponse.json({ error: "El producto se vende por unidad, por kilo o a precio libre" }, { status: 400 });
   }

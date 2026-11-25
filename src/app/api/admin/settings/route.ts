@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { SiteSettings } from "@/models/SiteSettings";
 import { getSession, requireFeature } from "@/lib/auth";
 import { EMPTY_PRODUCTS_SECTION, readProductsSectionText } from "@/lib/storeTexts";
+import { safeUpdate } from "@/lib/safeUpdate";
 
 const DEFAULTS = {
   hero: {
@@ -38,7 +39,7 @@ export async function PUT(request: NextRequest) {
   if (denied) return denied;
 
   await connectToDatabase();
-  const body = await request.json();
+  const body = safeUpdate(await request.json().catch(() => null));
   // Textos de la sección de productos: solo texto, recortados y con su largo máximo.
   if (body.productsSection !== undefined) body.productsSection = readProductsSectionText(body.productsSection);
   const settings = await SiteSettings.findOneAndUpdate({ tenantId: session.tenantId }, { ...body, tenantId: session.tenantId }, {

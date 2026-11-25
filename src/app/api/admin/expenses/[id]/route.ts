@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Expense } from "@/models/Expense";
 import { getSession, requireFeature } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
+import { safeUpdate } from "@/lib/safeUpdate";
 
 export async function PATCH(
   request: NextRequest,
@@ -17,7 +18,8 @@ export async function PATCH(
 
   const { id } = await params;
   await connectToDatabase();
-  const body = await request.json();
+  // Sin operadores ni tenantId: un {"tenantId": "<otro>"} mudaba el gasto a otro negocio.
+  const body = safeUpdate(await request.json().catch(() => null));
 
   // Recalcular total si se actualizan items
   if (body.items) {

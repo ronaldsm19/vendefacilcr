@@ -31,7 +31,7 @@ const ProductionIngredientSchema = new Schema(
 
 const ProductionSchema = new Schema(
   {
-    tenantId:        { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    tenantId:        { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: false, index: true },
     recipeId:        { type: Schema.Types.ObjectId, ref: "Recipe", required: true },
     recipeName:      { type: String, required: true },
     batches:         { type: Number, required: true, min: 1 },

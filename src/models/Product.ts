@@ -44,7 +44,7 @@ export interface IProduct {
 
 const ProductSchema = new Schema(
   {
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: false, index: true },
     name: {
       type: String,
       required: [true, "El nombre es requerido"],
