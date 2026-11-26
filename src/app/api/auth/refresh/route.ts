@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     // o el nombre, la app recibe el dato nuevo en el siguiente refresco.
     let payload: AdminPayload;
     if (stored.userType === "admin") {
-      const user = await User.findById(stored.userId).select("_id email").lean() as UserLean | null;
+      const user = await User.findOne({ _id: stored.userId, tenantId: tenantDoc._id }).select("_id email").lean() as UserLean | null;
       if (!user) throw new ServiceError(401, "Sesión no válida", "SESSION_REVOKED");
       payload = {
         role: "admin",

@@ -3,9 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Role, Feature } from "@/lib/permissions";
 import { can, hasRole, ERROR_FORBIDDEN } from "@/lib/permissions";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? "fallback-secret-change-in-production"
-);
+// Con la clave de respaldo cualquiera puede fabricar sesiones (de un negocio o del superadmin):
+// solo se permite fuera de producción. En producción, sin JWT_SECRET la compilación falla y Vercel
+// conserva el despliegue anterior en vez de publicar uno inseguro.
+const DEV_FALLBACK_SECRET = "fallback-secret-change-in-production";
+const rawSecret = process.env.JWT_SECRET;
+if (process.env.NODE_ENV === "production" && (!rawSecret || rawSecret === DEV_FALLBACK_SECRET)) {
+  throw new Error("JWT_SECRET no está configurado: no se puede firmar sesiones en producción.");
+}
+const JWT_SECRET = new TextEncoder().encode(rawSecret || DEV_FALLBACK_SECRET);
 
 export interface AdminPayload {
   role: Role;               // "admin" | "cajero" | "mesero"

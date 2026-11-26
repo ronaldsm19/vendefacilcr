@@ -61,17 +61,24 @@ export async function GET(request: NextRequest) {
 
   const isPremium = isPremiumPlan(tenant.plan);
 
+  // El personal se relee de la base: si lo desactivaron se cierra la sesión, y si le cambiaron el rol
+  // (de cajero a mesero, por ejemplo) la cookie renovada lleva el rol nuevo. Antes se volvía a firmar
+  // la sesión vieja y el panel abierto conservaba los permisos anteriores.
+  let current = session;
   if (session.role !== "admin") {
     if (!isPremium) return loggedOut();
-    const alive = await StaffUser.exists({ _id: session.userId, tenantId: session.tenantId, active: true });
-    if (!alive) return loggedOut();
+    const staff = await StaffUser.findOne({ _id: session.userId, tenantId: session.tenantId, active: true })
+      .select("role name")
+      .lean() as { role?: string; name?: string } | null;
+    if (!staff || (staff.role !== "cajero" && staff.role !== "mesero")) return loggedOut();
+    current = { ...session, role: staff.role, name: staff.name ?? session.name };
   }
 
   const response = NextResponse.json({
     email:          session.email ?? "",
-    role:           session.role,
-    userId:         session.userId,
-    name:           session.name,
+    role:           current.role,
+    userId:         current.userId,
+    name:           current.name,
     tenantSlug:     session.tenantSlug,
     tenantName:     tenant?.name     ?? session.tenantSlug,
     logoUrl:        tenant?.logoUrl  ?? "",
@@ -91,5 +98,5 @@ export async function GET(request: NextRequest) {
   // emitía solo al entrar y a las 24 h moría en silencio: la pantalla seguía pintada con los datos
   // viejos y el primer marcaje del día respondía "No autorizado", que se leía como un PIN malo.
   // Lo de arriba ya revalidó contra la base que el personal siga activo, así que renovar es seguro.
-  return setSessionCookie(response, await signJwt(session));
+  return setSessionCookie(response, await signJwt(current));
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { escapeRegex } from "@/lib/customerId";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { getSession, requireFeature } from "@/lib/auth";
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
 
   const customers = await Order.aggregate([
     { $match: { tenantId: new (await import("mongoose")).default.Types.ObjectId(session.tenantId) } },
-    ...(q ? [{ $match: { customerName: { $regex: q, $options: "i" } } }] : []),
+    ...(q ? [{ $match: { customerName: { $regex: escapeRegex(q.slice(0, 80)), $options: "i" } } }] : []),
     { $sort: { orderedAt: -1 as const } },
     {
       $group: {
