@@ -123,6 +123,9 @@ export default function AdminOrdersPage() {
   const [editSale, setEditSale]         = useState<FullSale | null>(null);
   const [savingSale, setSavingSale]     = useState(false);
   const [saleEditError, setSaleEditError] = useState("");
+  // El personal confirma con la contraseña de autorización; el admin no la necesita.
+  const saleEditNeedsPassword = session.role !== "admin";
+  const [saleEditPassword, setSaleEditPassword] = useState("");
   const [saleProducts, setSaleProducts] = useState<ProductOption[]>([]);
   // Producto por kilo que se está pesando para agregarlo a la venta que se edita.
   const [weighingSale, setWeighingSale] = useState<ProductOption | null>(null);
@@ -348,6 +351,7 @@ export default function AdminOrdersPage() {
     if (saleRes.sale) setEditSale(saleRes.sale);
     setSaleProducts(productsRes.products ?? []);
     setSaleEditError("");
+    setSaleEditPassword("");
   }
 
   async function handleSaleSave() {
@@ -359,7 +363,7 @@ export default function AdminOrdersPage() {
       const res = await fetch(`/api/admin/sales/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editSale),
+        body: JSON.stringify(saleEditNeedsPassword ? { ...editSale, password: saleEditPassword } : editSale),
       });
       if (!res.ok) {
         // P. ej. un producto agregado cuyo precio cambió en el catálogo: no se guarda ni se reimprime.
@@ -938,6 +942,19 @@ export default function AdminOrdersPage() {
                   <div className="flex justify-between font-bold text-base border-t border-gray-200 pt-1.5"><span>Total</span><span className="text-brand-pink">{fmt(total)}</span></div>
                 </div>
 
+                {saleEditNeedsPassword && (
+                  <div>
+                    <label className="block text-xs font-medium text-brand-dark/60 mb-1">Contraseña de autorización</label>
+                    <input
+                      type="password"
+                      value={saleEditPassword}
+                      onChange={(e) => setSaleEditPassword(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-pink"
+                    />
+                    <p className="text-xs text-brand-dark/50 mt-1">La misma que se usa para borrar ventas. Pedila al encargado.</p>
+                  </div>
+                )}
+
                 {saleEditError && (
                   <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-3 py-2">{saleEditError}</p>
                 )}
@@ -945,7 +962,7 @@ export default function AdminOrdersPage() {
                 {/* Botones */}
                 <div className="flex gap-3 pt-1">
                   <Button variant="cancel" className="flex-1" onClick={() => setEditSale(null)}>Cancelar</Button>
-                  <Button className="flex-1" disabled={savingSale || editSale.items.length === 0} onClick={handleSaleSave}>
+                  <Button className="flex-1" disabled={savingSale || editSale.items.length === 0 || (saleEditNeedsPassword && !saleEditPassword)} onClick={handleSaleSave}>
                     {savingSale && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
                     Guardar cambios
                   </Button>

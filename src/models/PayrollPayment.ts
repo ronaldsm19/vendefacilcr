@@ -52,7 +52,7 @@ const PayLineSchema = new Schema(
 
 const PayrollPaymentSchema = new Schema(
   {
-    tenantId:      { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:      { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     staffUserId:   { type: Schema.Types.ObjectId, ref: "StaffUser", required: true },
     staffName:     { type: String, required: true },
     staffRole:     { type: String, required: true },

@@ -19,7 +19,7 @@ export interface IRawMaterial {
 
 const RawMaterialSchema = new Schema(
   {
-    tenantId:    { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    tenantId:    { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: false, index: true },
     name:        { type: String, required: [true, "El nombre es requerido"], trim: true },
     type:        { type: String, enum: ["ingrediente", "empaque", "topping"], default: "ingrediente" },
     unit:        { type: String, required: [true, "La unidad es requerida"], trim: true },

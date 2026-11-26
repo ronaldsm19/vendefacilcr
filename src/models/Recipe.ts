@@ -31,7 +31,7 @@ const RecipeIngredientSchema = new Schema(
 
 const RecipeSchema = new Schema(
   {
-    tenantId:     { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    tenantId:     { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: false, index: true },
     name:         { type: String, required: [true, "El nombre es requerido"], trim: true },
     description:  { type: String },
     yield:        { type: Number, default: 1, min: [1, "El rendimiento debe ser al menos 1"] },

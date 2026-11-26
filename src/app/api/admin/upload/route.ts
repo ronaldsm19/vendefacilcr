@@ -10,6 +10,17 @@ function extractStoragePath(url: string): string | null {
   return decodeURIComponent(url.slice(idx + marker.length));
 }
 
+/**
+ * Solo se borra lo que está en la carpeta del propio negocio. El bucket es uno solo para todos y
+ * se borra con la llave de servicio: sin esta revisión, cualquier URL pública de otra tienda
+ * (su logo, sus fotos) se podía mandar acá y desaparecía.
+ */
+function ownStoragePath(url: string, tenantSlug: string): string | null {
+  const path = extractStoragePath(url);
+  if (!path || path.includes("..") || path.includes("\\")) return null;
+  return path.startsWith(`vendefacilcr/${tenantSlug}/`) ? path : null;
+}
+
 export async function POST(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -81,7 +92,7 @@ export async function POST(request: NextRequest) {
     // Eliminar imagen anterior si se proporcionó
     const oldImageUrl = formData.get("oldImageUrl") as string | null;
     if (oldImageUrl) {
-      const oldPath = extractStoragePath(oldImageUrl);
+      const oldPath = ownStoragePath(oldImageUrl, session.tenantSlug);
       if (oldPath) {
         supabaseAdmin.storage
           .from(STORAGE_BUCKET)
@@ -107,8 +118,8 @@ export async function DELETE(request: NextRequest) {
     const { url } = await request.json();
     if (!url) return NextResponse.json({ error: "URL requerida" }, { status: 400 });
 
-    const path = extractStoragePath(url);
-    if (!path) return NextResponse.json({ error: "URL inválida" }, { status: 400 });
+    const path = ownStoragePath(String(url), session.tenantSlug);
+    if (!path) return NextResponse.json({ error: "Esa imagen no es de este negocio" }, { status: 403 });
 
     const { error } = await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([path]);
     if (error) {

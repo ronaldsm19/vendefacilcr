@@ -45,7 +45,7 @@ const OrderItemSchema = new Schema({
 
 const OrderSchema = new Schema(
   {
-    tenantId:     { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    tenantId:     { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: false, index: true },
     customerName: { type: String, required: true, trim: true },
     phone:        { type: String, required: true, trim: true },
     items:        { type: [OrderItemSchema], default: [] },

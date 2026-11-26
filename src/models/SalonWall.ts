@@ -16,7 +16,7 @@ export interface ISalonWall {
 
 const SalonWallSchema = new Schema(
   {
-    tenantId:    { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:    { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     areaId:      { type: Schema.Types.ObjectId, ref: "TableArea", required: true },
     x:           { type: Number, default: 50 },
     y:           { type: Number, default: 50 },

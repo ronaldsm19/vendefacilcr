@@ -14,7 +14,7 @@ export interface ISalonReservation {
 
 const SalonReservationSchema = new Schema(
   {
-    tenantId:     { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:     { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     tableId:      { type: Schema.Types.ObjectId, ref: "SalonTable", required: true },
     customerName: { type: String, required: true },
     partySize:    { type: Number, default: 1 },

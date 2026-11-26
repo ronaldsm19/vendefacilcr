@@ -20,7 +20,7 @@ export interface ISiteSettings {
 
 const SiteSettingsSchema = new Schema(
   {
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: false, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: false, index: true },
     hero: {
       tagline:    { type: String, default: "" },
       subtagline: { type: String, default: "" },

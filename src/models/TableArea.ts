@@ -10,7 +10,7 @@ export interface ITableArea {
 
 const TableAreaSchema = new Schema(
   {
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     name:     { type: String, required: true },
     color:    { type: String, default: "#6366f1" },
     order:    { type: Number, default: 0 },

@@ -68,7 +68,7 @@ const ComandaItemSchema = new Schema(
 
 const ComandaSchema = new Schema(
   {
-    tenantId:     { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:     { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     number:       { type: Number, required: true },
     tableId:      { type: Schema.Types.ObjectId, ref: "SalonTable", required: true },
     tableLabel:   { type: String, default: "" },

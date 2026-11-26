@@ -8,6 +8,7 @@ import { computeSaleTotals, isOrderType, normalizeExtras, subtotalOf } from "@/l
 import { checkCatalogPrices, parseSaleItems, saleLineKey, serviceBaseFor, type SaleItemRecord } from "@/server/services/saleItems";
 import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { stockUnits } from "@/lib/soldBy";
+import { verifyAuthorizationPassword } from "@/server/services/authorizationPassword";
 
 export async function GET(
   request: NextRequest,
@@ -37,6 +38,17 @@ export async function PUT(
   const { id } = await params;
   await connectToDatabase();
   const body = await request.json();
+
+  // Editar una venta cobrada cambia plata ya registrada (productos, forma de pago, total): igual
+  // que borrarla, el personal necesita la contraseña de autorización. Sin esto, la caja podía
+  // bajar una venta en efectivo o pasarla a tarjeta y el cuadre salía bien sin el dinero.
+  if (session.role !== "admin") {
+    try {
+      await verifyAuthorizationPassword(session, body?.password, "editar ventas");
+    } catch (err) {
+      return serviceErrorResponse(err);
+    }
+  }
 
   const {
     customerName, tableNumber,

@@ -143,7 +143,7 @@ const SaleInvoiceSchema = new Schema(
 
 const SaleSchema = new Schema(
   {
-    tenantId:      { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:      { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     ticketNumber:  { type: Number, default: 0 },
     cashUserId:    { type: String, default: "" },
     cashUserName:  { type: String, default: "" },
