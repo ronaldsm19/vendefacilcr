@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { SalonTable } from "@/models/SalonTable";
 import { getSession, requireFeature } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
+import { isOwnArea } from "@/server/services/salonAreas";
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
@@ -32,6 +33,7 @@ export async function POST(request: NextRequest) {
   await connectToDatabase();
   const { areaId, shape, seats, label, x, y } = await request.json();
   if (!areaId) return NextResponse.json({ error: "areaId requerido" }, { status: 400 });
+  if (!(await isOwnArea(session.tenantId, areaId))) return NextResponse.json({ error: "Área no encontrada" }, { status: 404 });
 
   try {
     const count = await SalonTable.countDocuments({ tenantId: session.tenantId, areaId });
