@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { RawMaterial } from "@/models/RawMaterial";
 import { getSession, requireFeature } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
+import { safeUpdate } from "@/lib/safeUpdate";
 
 export async function GET(
   request: NextRequest,
@@ -61,7 +62,8 @@ export async function PUT(
 
   const { id } = await params;
   await connectToDatabase();
-  const body = await request.json();
+  // Sin operadores ni tenantId: un {"tenantId": "<otro>"} mudaba el material a otro negocio.
+  const body = safeUpdate(await request.json().catch(() => null));
 
   const material = await RawMaterial.findOneAndUpdate(
     { _id: id, tenantId: session.tenantId },

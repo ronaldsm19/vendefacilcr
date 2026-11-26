@@ -73,7 +73,7 @@ const ProductSummarySchema = new Schema(
 
 const CashCloseSchema = new Schema(
   {
-    tenantId:  { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:  { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     closeDate: { type: Date, required: true },
     closedBy:  { type: String, default: "" },
     closeNumber: { type: Number },

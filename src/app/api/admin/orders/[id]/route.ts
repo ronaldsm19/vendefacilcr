@@ -4,6 +4,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/models/Order";
 import { getSession, requireFeature } from "@/lib/auth";
 import { normalizeOrderItems, parseOrderedAt } from "@/server/services/orderItems";
+import { safeUpdate } from "@/lib/safeUpdate";
 
 // El listado de ventas solo trae la cantidad de ítems: editar un pedido lo carga completo de acá.
 export async function GET(
@@ -34,10 +35,8 @@ export async function PATCH(
 
   const { id } = await params;
   await connectToDatabase();
-  const body = await request.json();
-  // El negocio dueño y la identidad del pedido no se cambian desde el cuerpo.
-  delete body.tenantId;
-  delete body._id;
+  // El negocio dueño y la identidad del pedido no se cambian desde el cuerpo, ni con operadores ($set…).
+  const body = safeUpdate(await request.json().catch(() => null));
   if (body.items !== undefined) {
     const items = normalizeOrderItems(body.items);
     if (!items) return NextResponse.json({ error: "Extras inválidos en algún producto" }, { status: 400 });

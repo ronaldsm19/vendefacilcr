@@ -30,7 +30,7 @@ export interface IRefreshToken {
 
 const RefreshTokenSchema = new Schema(
   {
-    tenantId:   { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:   { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     userId:     { type: String, required: true },
     userType:   { type: String, enum: ["admin", "staff"], required: true },
     tokenHash:  { type: String, required: true, unique: true },

@@ -42,7 +42,7 @@ export const MAX_CC_EMAILS = 3;
 
 const CustomerSchema = new Schema(
   {
-    tenantId:       { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:       { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     idType:         { type: String, enum: ID_TYPES, required: true },
     idNumber:       { type: String, required: true, trim: true, match: /^\d{9,12}$/ },
     name:           { type: String, required: true, trim: true, maxlength: 160 },

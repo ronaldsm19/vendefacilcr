@@ -92,7 +92,7 @@ const ProofSchema = new Schema(
 
 const PaymentSchema = new Schema(
   {
-    tenantId:    { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:    { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     tenantName:  { type: String, required: true },
     tenantSlug:  { type: String, required: true },
     plan:        { type: String, enum: ["emprende", "pro", "premium"], required: true },

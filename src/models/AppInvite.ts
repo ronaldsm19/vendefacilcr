@@ -33,7 +33,7 @@ export interface IAppInvite {
 
 const AppInviteSchema = new Schema(
   {
-    tenantId:      { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:      { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     code:          { type: String, required: true, unique: true, uppercase: true, trim: true },
     staffUserId:   { type: String, default: "" },
     createdByName: { type: String, default: "", trim: true, maxlength: 80 },

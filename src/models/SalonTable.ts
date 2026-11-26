@@ -33,7 +33,7 @@ export interface ISalonTable {
 
 const SalonTableSchema = new Schema(
   {
-    tenantId:   { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId:   { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     areaId:     { type: Schema.Types.ObjectId, ref: "TableArea", required: true },
     shape:      { type: String, enum: ["round", "square", "rectangle", "barstool"], default: "round" },
     x:          { type: Number, default: 50 },

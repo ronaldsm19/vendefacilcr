@@ -28,7 +28,7 @@ export interface ICashSession {
 
 const CashSessionSchema = new Schema(
   {
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: true, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", immutable: true, required: true, index: true },
     status:   { type: String, enum: ["open", "closed"], required: true, default: "open" },
     openedAt: { type: Date, required: true, default: Date.now },
     openingAmount: { type: Number, required: true, default: 0 },
