@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, requireRole } from "@/lib/auth";
 import { requirePremium } from "@/lib/plan";
+import { allowedFileType } from "@/lib/fileSniff";
 import {
   PRIVATE_BUCKET,
   SIGNED_URL_DAYS,
@@ -56,15 +57,20 @@ export async function POST(request: NextRequest) {
 
     await ensurePrivateBucket();
 
-    const ext = EXTENSIONS[file.type] ?? "bin";
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    // El tipo real sale de los bytes: la etiqueta del navegador se puede inventar.
+    const realType = allowedFileType(buffer, ALLOWED);
+    if (!realType) {
+      return NextResponse.json({ error: "El archivo no es una imagen o PDF válido" }, { status: 400 });
+    }
+    const ext = EXTENSIONS[realType] ?? "bin";
     const name = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     // Siempre bajo el slug del negocio: la ruta sola no deja llegar a los archivos de otro.
     const path = `${session.tenantSlug}/planilla/${name}`;
 
-    const buffer = new Uint8Array(await file.arrayBuffer());
     const { error } = await supabaseAdmin.storage
       .from(PRIVATE_BUCKET)
-      .upload(path, buffer, { contentType: file.type, upsert: false });
+      .upload(path, buffer, { contentType: realType, upsert: false });
 
     if (error) {
       console.error("[payroll upload] Supabase:", error);

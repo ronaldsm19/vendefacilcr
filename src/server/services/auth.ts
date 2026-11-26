@@ -138,7 +138,16 @@ function logAttempt(
  * Valida las credenciales y devuelve el payload de sesión.
  * Lanza ServiceError con el status que corresponde; nunca devuelve una respuesta HTTP.
  */
-export async function authenticate(input: AuthInput): Promise<AuthResult> {
+export async function authenticate(rawInput: AuthInput): Promise<AuthResult> {
+  // El cuerpo llega del navegador o la app: solo texto. Un {"$ne": null} como tenantSlug entraba
+  // tal cual a Tenant.findOne y se quedaba con el primer negocio de la base.
+  const input: AuthInput = {
+    ...rawInput,
+    login: typeof rawInput.login === "string" ? rawInput.login : "",
+    password: typeof rawInput.password === "string" ? rawInput.password
+      : typeof rawInput.password === "number" ? String(rawInput.password) : "",
+    tenantSlug: typeof rawInput.tenantSlug === "string" ? rawInput.tenantSlug.trim() : undefined,
+  };
   const login = input.login.trim();
   if (!login || !input.password) {
     throw new ServiceError(400, "Usuario y contraseña son requeridos");
@@ -295,7 +304,7 @@ export async function revalidateSession(payload: AdminPayload): Promise<AuthResu
   }
 
   if (payload.role === "admin") {
-    const user = await User.findById(payload.userId).select("_id").lean();
+    const user = await User.findOne({ _id: payload.userId, tenantId: tenant._id }).select("_id").lean();
     if (!user) throw new ServiceError(401, ERROR_CREDENTIALS, "SESSION_REVOKED");
   } else {
     if (!isPremiumPlan(tenant.plan)) {

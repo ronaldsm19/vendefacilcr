@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, requireFeature } from "@/lib/auth";
+import { allowedFileType, EXTENSION_FOR } from "@/lib/fileSniff";
 import { supabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
 
 /** Extrae el path dentro del bucket a partir de una URL pública de Supabase */
@@ -62,20 +63,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generar nombre único
-    const ext = file.name.split(".").pop() ?? "jpg";
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const filePath = `vendefacilcr/${session.tenantSlug}/${folder}/${fileName}`;
+    // El tipo y la extensión salen del contenido, no de lo que diga el navegador ni del nombre:
+    // así no entra un HTML o un script con etiqueta de imagen.
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const realType = allowedFileType(buffer, allowedTypes);
+    if (!realType) {
+      return NextResponse.json({ error: "El archivo no es una imagen válida" }, { status: 400 });
+    }
 
-    // Convertir File a ArrayBuffer para Supabase
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = new Uint8Array(arrayBuffer);
+    // Generar nombre único
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${EXTENSION_FOR[realType]}`;
+    const filePath = `vendefacilcr/${session.tenantSlug}/${folder}/${fileName}`;
 
     // Subir nueva imagen
     const { error: uploadError } = await supabaseAdmin.storage
       .from(STORAGE_BUCKET)
       .upload(filePath, buffer, {
-        contentType: file.type,
+        contentType: realType,
         upsert: false,
       });
 

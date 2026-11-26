@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { SalonTable } from "@/models/SalonTable";
 import { getSession, requireFeature } from "@/lib/auth";
 import { requirePlan } from "@/lib/plan";
+import { isOwnArea } from "@/server/services/salonAreas";
 import { buildStatusUpdate, isTableStatus } from "@/lib/tableStatus";
 import { Comanda } from "@/models/Comanda";
 
@@ -26,6 +27,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const $set: Record<string, unknown> = {};
   for (const key of allowed) {
     if (body[key] !== undefined) $set[key] = body[key];
+  }
+  if ($set.areaId !== undefined && !(await isOwnArea(session.tenantId, $set.areaId))) {
+    return NextResponse.json({ error: "Área no encontrada" }, { status: 404 });
   }
 
   if (body.status !== undefined) {

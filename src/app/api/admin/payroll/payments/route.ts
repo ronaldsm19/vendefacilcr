@@ -5,6 +5,7 @@ import { serviceErrorResponse } from "@/lib/serviceResponse";
 import { parseDateRange } from "@/server/services/workShifts";
 import { createPayment, crDayKey, listPayments } from "@/server/services/payroll";
 import { ServiceError } from "@/server/errors";
+import { isOwnPrivatePath } from "@/lib/storagePaths";
 
 // Pagos al personal. Crear un pago marca los turnos que cubre: ver createPayment.
 
@@ -52,6 +53,10 @@ export async function POST(request: NextRequest) {
     // manda un instante que, en horas UTC, puede caer más adelante que el reloj del servidor.
     if (crDayKey(paidAt) > crDayKey(now)) {
       throw new ServiceError(400, "La fecha del pago no puede estar en el futuro");
+    }
+    // El comprobante del pago tiene que estar en la carpeta de planilla de este negocio.
+    if (!isOwnPrivatePath(body.proofImage, session.tenantSlug, "planilla")) {
+      throw new ServiceError(403, "Ese comprobante no es de este negocio");
     }
     const periodFrom = readDate(body.periodFrom, now);
     const periodTo = readDate(body.periodTo, now);

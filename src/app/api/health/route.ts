@@ -2,30 +2,18 @@ import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import mongoose from "mongoose";
 
+// Chequeo de vida público: solo dice si la app llega a la base. Antes devolvía el nombre de la
+// base, la lista de colecciones y el mensaje de error crudo, todo útil para alguien que tantea.
 export async function GET() {
   try {
     await connectToDatabase();
-
-    const db = mongoose.connection.db;
-    if (!db) throw new Error("Sin referencia a la DB");
-
-    // Listar colecciones existentes
-    const collections = await db.listCollections().toArray();
-    const collectionNames = collections.map((c) => c.name);
-
-    return NextResponse.json({
-      status: "ok",
-      database: db.databaseName,
-      collections: collectionNames,
-      mongoose: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-    });
-  } catch (error) {
+    const ok = mongoose.connection.readyState === 1;
     return NextResponse.json(
-      {
-        status: "error",
-        message: error instanceof Error ? error.message : "Error desconocido",
-      },
-      { status: 500 }
+      { status: ok ? "ok" : "error" },
+      { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } }
     );
+  } catch (error) {
+    console.error("[GET /api/health]", error);
+    return NextResponse.json({ status: "error" }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

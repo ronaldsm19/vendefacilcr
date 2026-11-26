@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { ProductClick } from "@/models/ProductClick";
 import { Product } from "@/models/Product";
+import { consumeAttempt } from "@/server/services/rateLimit";
 
 export async function POST(
   request: NextRequest,
@@ -13,6 +14,11 @@ export async function POST(
     if (!mongoose.isValidObjectId(id)) return NextResponse.json({ ok: false });
 
     await connectToDatabase();
+
+    // Ruta pública: con tope por IP para que nadie infle "Top productos clickeados" ni llene la
+    // base a punta de peticiones. Pasado el tope se responde igual, sin guardar.
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (!(await consumeAttempt(`click-ip:${ip}`, 60, 10 * 60 * 1000))) return NextResponse.json({ ok: false });
 
     // El click le pertenece al tenant dueño del producto; el nombre se denormaliza para el dashboard
     const product = await Product.findById(id).select("name tenantId").lean() as

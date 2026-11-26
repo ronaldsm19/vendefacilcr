@@ -199,6 +199,14 @@ export async function POST(request: NextRequest) {
 
   const tenantCfg = await Tenant.findById(session.tenantId).select("posConfig").lean() as { posConfig?: unknown } | null;
   if (!tenantCfg) return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 });
+
+  // La mesa que se guarda en la venta tiene que ser de este negocio (con comandas ya se revisó arriba).
+  if (typeof tableId === "string" && tableId && selections.length === 0) {
+    const ownTable = mongoose.Types.ObjectId.isValid(tableId)
+      && await SalonTable.exists({ _id: tableId, tenantId: session.tenantId });
+    if (!ownTable) return NextResponse.json({ error: "Mesa no encontrada" }, { status: 404 });
+  }
+
   const totals = computeSaleTotals({
     subtotal: subtotalOf(saleItems),
     serviceBase: await serviceBaseFor(session.tenantId, saleItems),
