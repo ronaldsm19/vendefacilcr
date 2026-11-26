@@ -3,9 +3,15 @@
  * Next ni de HTTP; las rutas lo traducen con serviceErrorResponse y un worker puede capturarlo igual.
  */
 export class ServiceError extends Error {
-  /** `code`: identificador estable opcional para que la pantalla reaccione (p. ej. "PRICE_CHANGED"). */
-  constructor(readonly status: number, message: string, readonly code?: string) {
+  readonly status: number;
+  /** Identificador estable opcional para que la pantalla reaccione (p. ej. "PRICE_CHANGED"). */
+  readonly code?: string;
+
+  // Sin propiedades en el constructor: así Node corre las pruebas solo quitando los tipos.
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = "ServiceError";
+    this.status = status;
+    this.code = code;
   }
 }

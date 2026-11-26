@@ -18,8 +18,11 @@ function findTests(dir) {
 const tests = findTests(root).sort();
 const failed = [];
 for (const file of tests) {
-  // transform-types (y no solo strip) porque algunas pruebas importan clases con propiedades en el constructor.
-  const run = spawnSync(process.execPath, ["--experimental-transform-types", "--no-warnings", file], { encoding: "utf8" });
+  // Node 23.6+ quita los tipos solo; Node 26 eliminó --experimental-transform-types, así que el código
+  // que importan las pruebas no puede usar propiedades en el constructor, enums ni namespaces.
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  const flags = major > 23 || (major === 23 && minor >= 6) ? [] : ["--experimental-strip-types"];
+  const run = spawnSync(process.execPath, [...flags, "--no-warnings", file], { encoding: "utf8" });
   const name = relative(join(root, ".."), file);
   if (run.status === 0) {
     console.log(`ok    ${name}`);
